@@ -1,5 +1,5 @@
 <template>
-  <div class="card" :class="{ 'menu-open': showMenu }" @dblclick="$emit('open', resource)" @contextmenu.prevent="showMenu = true">
+  <div class="card" @dblclick="$emit('open', resource)" @contextmenu.prevent="openMenu($event)">
     <div class="cover" :class="{ 'is-app': resource.type === 'app' }" @click.stop="$emit('open', resource)">
       <img v-if="thumbSrc" :src="thumbSrc" :alt="resource.title" />
       <div v-else class="cover-placeholder" style="pointer-events:none">
@@ -88,26 +88,30 @@
       </div>
     </Teleport>
 
-    <!-- 右键菜单 -->
-    <div v-if="showMenu" class="context-menu" @mouseleave="showMenu = false">
-      <button @click="$emit('open', resource); showMenu = false">
-        <span v-html="openIcon" />打开
-      </button>
-      <button @click="openInExplorer">
-        <span v-html="folderIcon" />在文件夹中显示
-      </button>
-      <button @click="$emit('select', resource); showMenu = false">
-        <span v-html="detailIcon" />查看详情
-      </button>
-      <button v-if="isRunning" @click="showKillConfirm = true; showMenu = false" class="danger">
-        <span v-html="killIcon" />强制结束进程
-      </button>
-      <hr />
-      <button @click="$emit('ignore', resource); showMenu = false" class="danger">
-        <span v-html="ignoreIcon" />忽略此文件
-      </button>
-    </div>
   </div>
+
+    <!-- 右键菜单：Teleport 到 body，避免被同级卡片遮挡 -->
+    <Teleport to="body">
+      <div v-if="showMenu" class="ctx-backdrop" @mousedown="showMenu = false" />
+      <div v-if="showMenu" ref="menuRef" class="context-menu" :style="menuStyle" @mouseleave="showMenu = false">
+        <button @click="$emit('open', resource); showMenu = false">
+          <span v-html="openIcon" />打开
+        </button>
+        <button @click="openInExplorer">
+          <span v-html="folderIcon" />在文件夹中显示
+        </button>
+        <button @click="$emit('select', resource); showMenu = false">
+          <span v-html="detailIcon" />查看详情
+        </button>
+        <button v-if="isRunning" @click="showKillConfirm = true; showMenu = false" class="danger">
+          <span v-html="killIcon" />强制结束进程
+        </button>
+        <hr />
+        <button @click="$emit('ignore', resource); showMenu = false" class="danger">
+          <span v-html="ignoreIcon" />忽略此文件
+        </button>
+      </div>
+    </Teleport>
 </template>
 
 <!-- 模块级缓存：在 <script setup> 之外声明，组件销毁/重建时仍存活 -->
@@ -119,7 +123,7 @@ const _savedCovers = new Set<string>()   // 本次会话已保存封面的资源
 </script>
 
 <script setup lang="ts">
-import { ref, computed, watchEffect } from 'vue'
+import { ref, computed, watchEffect, nextTick, onUnmounted } from 'vue'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
 
@@ -201,7 +205,8 @@ async function getCachedImage(path: string): Promise<string | null> {
 async function getCachedIcon(path: string): Promise<string | null> {
   if (_iconCache.has(path)) return _iconCache.get(path) ?? null
   const result = await window.api.files.getAppIcon(path)
-  _iconCache.set(path, result)
+  // 只缓存成功结果，失败不缓存，允许重试
+  if (result !== null) _iconCache.set(path, result)
   return result
 }
 
@@ -253,12 +258,36 @@ function getCachedVideoThumb(filePath: string): Promise<string | null> {
   })
 }
 
+const MAX_ICON_RETRIES = 3
+const iconRetries = ref(0)
+let iconRetryTimer: ReturnType<typeof setTimeout> | null = null
+onUnmounted(() => { if (iconRetryTimer) { clearTimeout(iconRetryTimer); iconRetryTimer = null } })
+
 const showMenu = ref(false)
+const menuX = ref(0)
+const menuY = ref(0)
+const menuRef = ref<HTMLElement | null>(null)
+const menuStyle = computed(() => ({ left: menuX.value + 'px', top: menuY.value + 'px' }))
+
+function openMenu(e: MouseEvent) {
+  menuX.value = e.clientX
+  menuY.value = e.clientY
+  showMenu.value = true
+  nextTick(() => {
+    if (!menuRef.value) return
+    const rect = menuRef.value.getBoundingClientRect()
+    if (menuX.value + rect.width > window.innerWidth) menuX.value = e.clientX - rect.width
+    if (menuY.value + rect.height > window.innerHeight) menuY.value = e.clientY - rect.height
+  })
+}
+
 const thumbSrc = ref<string | null>(null)
 
 // 通过 IPC / Canvas 加载预览图
 watchEffect(async () => {
   const r = props.resource
+  void iconRetries.value  // 加入响应式依赖，重试时触发重跑
+
   if (r.cover_path) {
     thumbSrc.value = await getCachedImage(r.cover_path)
     return
@@ -268,7 +297,23 @@ watchEffect(async () => {
     return
   }
   if (r.type === 'app') {
-    thumbSrc.value = await getCachedIcon(r.file_path)
+    const icon = await getCachedIcon(r.file_path)
+    thumbSrc.value = icon
+    if (icon) {
+      // 首次获取成功后保存到磁盘，下次启动直接走 cover_path 分支
+      if (!r.cover_path && !_savedCovers.has(r.id)) {
+        _savedCovers.add(r.id)
+        window.api.files.saveCover(r.id, icon).then(path => {
+          if (path) store.addOrUpdate({ ...r, cover_path: path })
+        }).catch(() => {})
+      }
+    } else if (iconRetries.value < MAX_ICON_RETRIES && !iconRetryTimer) {
+      // 失败时延迟重试，避免频繁调用
+      iconRetryTimer = setTimeout(() => {
+        iconRetryTimer = null
+        iconRetries.value++
+      }, 5000)
+    }
     return
   }
   if (r.type === 'video') {
@@ -336,10 +381,6 @@ function openInExplorer() {
   box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12);
 }
 
-/* 菜单打开时把卡片提升到同级卡片之上，避免被遮盖 */
-.card.menu-open {
-  z-index: 50;
-}
 
 .cover {
   position: relative;
@@ -430,11 +471,15 @@ function openInExplorer() {
   font-weight: 400;
 }
 
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8999;
+}
+
 .context-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 200;
+  position: fixed;
+  z-index: 9000;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;

@@ -1,6 +1,6 @@
 import { ipcMain, shell, app, nativeImage, dialog } from 'electron'
-import { mkdirSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'fs'
+import { join, dirname } from 'path'
 import {
   getAllResources, getResourceById, updateResource, removeResource,
   addManualResource, getResourceByPath, recordProcessStart, restoreResource,
@@ -14,6 +14,32 @@ import { dbPath, dataDir } from '../db/index'
 // 主进程级缓存：进程生命周期内有效，避免重复调用系统 API
 const appIconCache = new Map<string, string | null>()
 const thumbCache   = new Map<string, string | null>()
+
+// 在 exe 同目录及父目录中搜索图标文件（.ico 优先，其次常见图标文件名）
+function findNearbyIcon(exePath: string): string | null {
+  const ICON_NAMES = ['icon.png', 'logo.png', 'icon.jpg', 'logo.jpg']
+  try {
+    for (const dir of [dirname(exePath), dirname(dirname(exePath))]) {
+      if (!existsSync(dir)) continue
+      let files: string[]
+      try { files = readdirSync(dir) } catch { continue }
+
+      const ico = files.find(f => f.toLowerCase().endsWith('.ico'))
+      if (ico) {
+        const img = nativeImage.createFromPath(join(dir, ico))
+        if (!img.isEmpty()) return img.toDataURL()
+      }
+
+      for (const name of ICON_NAMES) {
+        if (files.some(f => f.toLowerCase() === name)) {
+          const img = nativeImage.createFromPath(join(dir, name))
+          if (!img.isEmpty()) return img.toDataURL()
+        }
+      }
+    }
+  } catch { /* 目录不可访问，跳过 */ }
+  return null
+}
 
 export function registerIpcHandlers(): void {
 
@@ -110,6 +136,7 @@ export function registerIpcHandlers(): void {
   })
 
   // 获取可执行文件的系统图标（用于 .exe / .lnk 资源卡片预览）
+  // 多级策略：large → normal → 近目录 .ico / 常见图标文件
   ipcMain.handle('files:getAppIcon', async (_e, filePath: string) => {
     if (appIconCache.has(filePath)) return appIconCache.get(filePath) ?? null
     try {
@@ -118,12 +145,26 @@ export function registerIpcHandlers(): void {
       if (filePath.toLowerCase().endsWith('.lnk')) {
         try { targetPath = shell.readShortcutLink(filePath).target || filePath } catch { /* 忽略 */ }
       }
-      const icon = await app.getFileIcon(targetPath, { size: 'large' })
-      const result = icon.isEmpty() ? null : icon.toDataURL()
-      appIconCache.set(filePath, result)
-      return result
+
+      // 策略1：getFileIcon large
+      for (const size of ['large', 'normal'] as const) {
+        const icon = await app.getFileIcon(targetPath, { size })
+        if (!icon.isEmpty()) {
+          const result = icon.toDataURL()
+          appIconCache.set(filePath, result)
+          return result
+        }
+      }
+
+      // 策略2：在 exe 同目录及父目录中查找图标文件
+      const fallback = findNearbyIcon(targetPath)
+      if (fallback) {
+        appIconCache.set(filePath, fallback)
+        return fallback
+      }
+
+      return null
     } catch {
-      appIconCache.set(filePath, null)
       return null
     }
   })
@@ -134,6 +175,15 @@ export function registerIpcHandlers(): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
+  // 打开图片文件选择对话框（用于设置自定义封面）
+  ipcMain.handle('files:pickImage', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'ico'] }]
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
   // 保存视频封面到本地磁盘，并更新数据库中的 cover_path
   ipcMain.handle('files:saveCover', async (_e, resourceId: string, dataUrl: string) => {
     try {
@@ -141,7 +191,8 @@ export function registerIpcHandlers(): void {
       const buffer = Buffer.from(base64, 'base64')
       const coversDir = join(dataDir, 'covers')
       mkdirSync(coversDir, { recursive: true })
-      const coverPath = join(coversDir, `${resourceId}.jpg`)
+      const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpg'
+      const coverPath = join(coversDir, `${resourceId}.${ext}`)
       writeFileSync(coverPath, buffer)
       updateResource(resourceId, { cover_path: coverPath })
       return coverPath

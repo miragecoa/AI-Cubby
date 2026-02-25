@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <div v-if="modelValue" class="overlay" @mousedown.self="close">
-      <div class="modal" @dragover.prevent @drop.prevent>
+      <div class="modal" @dragover.prevent @drop.prevent="onDrop">
 
         <!-- 标题栏 -->
         <div class="modal-header">
@@ -9,97 +9,101 @@
           <button class="close-btn" @click="close" v-html="closeIcon" />
         </div>
 
-        <!-- 拖放 + 预览区域 -->
-        <div
-          class="drop-zone"
-          :class="{ 'has-file': !!form.file_path, 'drag-over': isDragOver }"
-          @click="pickFile"
-          @dragover.prevent="isDragOver = true"
-          @dragleave.prevent="isDragOver = false"
-          @drop.prevent="onDrop"
-        >
-          <template v-if="form.file_path">
-            <!-- 横向紧凑布局：缩略图 + 文件信息 -->
-            <div class="dz-file-row">
-              <div class="dz-thumb">
-                <img v-if="previewSrc" class="dz-thumb-img" :src="previewSrc" />
-                <div v-else-if="previewLoading" class="dz-thumb-spinner">
-                  <div class="mini-spinner" />
-                </div>
-                <span v-else class="dz-thumb-icon" v-html="currentTypeIcon" />
-              </div>
-              <div class="dz-file-info">
-                <span class="dz-filename">{{ basename(form.file_path) }}</span>
-                <span class="dz-filepath">{{ form.file_path }}</span>
-              </div>
-            </div>
-          </template>
-          <template v-else>
-            <span class="dz-upload-icon" v-html="uploadIcon" />
-            <span class="dz-text">拖放文件到此处</span>
-            <span class="dz-hint">或点击浏览文件</span>
-          </template>
-        </div>
+        <!-- 主体：左右两栏 -->
+        <div class="modal-body">
 
-        <!-- 手动输入路径 -->
-        <div class="path-row">
-          <input
-            v-model="form.file_path"
-            class="path-input"
-            placeholder="或手动输入文件路径..."
-            @change="onPathChange"
-          />
-          <button class="browse-btn" @click.stop="pickFile" v-html="folderIcon" title="浏览文件" />
-        </div>
-
-        <!-- 表单字段 -->
-        <div class="form">
-          <div class="field-row">
-            <label class="field-label">显示名称</label>
-            <input v-model="form.title" class="field-input" placeholder="资源名称..." />
-          </div>
-
-          <div class="field-row">
-            <label class="field-label">类型</label>
-            <select v-model="form.type" class="field-select">
-              <option v-for="t in TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-            </select>
-          </div>
-
-          <div class="field-row align-start">
-            <label class="field-label">描述</label>
-            <textarea
-              v-model="form.note"
-              class="field-textarea"
-              placeholder="可选的备注描述..."
-              rows="2"
-            />
-          </div>
-
-          <div class="field-row align-start">
-            <label class="field-label">标签</label>
-            <div class="tags-area">
-              <div v-if="allTags.length" class="tag-chips">
-                <button
-                  v-for="tag in allTags"
-                  :key="tag.id"
-                  class="tag-chip"
-                  :class="{ selected: selectedTagIds.includes(tag.id) }"
-                  @click="toggleTag(tag.id)"
-                >
-                  {{ tag.name }}
-                  <span v-if="tag.count" class="tag-count">{{ tag.count }}</span>
-                </button>
-              </div>
-              <div class="new-tag-row">
-                <input
-                  v-model="newTagInput"
-                  class="new-tag-input"
-                  placeholder="新建标签，回车确认..."
-                  @keydown.enter.prevent="createAndAddTag"
+          <!-- 左栏：拖放区 + 路径输入 -->
+          <div class="left-col">
+            <div
+              class="drop-zone"
+              :class="{ 'has-file': !!form.file_path, 'drag-over': isDragOver }"
+              @click="pickFile"
+              @dragover.prevent="isDragOver = true"
+              @dragleave.prevent="isDragOver = false"
+            >
+              <template v-if="form.file_path">
+                <img
+                  v-if="previewSrc"
+                  class="dz-img"
+                  :class="{ 'is-icon': inferType(form.file_path) === 'app' }"
+                  :src="previewSrc"
                 />
+                <div v-else-if="previewLoading" class="dz-center">
+                  <div class="spinner" />
+                </div>
+                <div v-else class="dz-center">
+                  <span class="dz-type-icon" v-html="currentTypeIcon" />
+                </div>
+              </template>
+              <template v-else>
+                <span class="dz-upload-icon" v-html="uploadIcon" />
+                <span class="dz-text">拖放文件到此处</span>
+                <span class="dz-hint">或点击浏览文件</span>
+              </template>
+            </div>
+
+            <!-- 路径输入 -->
+            <div class="path-row">
+              <input
+                v-model="form.file_path"
+                class="path-input"
+                placeholder="手动输入文件路径..."
+                @change="onPathChange"
+              />
+              <button class="browse-btn" @click.stop="pickFile" v-html="folderIcon" title="浏览文件" />
+            </div>
+          </div>
+
+          <!-- 右栏：表单字段 -->
+          <div class="right-col">
+
+            <div class="field-row">
+              <label class="field-label">名称</label>
+              <input v-model="form.title" class="field-input" placeholder="资源名称..." />
+            </div>
+
+            <div class="field-row">
+              <label class="field-label">类型</label>
+              <select v-model="form.type" class="field-select">
+                <option v-for="t in TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+              </select>
+            </div>
+
+            <div class="field-row align-start">
+              <label class="field-label">描述</label>
+              <textarea
+                v-model="form.note"
+                class="field-textarea"
+                placeholder="可选的备注描述..."
+                rows="2"
+              />
+            </div>
+
+            <div class="field-row align-start">
+              <label class="field-label">标签</label>
+              <div class="tags-area">
+                <div v-if="allTags.length" class="tag-chips">
+                  <button
+                    v-for="tag in allTags"
+                    :key="tag.id"
+                    class="tag-chip"
+                    :class="{ selected: selectedTagIds.includes(tag.id) }"
+                    @click="toggleTag(tag.id)"
+                  >
+                    {{ tag.name }}<span v-if="tag.count" class="tag-count">{{ tag.count }}</span>
+                  </button>
+                </div>
+                <div class="new-tag-row">
+                  <input
+                    v-model="newTagInput"
+                    class="new-tag-input"
+                    placeholder="新建标签，回车确认..."
+                    @keydown.enter.prevent="createAndAddTag"
+                  />
+                </div>
               </div>
             </div>
+
           </div>
         </div>
 
@@ -115,6 +119,7 @@
             >{{ submitting ? '添加中…' : '添加到库' }}</button>
           </div>
         </div>
+
       </div>
     </div>
   </Teleport>
@@ -199,7 +204,7 @@ watch(() => form.value.file_path, async (path) => {
   }
 })
 
-/** 用 Canvas 从视频文件截取 30% 处帧（与 ResourceCard 逻辑相同） */
+/** 用 Canvas 从视频文件截取 30% 处帧 */
 function getVideoThumb(filePath: string): Promise<string | null> {
   return new Promise((resolve) => {
     const video = document.createElement('video')
@@ -241,10 +246,8 @@ async function loadTagsForCurrentType() {
 
 onMounted(loadTagsForCurrentType)
 
-// 类型切换时重载标签（过滤 + 重排）
 watch(() => form.value.type, loadTagsForCurrentType)
 
-// 打开时：重置 + 暂停自动捕获；关闭时：恢复
 watch(() => props.modelValue, (val) => {
   if (val) {
     resetForm()
@@ -368,24 +371,24 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(3px);
 }
 
 .modal {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  width: 520px;
+  border-radius: 14px;
+  width: 820px;
   max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 80px);
+  max-height: calc(100vh - 60px);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7);
   overflow: hidden;
 }
 
@@ -393,7 +396,7 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 .modal-header {
   display: flex;
   align-items: center;
-  padding: 16px 16px 12px;
+  padding: 16px 18px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -419,23 +422,42 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   transition: background 0.1s, color 0.1s;
   padding: 0;
 }
-
 .close-btn:hover { background: var(--surface-2); color: var(--text); }
 .close-btn :deep(svg) { width: 16px; height: 16px; }
 
-/* ── 拖放区域 ────────────────────────────────────────── */
+/* ── 主体双栏 ───────────────────────────────────────── */
+.modal-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── 左栏 ───────────────────────────────────────────── */
+.left-col {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 8px;
+  border-right: 1px solid var(--border);
+}
+
+/* ── 拖放区 ─────────────────────────────────────────── */
 .drop-zone {
-  margin: 14px 16px 0;
+  flex: 1;
+  min-height: 0;
   border: 1.5px dashed var(--border);
-  border-radius: 8px;
-  padding: 24px 16px;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 8px;
   cursor: pointer;
+  overflow: hidden;
   transition: border-color 0.15s, background 0.15s;
-  flex-shrink: 0;
 }
 
 .drop-zone:hover,
@@ -445,41 +467,26 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 }
 
 .drop-zone.has-file {
-  padding: 10px 12px;
   border-style: solid;
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.05);
-  gap: 0;
+  background: rgba(99, 102, 241, 0.04);
+  padding: 0;
 }
 
-/* ── 有文件时：横向紧凑布局 ──────────────────────────── */
-.dz-file-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-}
-
-.dz-thumb {
-  width: 80px;
-  height: 45px;
-  flex-shrink: 0;
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.dz-thumb-img {
+/* 有文件时的预览图 */
+.dz-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.dz-thumb-spinner {
+.dz-img.is-icon {
+  object-fit: contain;
+  padding: 18%;
+}
+
+.dz-center {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -487,78 +494,49 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   height: 100%;
 }
 
-.mini-spinner {
-  width: 18px;
-  height: 18px;
+.dz-type-icon {
+  width: 56px;
+  height: 56px;
+  color: var(--text-3);
+  opacity: 0.4;
+  display: flex;
+}
+.dz-type-icon :deep(svg) { width: 56px; height: 56px; }
+
+/* 空状态 */
+.dz-upload-icon {
+  width: 32px;
+  height: 32px;
+  color: var(--text-3);
+  display: flex;
+}
+.dz-upload-icon :deep(svg) { width: 32px; height: 32px; }
+
+.dz-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.dz-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* 加载动画 */
+.spinner {
+  width: 24px;
+  height: 24px;
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
 
-.dz-thumb-icon {
-  width: 24px;
-  height: 24px;
-  color: var(--text-3);
-  opacity: 0.6;
-  display: flex;
-}
-
-.dz-thumb-icon :deep(svg) { width: 24px; height: 24px; }
-
-.dz-file-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.dz-filename {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dz-filepath {
-  font-size: 11px;
-  color: var(--text-3);
-  font-family: 'Consolas', monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ── 空状态 ──────────────────────────────────────────── */
-.dz-upload-icon {
-  width: 32px;
-  height: 32px;
-  color: var(--text-3);
-  display: flex;
-  margin-bottom: 4px;
-}
-
-.dz-upload-icon :deep(svg) { width: 32px; height: 32px; }
-
-.dz-text {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-2);
-}
-
-.dz-hint {
-  font-size: 12px;
-  color: var(--text-3);
-}
-
 /* ── 路径输入行 ──────────────────────────────────────── */
 .path-row {
   display: flex;
   gap: 6px;
-  margin: 8px 16px 0;
   flex-shrink: 0;
 }
 
@@ -567,78 +545,77 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   padding: 6px 10px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--text);
-  font-size: 12px;
+  font-size: 11px;
   font-family: 'Consolas', monospace;
   outline: none;
   transition: border-color 0.15s;
   min-width: 0;
 }
-
 .path-input::placeholder { color: var(--text-3); }
 .path-input:focus { border-color: var(--accent); }
 
 .browse-btn {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--text-3);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   transition: border-color 0.15s, color 0.15s;
   padding: 0;
 }
-
 .browse-btn:hover { border-color: var(--accent); color: var(--accent-2); }
-.browse-btn :deep(svg) { width: 14px; height: 14px; }
+.browse-btn :deep(svg) { width: 13px; height: 13px; }
 
-/* ── 表单 ────────────────────────────────────────────── */
-.form {
-  padding: 10px 16px 0;
+/* ── 右栏 ───────────────────────────────────────────── */
+.right-col {
+  flex: 1;
+  min-width: 0;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   overflow-y: auto;
-  flex: 1;
 }
 
+/* ── 表单行 ─────────────────────────────────────────── */
 .field-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-
 .field-row.align-start { align-items: flex-start; }
 
 .field-label {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-3);
   flex-shrink: 0;
-  width: 52px;
+  width: 36px;
   text-align: right;
+  padding-top: 1px;
 }
 
 .field-input,
 .field-select,
 .field-textarea {
   flex: 1;
-  padding: 6px 10px;
+  padding: 7px 10px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--text);
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s;
 }
-
 .field-input::placeholder,
 .field-textarea::placeholder { color: var(--text-3); }
 .field-input:focus,
@@ -654,7 +631,6 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   background-size: 14px;
   padding-right: 28px;
 }
-
 .field-select option { background: var(--surface-2); }
 .field-textarea { resize: none; line-height: 1.5; }
 
@@ -663,7 +639,7 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 
 .tag-chips {
@@ -673,6 +649,9 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 }
 
 .tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 3px 8px;
   background: var(--surface-3);
   border: 1px solid var(--border);
@@ -683,9 +662,7 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   cursor: pointer;
   transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
-
 .tag-chip:hover { border-color: var(--text-3); color: var(--text-2); }
-
 .tag-chip.selected {
   background: rgba(99, 102, 241, 0.15);
   border-color: var(--accent);
@@ -694,9 +671,9 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 
 .tag-count {
   display: inline-block;
-  margin-left: 4px;
+  margin-left: 3px;
   font-size: 10px;
-  opacity: 0.65;
+  opacity: 0.6;
   font-variant-numeric: tabular-nums;
 }
 
@@ -704,17 +681,16 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 
 .new-tag-input {
   flex: 1;
-  padding: 5px 10px;
+  padding: 6px 10px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--text);
   font-size: 12px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s;
 }
-
 .new-tag-input::placeholder { color: var(--text-3); }
 .new-tag-input:focus { border-color: var(--accent); }
 
@@ -722,7 +698,7 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 .modal-footer {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
+  padding: 12px 18px;
   border-top: 1px solid var(--border);
   gap: 8px;
   flex-shrink: 0;
@@ -741,24 +717,23 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 }
 
 .btn-cancel {
-  padding: 6px 14px;
+  padding: 7px 16px;
   background: none;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--text-3);
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
   transition: border-color 0.1s, color 0.1s;
 }
-
 .btn-cancel:hover { border-color: var(--text-3); color: var(--text-2); }
 
 .btn-add {
-  padding: 6px 16px;
+  padding: 7px 18px;
   background: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: 6px;
+  border-radius: 7px;
   color: #fff;
   font-size: 13px;
   font-weight: 500;
@@ -766,7 +741,6 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   cursor: pointer;
   transition: opacity 0.15s;
 }
-
 .btn-add:hover:not(:disabled) { opacity: 0.85; }
 .btn-add:disabled { opacity: 0.4; cursor: default; }
 

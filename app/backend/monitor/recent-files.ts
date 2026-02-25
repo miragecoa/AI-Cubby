@@ -4,8 +4,9 @@ import { extname, basename, join } from 'path'
 import { spawn, execFile, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { createInterface } from 'readline'
-import { upsertResource, isIgnored, recordProcessStart, recordProcessStop, getResourceByPath } from '../db/queries'
+import { upsertResource, isIgnored, recordProcessStart, recordProcessStop, getResourceByPath, upgradeSteamGame, getAllAppResources } from '../db/queries'
 import type { Resource } from '../db/queries'
+import { detectSteamGame } from './steam-detector'
 
 export interface RunningEvent {
   resourceId: string
@@ -190,6 +191,21 @@ function buildWmiWatcherScript(): string {
   return Buffer.from(script, 'utf16le').toString('base64')
 }
 
+/**
+ * 尝试将 exe 识别为 Steam 游戏并升级数据库记录。
+ * 返回升级后的资源（若有变更），否则返回 null。
+ */
+function trySteamUpgrade(filePath: string): Resource | null {
+  try {
+    const info = detectSteamGame(filePath)
+    if (!info) return null
+    return upgradeSteamGame(filePath, { name: info.name, coverPath: info.coverPath })
+  } catch (e) {
+    console.warn('[Monitor] Steam detection error for:', filePath, e)
+    return null
+  }
+}
+
 function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
   if (processWatcherProc) return
   console.log('[Monitor] Starting WMI process watcher...')
@@ -217,8 +233,10 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
       try {
         const newResource = upsertResource({ type: 'app', title, file_path: exePath, rating: 0 }, !!lnkTitle)
         if (newResource) {
-          console.log('[Monitor] New resource auto-added:', title, pid ? `(pid ${pid})` : '')
-          onNewEntry(newResource)
+          const upgraded = trySteamUpgrade(exePath)
+          const finalResource = upgraded ?? newResource
+          console.log('[Monitor] New resource auto-added:', finalResource.title, pid ? `(pid ${pid})` : '')
+          onNewEntry(finalResource)
         }
         // 无论是新资源还是已有资源，都追踪运行会话
         if (pid && !isNaN(pid)) {
@@ -376,6 +394,26 @@ export function startMonitor(onNewEntry: (entry: Resource) => void, onRunningCha
   startProcessWatcher(onNewEntry)
   // 异步检查已运行进程（PowerShell 约 3-5 秒后返回，届时渲染层已订阅）
   checkInitialRunning()
+
+  // 启动后台 Steam 迁移：将已入库的 app 资源中属于 Steam 游戏的条目升级为 game 类型
+  // 延迟 3s，避免与启动扫描竞争 SQLite 写锁
+  setTimeout(() => {
+    try {
+      const appResources = getAllAppResources()
+      let count = 0
+      for (const r of appResources) {
+        const upgraded = trySteamUpgrade(r.file_path)
+        if (upgraded) {
+          count++
+          onNewEntry(upgraded)
+        }
+      }
+      if (count > 0) console.log(`[Monitor] Steam migration: upgraded ${count} resource(s) to game type`)
+    } catch (e) {
+      console.warn('[Monitor] Steam migration failed:', e)
+    }
+  }, 3000)
+
   console.log('[Monitor] Watchers started (Recent + Desktop + WMI)')
 }
 
@@ -467,7 +505,10 @@ export async function scanRecentFolder(): Promise<Resource[]> {
     const title = basename(exePath, ext)
     try {
       const resource = upsertResource({ type, title, file_path: exePath, rating: 0 })
-      if (resource) results.push(resource)
+      if (resource) {
+        const upgraded = trySteamUpgrade(exePath)
+        results.push(upgraded ?? resource)
+      }
     } catch (e) {
       console.error('[Monitor] upsertResource failed for startup registry:', exePath, e)
     }
@@ -541,7 +582,10 @@ export async function scanProcesses(): Promise<Resource[]> {
     const title = basename(exePath, extname(exePath))
     try {
       const resource = upsertResource({ type: 'app', title, file_path: exePath, rating: 0 })
-      if (resource) results.push(resource)
+      if (resource) {
+        const upgraded = trySteamUpgrade(exePath)
+        results.push(upgraded ?? resource)
+      }
     } catch (e) {
       console.error('[Monitor] upsertResource failed for process path:', exePath, e)
     }
@@ -604,7 +648,9 @@ function processLnk(lnkPath: string): Resource | null {
   try {
     // isUserNamed 时 updateTitle=true：将已有的 exe 名称升级为快捷方式名称
     const resource = upsertResource({ type, title, file_path: target, rating: 0 }, isUserNamed)
-    return resource ?? null
+    if (!resource) return null
+    const upgraded = trySteamUpgrade(target)
+    return upgraded ?? resource
   } catch (e) {
     console.error('[Monitor] upsertResource failed:', e)
     return null

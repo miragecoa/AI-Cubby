@@ -43,7 +43,8 @@ contextBridge.exposeInMainWorld('api', {
     readImage: (filePath: string): Promise<string | null> => ipcRenderer.invoke('files:readImage', filePath),
     getAppIcon: (filePath: string): Promise<string | null> => ipcRenderer.invoke('files:getAppIcon', filePath),
     saveCover: (resourceId: string, dataUrl: string): Promise<string | null> => ipcRenderer.invoke('files:saveCover', resourceId, dataUrl),
-    pickFile: (): Promise<string | null> => ipcRenderer.invoke('files:pickFile')
+    pickFile: (): Promise<string | null> => ipcRenderer.invoke('files:pickFile'),
+    pickImage: (): Promise<string | null> => ipcRenderer.invoke('files:pickImage')
   },
 
   // 监听主进程推送的新资源

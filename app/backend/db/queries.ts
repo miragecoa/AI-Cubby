@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { basename, extname } from 'path'
 import { getDb } from './index'
 
 export interface Resource {
@@ -167,6 +168,51 @@ export function removeIgnoredPath(filePath: string): void {
 
 export function removeResourceByPath(filePath: string): void {
   getDb().prepare('DELETE FROM resources WHERE file_path = ?').run(filePath)
+}
+
+/** 返回所有 type='app' 的资源（用于启动时 Steam 批量迁移扫描） */
+export function getAllAppResources(): Resource[] {
+  const db = getDb()
+  const rows = db.prepare("SELECT * FROM resources WHERE type = 'app'").all() as Resource[]
+  return rows.map(attachTags)
+}
+
+/**
+ * 将已存在的 app 资源升级为 Steam 游戏（保留用户手动修改的数据）：
+ * - type：仅当当前为 'app' 时升级为 'game'
+ * - title：仅当当前标题与 exe 文件名相同时（未被用户修改）才替换
+ * - cover_path：仅当当前为 null 时写入
+ * 若无需任何变更则返回 null。
+ */
+export function upgradeSteamGame(
+  filePath: string,
+  info: { name: string; coverPath: string | null }
+): Resource | null {
+  const db = getDb()
+  const existing = db.prepare('SELECT * FROM resources WHERE file_path = ?').get(filePath) as Resource | undefined
+  if (!existing) return null
+
+  const updates: Partial<Resource> = {}
+
+  if (existing.type === 'app') {
+    updates.type = 'game' as any
+  }
+
+  // 标题未被用户修改（与 exe 文件名相同）才替换
+  const exeBase = basename(filePath, extname(filePath)).toLowerCase()
+  if (existing.title.toLowerCase() === exeBase) {
+    updates.title = info.name
+  }
+
+  // 封面仅在用户尚未设置时写入
+  if (!existing.cover_path && info.coverPath) {
+    updates.cover_path = info.coverPath
+  }
+
+  if (Object.keys(updates).length === 0) return null
+
+  updateResource(existing.id, updates)
+  return getResourceById(existing.id)
 }
 
 // ── 标签查询 ────────────────────────────────────────────
