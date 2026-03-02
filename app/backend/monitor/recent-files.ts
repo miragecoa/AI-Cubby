@@ -1,5 +1,5 @@
 import { app, shell } from 'electron'
-import { watch, readdirSync, FSWatcher } from 'fs'
+import { watch, readdirSync, existsSync, FSWatcher } from 'fs'
 import { extname, basename, join } from 'path'
 import { spawn, execFile, ChildProcess } from 'child_process'
 import { promisify } from 'util'
@@ -633,6 +633,9 @@ function processLnk(lnkPath: string): Resource | null {
     console.log('[Monitor] Blocked path:', target)
     return null
   }
+
+  // 目标文件已被删除，跳过
+  if (!existsSync(target)) return null
 
   const ext = extname(target).toLowerCase()
 
