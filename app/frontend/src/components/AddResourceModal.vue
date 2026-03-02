@@ -5,120 +5,245 @@
 
         <!-- 标题栏 -->
         <div class="modal-header">
-          <span class="modal-title">手动添加资源</span>
+          <span class="modal-title">添加资源</span>
           <button class="close-btn" @click="close" v-html="closeIcon" />
         </div>
 
-        <!-- 主体：左右两栏 -->
-        <div class="modal-body">
+        <!-- 模式切换标签 -->
+        <div class="mode-tabs">
+          <button
+            v-for="tab in modeTabs" :key="tab.key"
+            class="mode-tab" :class="{ active: mode === tab.key }"
+            @click="mode = tab.key"
+          >
+            <span class="mode-tab-icon" v-html="tab.icon" />{{ tab.label }}
+          </button>
+        </div>
 
-          <!-- 左栏：拖放区 + 路径输入 -->
-          <div class="left-col">
-            <div
-              class="drop-zone"
-              :class="{ 'has-file': !!form.file_path, 'drag-over': isDragOver }"
-              @click="pickFile"
-              @dragover.prevent="isDragOver = true"
-              @dragleave.prevent="isDragOver = false"
-            >
-              <template v-if="form.file_path">
-                <img
-                  v-if="previewSrc"
-                  class="dz-img"
-                  :class="{ 'is-icon': inferType(form.file_path) === 'app' }"
-                  :src="previewSrc"
-                />
-                <div v-else-if="previewLoading" class="dz-center">
-                  <div class="spinner" />
+        <!-- ====== 单个文件 / 文件夹 共用左右布局 ====== -->
+        <template v-if="mode === 'file' || mode === 'folder'">
+          <div class="modal-body">
+
+            <!-- 左栏 -->
+            <div class="left-col">
+              <!-- 单个文件模式 -->
+              <template v-if="mode === 'file'">
+                <div
+                  class="drop-zone"
+                  :class="{ 'has-file': !!form.file_path, 'drag-over': isDragOver }"
+                  @click="pickFile"
+                  @dragover.prevent="isDragOver = true"
+                  @dragleave.prevent="isDragOver = false"
+                >
+                  <template v-if="form.file_path">
+                    <img
+                      v-if="previewSrc"
+                      class="dz-img"
+                      :class="{ 'is-icon': inferType(form.file_path) === 'app' }"
+                      :src="previewSrc"
+                    />
+                    <div v-else-if="previewLoading" class="dz-center">
+                      <div class="spinner" />
+                    </div>
+                    <div v-else class="dz-center">
+                      <span class="dz-type-icon" v-html="currentTypeIcon" />
+                    </div>
+                  </template>
+                  <template v-else>
+                    <span class="dz-upload-icon" v-html="uploadIcon" />
+                    <span class="dz-text">拖放文件到此处</span>
+                    <span class="dz-hint">或点击浏览文件</span>
+                  </template>
                 </div>
-                <div v-else class="dz-center">
-                  <span class="dz-type-icon" v-html="currentTypeIcon" />
-                </div>
-              </template>
-              <template v-else>
-                <span class="dz-upload-icon" v-html="uploadIcon" />
-                <span class="dz-text">拖放文件到此处</span>
-                <span class="dz-hint">或点击浏览文件</span>
-              </template>
-            </div>
-
-            <!-- 路径输入 -->
-            <div class="path-row">
-              <input
-                v-model="form.file_path"
-                class="path-input"
-                placeholder="手动输入文件路径..."
-                @change="onPathChange"
-              />
-              <button class="browse-btn" @click.stop="pickFile" v-html="folderIcon" title="浏览文件" />
-            </div>
-          </div>
-
-          <!-- 右栏：表单字段 -->
-          <div class="right-col">
-
-            <div class="field-row">
-              <label class="field-label">名称</label>
-              <input v-model="form.title" class="field-input" placeholder="资源名称..." />
-            </div>
-
-            <div class="field-row">
-              <label class="field-label">类型</label>
-              <select v-model="form.type" class="field-select">
-                <option v-for="t in TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-              </select>
-            </div>
-
-            <div class="field-row align-start">
-              <label class="field-label">描述</label>
-              <textarea
-                v-model="form.note"
-                class="field-textarea"
-                placeholder="可选的备注描述..."
-                rows="2"
-              />
-            </div>
-
-            <div class="field-row align-start">
-              <label class="field-label">标签</label>
-              <div class="tags-area">
-                <div v-if="allTags.length" class="tag-chips">
-                  <button
-                    v-for="tag in allTags"
-                    :key="tag.id"
-                    class="tag-chip"
-                    :class="{ selected: selectedTagIds.includes(tag.id) }"
-                    @click="toggleTag(tag.id)"
-                  >
-                    {{ tag.name }}<span v-if="tag.count" class="tag-count">{{ tag.count }}</span>
-                  </button>
-                </div>
-                <div class="new-tag-row">
+                <div class="path-row">
                   <input
-                    v-model="newTagInput"
-                    class="new-tag-input"
-                    placeholder="新建标签，回车确认..."
-                    @keydown.enter.prevent="createAndAddTag"
+                    v-model="form.file_path"
+                    class="path-input"
+                    placeholder="手动输入文件路径..."
+                    @change="onPathChange"
                   />
+                  <button class="browse-btn" @click.stop="pickFile" v-html="folderIcon" title="浏览文件" />
+                </div>
+              </template>
+
+              <!-- 文件夹模式 -->
+              <template v-else>
+                <div
+                  class="drop-zone folder-zone"
+                  :class="{ 'has-file': !!folderPath }"
+                  @click="pickFolderForImport"
+                >
+                  <template v-if="folderPath">
+                    <span class="dz-folder-big" v-html="bigFolderIcon" />
+                    <span class="dz-folder-name">{{ folderBasename }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="dz-upload-icon" v-html="folderPlusIcon" />
+                    <span class="dz-text">选择文件夹</span>
+                    <span class="dz-hint">点击浏览文件夹</span>
+                  </template>
+                </div>
+                <div class="path-row">
+                  <input
+                    v-model="folderPath"
+                    class="path-input"
+                    placeholder="文件夹路径..."
+                    @change="onFolderPathChange"
+                  />
+                  <button class="browse-btn" @click.stop="pickFolderForImport" v-html="folderIcon" title="浏览文件夹" />
+                </div>
+              </template>
+            </div>
+
+            <!-- 右栏：表单字段（共用） -->
+            <div class="right-col">
+              <div class="field-row">
+                <label class="field-label">名称</label>
+                <input v-model="currentForm.title" class="field-input" placeholder="资源名称..." />
+              </div>
+
+              <div class="field-row">
+                <label class="field-label">类型</label>
+                <select v-model="currentForm.type" class="field-select">
+                  <option v-for="t in TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+                </select>
+              </div>
+
+              <div class="field-row align-start">
+                <label class="field-label">描述</label>
+                <textarea
+                  v-model="currentForm.note"
+                  class="field-textarea"
+                  placeholder="可选的备注描述..."
+                  rows="2"
+                />
+              </div>
+
+              <div class="field-row align-start">
+                <label class="field-label">标签</label>
+                <div class="tags-area">
+                  <div v-if="allTags.length" class="tag-chips">
+                    <button
+                      v-for="tag in allTags"
+                      :key="tag.id"
+                      class="tag-chip"
+                      :class="{ selected: selectedTagIds.includes(tag.id) }"
+                      @click="toggleTag(tag.id)"
+                    >
+                      {{ tag.name }}<span v-if="tag.count" class="tag-count">{{ tag.count }}</span>
+                    </button>
+                  </div>
+                  <div class="new-tag-row">
+                    <input
+                      v-model="newTagInput"
+                      class="new-tag-input"
+                      placeholder="新建标签，回车确认..."
+                      @keydown.enter.prevent="createAndAddTag"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-
           </div>
-        </div>
 
-        <!-- 底部操作栏 -->
-        <div class="modal-footer">
-          <span v-if="errorMsg" class="error-msg">{{ errorMsg }}</span>
-          <div class="footer-actions">
-            <button class="btn-cancel" @click="close">取消</button>
-            <button
-              class="btn-add"
-              :disabled="!canSubmit || submitting"
-              @click="submit"
-            >{{ submitting ? '添加中…' : '添加到库' }}</button>
+          <!-- 底部操作栏 -->
+          <div class="modal-footer">
+            <span v-if="errorMsg" class="error-msg">{{ errorMsg }}</span>
+            <div class="footer-actions">
+              <button class="btn-cancel" @click="close">取消</button>
+              <button
+                class="btn-add"
+                :disabled="!canSubmitCurrent || submitting"
+                @click="submitCurrent"
+              >{{ submitting ? '添加中…' : '添加到库' }}</button>
+            </div>
           </div>
-        </div>
+        </template>
+
+        <!-- ====== 扫描目录模式 ====== -->
+        <template v-if="mode === 'scan-dir'">
+          <div class="modal-body-full">
+            <div class="scan-header">
+              <div class="scan-path-row">
+                <input
+                  :value="scanDirPath"
+                  class="scan-path-input"
+                  placeholder="选择要扫描的目录..."
+                  readonly
+                />
+                <button class="scan-pick-btn" @click="pickScanDir" :disabled="scanDirLoading">
+                  {{ scanDirLoading ? '扫描中…' : '选择目录' }}
+                </button>
+              </div>
+              <div v-if="scanResults.length" class="scan-stats">
+                <span class="scan-stats-text">共 {{ scanResults.length }} 个文件</span>
+                <button class="scan-toggle-all" @click="toggleScanSelectAll">
+                  {{ scanAllSelected ? '取消全选' : '全选' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="scanDirLoading" class="scan-center">
+              <div class="spinner" />
+              <span class="scan-center-text">正在扫描目录…</span>
+            </div>
+            <div v-else-if="scanResults.length" class="scan-file-list">
+              <label
+                v-for="file in scanResults" :key="file.path"
+                class="scan-file-row" :class="{ selected: file.selected }"
+              >
+                <input type="checkbox" v-model="file.selected" class="scan-checkbox" />
+                <span class="scan-type-badge" :class="'type-' + file.type">{{ typeLabel(file.type) }}</span>
+                <span class="scan-file-name" :title="file.name">{{ file.name }}</span>
+                <span class="scan-file-path" :title="file.path">{{ relativePath(file.path) }}</span>
+              </label>
+            </div>
+            <div v-else-if="scanDirPath && !scanDirLoading" class="scan-center">
+              <span class="scan-center-text">未找到可识别的文件</span>
+            </div>
+            <div v-else class="scan-center">
+              <span class="dz-upload-icon" v-html="scanDirIcon" />
+              <span class="scan-center-text">选择一个目录，自动扫描其中所有可识别文件</span>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <span v-if="scanSelectedCount > 0" class="footer-hint">{{ scanSelectedCount }} 个文件将被导入</span>
+            <div class="footer-actions">
+              <button class="btn-cancel" @click="close">取消</button>
+              <button
+                class="btn-add"
+                :disabled="scanSelectedCount === 0 || submitting"
+                @click="importScanned"
+              >{{ submitting ? '导入中…' : `导入 (${scanSelectedCount})` }}</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- ====== 系统扫描模式 ====== -->
+        <template v-if="mode === 'scan-sys'">
+          <div class="modal-body-full scan-sys-body">
+            <template v-if="!sysScanning && sysScanResult === null">
+              <span class="scan-sys-icon" v-html="scanSysIcon" />
+              <p class="scan-sys-desc">扫描系统最近使用的文件和运行中的程序</p>
+              <button class="scan-sys-btn" @click="doSystemScan">开始扫描</button>
+            </template>
+            <template v-else-if="sysScanning">
+              <div class="spinner lg" />
+              <p class="scan-sys-desc">正在扫描系统…</p>
+            </template>
+            <template v-else>
+              <span class="scan-sys-done" v-html="checkIcon" />
+              <p class="scan-sys-desc">
+                {{ sysScanResult! > 0 ? `发现 ${sysScanResult} 个新资源` : '未发现新资源' }}
+              </p>
+              <div class="scan-sys-actions">
+                <button class="scan-sys-btn secondary" @click="doSystemScan">重新扫描</button>
+                <button class="btn-add" @click="close">完成</button>
+              </div>
+            </template>
+          </div>
+        </template>
 
       </div>
     </div>
@@ -128,6 +253,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import type { ResourceType } from '../stores/resources'
+import { useResourceStore } from '../stores/resources'
 
 const props = defineProps<{
   modelValue: boolean
@@ -137,6 +263,18 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   added: [resource: object]
 }>()
+
+const store = useResourceStore()
+
+// ── 模式 ─────────────────────────────────────────────────
+const mode = ref<'file' | 'folder' | 'scan-dir' | 'scan-sys'>('file')
+
+const modeTabs = [
+  { key: 'file' as const, label: '单个文件', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>` },
+  { key: 'folder' as const, label: '文件夹', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>` },
+  { key: 'scan-dir' as const, label: '扫描目录', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="12" y1="11" x2="12" y2="17"/></svg>` },
+  { key: 'scan-sys' as const, label: '系统扫描', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>` },
+]
 
 // ── 类型映射 ────────────────────────────────────────────
 const EXT_TYPE_MAP: Record<string, ResourceType> = {
@@ -171,7 +309,7 @@ const TYPES = [
   { value: 'novel', label: '小说/文档' },
 ]
 
-// ── 表单状态 ────────────────────────────────────────────
+// ── 单个文件模式状态 ────────────────────────────────────
 const form = ref({ file_path: '', title: '', type: 'app' as ResourceType, note: '' })
 const selectedTagIds = ref<number[]>([])
 const newTagInput = ref('')
@@ -192,10 +330,8 @@ watch(() => form.value.file_path, async (path) => {
   previewLoading.value = true
   try {
     const type = inferType(path)
-    if (type === 'image') {
+    if (type === 'image' || type === 'video') {
       previewSrc.value = await window.api.files.readImage(path)
-    } else if (type === 'video') {
-      previewSrc.value = await getVideoThumb(path)
     } else if (type === 'app') {
       previewSrc.value = await window.api.files.getAppIcon(path)
     }
@@ -204,53 +340,52 @@ watch(() => form.value.file_path, async (path) => {
   }
 })
 
-/** 用 Canvas 从视频文件截取 30% 处帧 */
-function getVideoThumb(filePath: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const video = document.createElement('video')
-    video.preload = 'metadata'
-    video.muted = true
-    video.playsInline = true
-    let done = false
-    const finish = (val: string | null) => { if (done) return; done = true; video.src = ''; resolve(val) }
-    const timer = setTimeout(() => finish(null), 8000)
-    video.onloadedmetadata = () => {
-      video.currentTime = (isFinite(video.duration) && video.duration > 1) ? video.duration * 0.3 : 0
-    }
-    video.onseeked = () => {
-      clearTimeout(timer)
-      try {
-        const w = video.videoWidth || 640
-        const h = video.videoHeight || 360
-        const canvas = document.createElement('canvas')
-        canvas.width = 480
-        canvas.height = Math.round(480 * h / w)
-        const ctx = canvas.getContext('2d')
-        if (!ctx) { finish(null); return }
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        finish(canvas.toDataURL('image/jpeg', 0.85))
-      } catch { finish(null) }
-    }
-    video.onerror = () => { clearTimeout(timer); finish(null) }
-    const urlPath = filePath.replace(/\\/g, '/')
-    video.src = `local://local-file/${encodeURIComponent(urlPath)}`
-  })
-}
+// ── 文件夹模式状态 ──────────────────────────────────────
+const folderPath = ref('')
+const folderForm = ref({ title: '', type: 'image' as ResourceType, note: '' })
+const folderBasename = computed(() => folderPath.value.replace(/[\\/]$/, '').replace(/^.*[\\/]/, ''))
+
+// ── 共用表单计算属性 ────────────────────────────────────
+const currentForm = computed(() => mode.value === 'folder' ? folderForm.value : form.value)
+
+const activeFormType = computed(() => {
+  if (mode.value === 'folder') return folderForm.value.type
+  return form.value.type
+})
 
 const canSubmit = computed(() => form.value.file_path.trim() !== '' && form.value.title.trim() !== '')
+const canSubmitFolder = computed(() => folderPath.value.trim() !== '' && folderForm.value.title.trim() !== '')
+const canSubmitCurrent = computed(() => mode.value === 'folder' ? canSubmitFolder.value : canSubmit.value)
 
-// ── 生命周期 ────────────────────────────────────────────
+function submitCurrent() {
+  if (mode.value === 'folder') submitFolder()
+  else submitFile()
+}
+
+// ── 扫描目录模式状态 ────────────────────────────────────
+const scanDirPath = ref('')
+const scanResults = ref<Array<{ path: string; name: string; type: string; selected: boolean }>>([])
+const scanDirLoading = ref(false)
+
+const scanSelectedCount = computed(() => scanResults.value.filter(r => r.selected).length)
+const scanAllSelected = computed(() => scanResults.value.length > 0 && scanResults.value.every(r => r.selected))
+
+// ── 系统扫描模式状态 ────────────────────────────────────
+const sysScanning = ref(false)
+const sysScanResult = ref<number | null>(null)
+
+// ── 标签 ────────────────────────────────────────────────
 async function loadTagsForCurrentType() {
-  allTags.value = await window.api.tags.getForType(form.value.type)
+  allTags.value = await window.api.tags.getForType(activeFormType.value, 'lastAssigned')
 }
 
 onMounted(loadTagsForCurrentType)
 
-watch(() => form.value.type, loadTagsForCurrentType)
+watch(activeFormType, loadTagsForCurrentType)
 
 watch(() => props.modelValue, (val) => {
   if (val) {
-    resetForm()
+    resetAll()
     window.api.monitor.pause()
     loadTagsForCurrentType()
   } else {
@@ -258,23 +393,33 @@ watch(() => props.modelValue, (val) => {
   }
 })
 
-function resetForm() {
+function resetAll() {
+  mode.value = 'file'
   form.value = { file_path: '', title: '', type: props.defaultType ?? 'app', note: '' }
+  folderPath.value = ''
+  folderForm.value = { title: '', type: props.defaultType ?? 'image', note: '' }
   selectedTagIds.value = []
   newTagInput.value = ''
   errorMsg.value = ''
   isDragOver.value = false
   previewSrc.value = null
   previewLoading.value = false
+  scanDirPath.value = ''
+  scanResults.value = []
+  scanDirLoading.value = false
+  sysScanning.value = false
+  sysScanResult.value = null
+  submitting.value = false
 }
 
-// ── 文件选择 ────────────────────────────────────────────
+// ── 单个文件操作 ────────────────────────────────────────
 async function pickFile() {
   const path = await window.api.files.pickFile()
   if (path) applyFile(path)
 }
 
 function onDrop(e: DragEvent) {
+  if (mode.value !== 'file') return
   isDragOver.value = false
   const file = e.dataTransfer?.files[0]
   if (file) applyFile((file as any).path ?? file.name)
@@ -295,41 +440,7 @@ function applyFile(path: string) {
   errorMsg.value = ''
 }
 
-function inferType(path: string): ResourceType {
-  const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
-  return EXT_TYPE_MAP[ext] ?? 'app'
-}
-
-function basename(path: string) {
-  return path.replace(/^.*[\\/]/, '')
-}
-
-function stemName(path: string) {
-  const base = basename(path)
-  const dot = base.lastIndexOf('.')
-  return dot > 0 ? base.slice(0, dot) : base
-}
-
-// ── 标签 ────────────────────────────────────────────────
-function toggleTag(id: number) {
-  const idx = selectedTagIds.value.indexOf(id)
-  if (idx >= 0) selectedTagIds.value.splice(idx, 1)
-  else selectedTagIds.value.push(id)
-}
-
-async function createAndAddTag() {
-  const name = newTagInput.value.trim()
-  if (!name) return
-  const tag = await window.api.tags.create(name)
-  if (!allTags.value.find(t => t.id === tag.id)) {
-    allTags.value.push({ ...tag, count: 0 })
-  }
-  if (!selectedTagIds.value.includes(tag.id)) selectedTagIds.value.push(tag.id)
-  newTagInput.value = ''
-}
-
-// ── 提交 ────────────────────────────────────────────────
-async function submit() {
+async function submitFile() {
   if (!canSubmit.value || submitting.value) return
   submitting.value = true
   errorMsg.value = ''
@@ -348,6 +459,7 @@ async function submit() {
     for (const tagId of selectedTagIds.value) {
       await window.api.tags.addToResource(resource.id, tagId)
     }
+    store.addOrUpdate(resource as any)
     emit('added', resource)
     close()
   } catch (e: any) {
@@ -357,14 +469,160 @@ async function submit() {
   }
 }
 
+// ── 文件夹操作 ──────────────────────────────────────────
+async function pickFolderForImport() {
+  const path = await window.api.files.pickFolder()
+  if (path) {
+    folderPath.value = path
+    if (!folderForm.value.title) {
+      folderForm.value.title = path.replace(/[\\/]$/, '').replace(/^.*[\\/]/, '')
+    }
+  }
+}
+
+function onFolderPathChange() {
+  const p = folderPath.value.trim()
+  if (p && !folderForm.value.title) {
+    folderForm.value.title = p.replace(/[\\/]$/, '').replace(/^.*[\\/]/, '')
+  }
+}
+
+async function submitFolder() {
+  if (!canSubmitFolder.value || submitting.value) return
+  submitting.value = true
+  errorMsg.value = ''
+  try {
+    const { resource, existed } = await window.api.resources.add({
+      type: folderForm.value.type,
+      title: folderForm.value.title.trim(),
+      file_path: folderPath.value.trim(),
+      note: folderForm.value.note.trim() || undefined,
+    })
+    if (existed) {
+      errorMsg.value = '此文件夹已在库中'
+      submitting.value = false
+      return
+    }
+    for (const tagId of selectedTagIds.value) {
+      await window.api.tags.addToResource(resource.id, tagId)
+    }
+    store.addOrUpdate(resource as any)
+    emit('added', resource)
+    close()
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? '添加失败'
+  } finally {
+    submitting.value = false
+  }
+}
+
+// ── 扫描目录操作 ────────────────────────────────────────
+async function pickScanDir() {
+  const path = await window.api.files.pickFolder()
+  if (path) {
+    scanDirPath.value = path
+    scanDirLoading.value = true
+    scanResults.value = []
+    try {
+      const files = await window.api.files.scanDirectory(path)
+      scanResults.value = files.map(f => ({ ...f, selected: true }))
+    } finally {
+      scanDirLoading.value = false
+    }
+  }
+}
+
+function toggleScanSelectAll() {
+  const newVal = !scanAllSelected.value
+  for (const r of scanResults.value) r.selected = newVal
+}
+
+async function importScanned() {
+  const items = scanResults.value
+    .filter(r => r.selected)
+    .map(r => ({ type: r.type, title: r.name, file_path: r.path }))
+  if (items.length === 0) return
+  submitting.value = true
+  try {
+    const result = await window.api.resources.batchAdd(items)
+    for (const res of result.added) store.addOrUpdate(res as any)
+    close()
+  } finally {
+    submitting.value = false
+  }
+}
+
+function relativePath(fullPath: string): string {
+  if (scanDirPath.value && fullPath.startsWith(scanDirPath.value)) {
+    return fullPath.slice(scanDirPath.value.length).replace(/^[\\/]/, '')
+  }
+  return fullPath
+}
+
+function typeLabel(type: string): string {
+  const map: Record<string, string> = {
+    game: '游戏', app: '应用', image: '图片', video: '视频',
+    music: '音乐', comic: '漫画', novel: '小说'
+  }
+  return map[type] ?? type
+}
+
+// ── 系统扫描操作 ────────────────────────────────────────
+async function doSystemScan() {
+  sysScanning.value = true
+  sysScanResult.value = null
+  try {
+    const found = await window.api.monitor.scanNow()
+    for (const r of found) store.addOrUpdate(r as any)
+    sysScanResult.value = found.length
+  } finally {
+    sysScanning.value = false
+  }
+}
+
+// ── 标签操作 ────────────────────────────────────────────
+function toggleTag(id: number) {
+  const idx = selectedTagIds.value.indexOf(id)
+  if (idx >= 0) selectedTagIds.value.splice(idx, 1)
+  else selectedTagIds.value.push(id)
+}
+
+async function createAndAddTag() {
+  const name = newTagInput.value.trim()
+  if (!name) return
+  const tag = await window.api.tags.create(name)
+  if (!allTags.value.find(t => t.id === tag.id)) {
+    allTags.value.push({ ...tag, count: 0 })
+  }
+  if (!selectedTagIds.value.includes(tag.id)) selectedTagIds.value.push(tag.id)
+  newTagInput.value = ''
+}
+
+// ── 辅助函数 ────────────────────────────────────────────
+function inferType(path: string): ResourceType {
+  const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
+  return EXT_TYPE_MAP[ext] ?? 'app'
+}
+
+function stemName(path: string) {
+  const base = path.replace(/^.*[\\/]/, '')
+  const dot = base.lastIndexOf('.')
+  return dot > 0 ? base.slice(0, dot) : base
+}
+
 function close() {
   emit('update:modelValue', false)
 }
 
 // ── Icons ────────────────────────────────────────────────
-const closeIcon  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
-const uploadIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`
-const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`
+const closeIcon     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+const uploadIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`
+const folderIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`
+const bigFolderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`
+const folderPlusIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>`
+const scanDirIcon   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="12" y1="11" x2="12" y2="17"/></svg>`
+const scanSysIcon   = `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="22" cy="22" r="14"/><line x1="42" y1="42" x2="33" y2="33"/><path d="M22 14v8l6 3"/></svg>`
+const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" stroke-width="3"><circle cx="24" cy="24" r="20" stroke-opacity="0.2"/><path d="M14 24l7 7 13-13"/></svg>`
 </script>
 
 <style scoped>
@@ -396,8 +654,7 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 .modal-header {
   display: flex;
   align-items: center;
-  padding: 16px 18px 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 16px 18px 0;
   flex-shrink: 0;
 }
 
@@ -424,6 +681,44 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 }
 .close-btn:hover { background: var(--surface-2); color: var(--text); }
 .close-btn :deep(svg) { width: 16px; height: 16px; }
+
+/* ── 模式标签 ───────────────────────────────────────── */
+.mode-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 12px 18px 0;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mode-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.mode-tab:hover { color: var(--text-2); }
+.mode-tab.active {
+  color: var(--accent-2);
+  border-bottom-color: var(--accent);
+}
+
+.mode-tab-icon {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  flex-shrink: 0;
+}
+.mode-tab-icon :deep(svg) { width: 14px; height: 14px; }
 
 /* ── 主体双栏 ───────────────────────────────────────── */
 .modal-body {
@@ -473,7 +768,11 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   padding: 0;
 }
 
-/* 有文件时的预览图 */
+.folder-zone.has-file {
+  padding: 20px;
+  gap: 10px;
+}
+
 .dz-img {
   width: 100%;
   height: 100%;
@@ -503,7 +802,6 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 }
 .dz-type-icon :deep(svg) { width: 56px; height: 56px; }
 
-/* 空状态 */
 .dz-upload-icon {
   width: 32px;
   height: 32px;
@@ -523,7 +821,22 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   color: var(--text-3);
 }
 
-/* 加载动画 */
+.dz-folder-big {
+  width: 48px;
+  height: 48px;
+  color: var(--accent-2);
+  display: flex;
+}
+.dz-folder-big :deep(svg) { width: 48px; height: 48px; }
+
+.dz-folder-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: center;
+  word-break: break-all;
+}
+
 .spinner {
   width: 24px;
   height: 24px;
@@ -532,6 +845,7 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+.spinner.lg { width: 32px; height: 32px; border-width: 3px; }
 
 /* ── 路径输入行 ──────────────────────────────────────── */
 .path-row {
@@ -710,6 +1024,12 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
   color: var(--danger);
 }
 
+.footer-hint {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
 .footer-actions {
   display: flex;
   gap: 8px;
@@ -743,6 +1063,227 @@ const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 }
 .btn-add:hover:not(:disabled) { opacity: 0.85; }
 .btn-add:disabled { opacity: 0.4; cursor: default; }
+
+/* ── 全宽模式（扫描目录 / 系统扫描） ────────────────── */
+.modal-body-full {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── 扫描目录 ────────────────────────────────────────── */
+.scan-header {
+  padding: 14px 18px 0;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scan-path-row {
+  display: flex;
+  gap: 8px;
+}
+
+.scan-path-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: 'Consolas', monospace;
+  outline: none;
+  min-width: 0;
+}
+.scan-path-input::placeholder { color: var(--text-3); }
+
+.scan-pick-btn {
+  padding: 8px 16px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  color: var(--accent-2);
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.scan-pick-btn:hover:not(:disabled) { background: rgba(99, 102, 241, 0.2); }
+.scan-pick-btn:disabled { opacity: 0.5; cursor: default; }
+
+.scan-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scan-stats-text {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.scan-toggle-all {
+  font-size: 12px;
+  color: var(--accent-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.scan-toggle-all:hover { background: rgba(99, 102, 241, 0.12); }
+
+.scan-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+}
+
+.scan-center-text {
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.scan-file-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.scan-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.08s;
+}
+.scan-file-row:hover { background: var(--surface-2); }
+.scan-file-row.selected { background: rgba(99, 102, 241, 0.05); }
+
+.scan-checkbox {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.scan-type-badge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: center;
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+.scan-type-badge.type-image { color: #10b981; background: rgba(16, 185, 129, 0.1); }
+.scan-type-badge.type-video { color: #8b5cf6; background: rgba(139, 92, 246, 0.1); }
+.scan-type-badge.type-music { color: #ec4899; background: rgba(236, 72, 153, 0.1); }
+.scan-type-badge.type-game  { color: var(--accent-2); background: rgba(99, 102, 241, 0.1); }
+.scan-type-badge.type-app   { color: var(--text-2); background: var(--surface-3); }
+.scan-type-badge.type-comic { color: #f97316; background: rgba(249, 115, 22, 0.1); }
+.scan-type-badge.type-novel { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+
+.scan-file-name {
+  font-size: 13px;
+  color: var(--text);
+  flex-shrink: 0;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scan-file-path {
+  flex: 1;
+  font-size: 11px;
+  font-family: 'Consolas', monospace;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── 系统扫描 ────────────────────────────────────────── */
+.scan-sys-body {
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 40px;
+}
+
+.scan-sys-icon {
+  width: 56px;
+  height: 56px;
+  color: var(--text-3);
+  opacity: 0.5;
+  display: flex;
+}
+.scan-sys-icon :deep(svg) { width: 56px; height: 56px; }
+
+.scan-sys-desc {
+  font-size: 14px;
+  color: var(--text-2);
+  text-align: center;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+.scan-sys-btn {
+  padding: 10px 28px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.scan-sys-btn:hover { opacity: 0.85; }
+.scan-sys-btn.secondary {
+  background: var(--surface-3);
+  border-color: var(--border);
+  color: var(--text-2);
+}
+.scan-sys-btn.secondary:hover { background: var(--border); color: var(--text); }
+
+.scan-sys-done {
+  width: 48px;
+  height: 48px;
+  display: flex;
+}
+.scan-sys-done :deep(svg) { width: 48px; height: 48px; }
+
+.scan-sys-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
 
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

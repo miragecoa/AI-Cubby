@@ -193,7 +193,7 @@ watch(() => props.resource.id, () => {
 const tagSuggestions = ref<Array<{ id: number; name: string; count: number }>>([])
 
 async function loadTagSuggestions() {
-  tagSuggestions.value = await window.api.tags.getForType(props.resource.type)
+  tagSuggestions.value = await window.api.tags.getForType(props.resource.type, 'lastAssigned')
 }
 
 onMounted(loadTagSuggestions)
@@ -213,6 +213,7 @@ async function addTagFromSuggestion(tag: { id: number; name: string }) {
     ...props.resource,
     tags: [...(props.resource.tags ?? []), { id: tag.id, name: tag.name, source: 'manual' }]
   })
+  loadTagSuggestions()
 }
 
 // ─── Cover image ───────────────────────────────────────────────────

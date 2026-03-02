@@ -134,6 +134,25 @@ function startPidCheck(): void {
   }, 5000)
 }
 
+/** 手动注册一个外部启动的进程（如管理员模式启动），纳入运行会话追踪 */
+export function trackRunningProcess(filePath: string, pid: number): Resource | null {
+  const resource = getResourceByPath(filePath)
+  if (!resource) return null
+  const alreadyTracking = [...runningSessions.values()].some(s => s.resourceId === resource.id)
+  if (alreadyTracking) return null
+  const startTime = Date.now()
+  runningSessions.set(pid, { resourceId: resource.id, filePath, startTime })
+  startPidCheck()
+  try {
+    const updated = recordProcessStart(resource.id)
+    onRunningChangeCb?.({ resourceId: resource.id, running: true, startTime, resource: updated ?? undefined })
+    return updated
+  } catch (e) {
+    console.error('[Monitor] recordProcessStart failed:', e)
+    return null
+  }
+}
+
 export function killRunningResource(resourceId: string): void {
   for (const [pid, session] of runningSessions) {
     if (session.resourceId === resourceId) {

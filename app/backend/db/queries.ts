@@ -112,6 +112,7 @@ export function addManualResource(data: {
   title: string
   file_path: string
   note?: string
+  meta?: string
 }): { resource: Resource; existed: boolean } {
   const db = getDb()
   const existing = db.prepare('SELECT * FROM resources WHERE file_path = ?').get(data.file_path) as Resource | undefined
@@ -122,8 +123,8 @@ export function addManualResource(data: {
   const now = Date.now()
   db.prepare(`
     INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at)
-    VALUES (@id, @type, @title, @file_path, NULL, 0, @note, NULL, @added_at, @updated_at)
-  `).run({ id, type: data.type, title: data.title, file_path: data.file_path, note: data.note ?? null, added_at: now, updated_at: now })
+    VALUES (@id, @type, @title, @file_path, NULL, 0, @note, @meta, @added_at, @updated_at)
+  `).run({ id, type: data.type, title: data.title, file_path: data.file_path, note: data.note ?? null, meta: data.meta ?? null, added_at: now, updated_at: now })
   return { resource: getResourceById(id)!, existed: false }
 }
 
@@ -143,7 +144,7 @@ export function restoreResource(resource: Resource): Resource | null {
   if (Array.isArray((resource as any).tags)) {
     for (const tag of (resource as any).tags as Array<{ id: number; name: string; source?: string }>) {
       db.prepare('INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)').run(tag.id, tag.name)
-      db.prepare('INSERT OR IGNORE INTO resource_tags (resource_id, tag_id, source) VALUES (?, ?, ?)').run(resource.id, tag.id, tag.source ?? 'manual')
+      db.prepare('INSERT OR IGNORE INTO resource_tags (resource_id, tag_id, source, assigned_at) VALUES (?, ?, ?, ?)').run(resource.id, tag.id, tag.source ?? 'manual', Date.now())
     }
   }
   return getResourceById(resource.id)
@@ -215,34 +216,57 @@ export function upgradeSteamGame(
   return getResourceById(existing.id)
 }
 
+// ── 批量操作 ──────────────────────────────────────────────
+
+/** 批量删除资源（含 resource_tags 级联），返回删除行数 */
+export function batchRemoveResources(ids: string[]): number {
+  if (ids.length === 0) return 0
+  const db = getDb()
+  const ph = ids.map(() => '?').join(',')
+  db.prepare(`DELETE FROM resource_tags WHERE resource_id IN (${ph})`).run(...ids)
+  return db.prepare(`DELETE FROM resources WHERE id IN (${ph})`).run(...ids).changes
+}
+
+/** 批量替换路径前缀（换盘符），返回受影响行数 */
+export function batchReplacePath(oldPrefix: string, newPrefix: string): number {
+  const db = getDb()
+  const now = Date.now()
+  return db.prepare(`
+    UPDATE resources
+    SET file_path = ? || substr(file_path, ?), updated_at = ?
+    WHERE file_path LIKE ? || '%'
+  `).run(newPrefix, oldPrefix.length + 1, now, oldPrefix).changes
+}
+
 // ── 标签查询 ────────────────────────────────────────────
 
 export function getAllTags(): Tag[] {
   return getDb().prepare('SELECT * FROM tags ORDER BY name').all() as Tag[]
 }
 
-/** 按资源类型获取标签，附带该类型下的使用计数，按计数降序排列。
- *  type 为空时统计所有类型。只返回至少使用过一次的标签。 */
-export function getTagsForType(type?: string): Array<{ id: number; name: string; count: number }> {
+/** 按资源类型获取标签，附带该类型下的使用计数。
+ *  type 为空时统计所有类型。只返回至少使用过一次的标签。
+ *  sort: 'count'(默认) | 'name' | 'lastUsed' | 'lastAssigned' */
+export function getTagsForType(type?: string, sort = 'count'): Array<{ id: number; name: string; count: number }> {
   const db = getDb()
-  if (type) {
-    return db.prepare(`
-      SELECT t.id, t.name, COUNT(rt.resource_id) AS count
-      FROM tags t
-      JOIN resource_tags rt ON t.id = rt.tag_id
-      JOIN resources r ON rt.resource_id = r.id
-      WHERE r.type = ?
-      GROUP BY t.id
-      ORDER BY count DESC, t.name ASC
-    `).all(type) as Array<{ id: number; name: string; count: number }>
+  const ORDER_MAP: Record<string, string> = {
+    count:        'count DESC, t.name ASC',
+    name:         't.name ASC',
+    lastUsed:     'MAX(r.last_run_at) DESC, count DESC',
+    lastAssigned: 'MAX(rt.assigned_at) DESC, count DESC',
   }
+  const orderBy = ORDER_MAP[sort] ?? ORDER_MAP.count
+  const typeFilter = type ? 'WHERE r.type = ?' : ''
+  const params = type ? [type] : []
   return db.prepare(`
     SELECT t.id, t.name, COUNT(rt.resource_id) AS count
     FROM tags t
     JOIN resource_tags rt ON t.id = rt.tag_id
+    JOIN resources r ON rt.resource_id = r.id
+    ${typeFilter}
     GROUP BY t.id
-    ORDER BY count DESC, t.name ASC
-  `).all() as Array<{ id: number; name: string; count: number }>
+    ORDER BY ${orderBy}
+  `).all(...params) as Array<{ id: number; name: string; count: number }>
 }
 
 export function createTag(name: string): Tag {
@@ -256,9 +280,11 @@ export function removeTag(id: number): void {
 }
 
 export function addTagToResource(resourceId: string, tagId: number, source = 'manual'): void {
-  getDb()
-    .prepare('INSERT OR IGNORE INTO resource_tags (resource_id, tag_id, source) VALUES (?, ?, ?)')
-    .run(resourceId, tagId, source)
+  const now = Date.now()
+  const db = getDb()
+  db.prepare('INSERT OR IGNORE INTO resource_tags (resource_id, tag_id, source, assigned_at) VALUES (?, ?, ?, ?)').run(resourceId, tagId, source, now)
+  // 如果已存在，更新 assigned_at（使最近使用的标签排在前面）
+  db.prepare('UPDATE resource_tags SET assigned_at = ? WHERE resource_id = ? AND tag_id = ? AND assigned_at < ?').run(now, resourceId, tagId, now)
 }
 
 export function removeTagFromResource(resourceId: string, tagId: number): void {

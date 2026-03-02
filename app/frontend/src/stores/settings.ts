@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { NAV_ITEM_DEFS } from '../config/navItems'
 
+export type ResourceSortField = 'lastUsed' | 'recentlyAdded' | 'name' | 'openCount' | 'totalTime'
+export type TagSortField = 'lastUsed' | 'count' | 'name'
+
 export interface SidebarNavConfig {
   type: string
   visible: boolean
@@ -15,22 +18,35 @@ export const useSettingsStore = defineStore('settings', () => {
   const zoom = ref(1.5)
   const cardZoom = ref(0.75)
   const sidebarNav = ref<SidebarNavConfig[]>(DEFAULT_SIDEBAR_NAV.map(x => ({ ...x })))
+  const resourceSort = ref<ResourceSortField>('lastUsed')
+  const tagSort = ref<TagSortField>('lastUsed')
+  const sidebarCollapsed = ref(false)
+  const showFileExt = ref(true)
   const loaded = ref(false)
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
       window.api.settings.get('cardZoom'),
       window.api.settings.get('sidebarNav'),
+      window.api.settings.get('resourceSort'),
+      window.api.settings.get('tagSort'),
+      window.api.settings.get('sidebarCollapsed'),
+      window.api.settings.get('showFileExt'),
     ])
     monitorEnabled.value = monitorVal !== 'false'
     autostartEnabled.value = autostartVal
     zoom.value = zoomVal ? parseFloat(zoomVal) : 1.5
     cardZoom.value = cardZoomVal ? parseFloat(cardZoomVal) : 0.75
     window.api.app.setZoom(zoom.value)
+
+    if (resSortVal) resourceSort.value = resSortVal as ResourceSortField
+    if (tagSortVal) tagSort.value = tagSortVal as TagSortField
+    if (collapsedVal) sidebarCollapsed.value = collapsedVal === 'true'
+    if (fileExtVal !== null && fileExtVal !== undefined) showFileExt.value = fileExtVal !== 'false'
 
     if (navVal) {
       try {
@@ -69,10 +85,30 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('cardZoom', String(factor))
   }
 
+  async function setResourceSort(sort: ResourceSortField) {
+    resourceSort.value = sort
+    await window.api.settings.set('resourceSort', sort)
+  }
+
+  async function setTagSort(sort: TagSortField) {
+    tagSort.value = sort
+    await window.api.settings.set('tagSort', sort)
+  }
+
   async function setSidebarNav(nav: SidebarNavConfig[]) {
     sidebarNav.value = [...nav]
     await window.api.settings.set('sidebarNav', JSON.stringify(nav))
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, load, setMonitor, setAutostart, setZoom, setCardZoom, setSidebarNav }
+  async function setSidebarCollapsed(collapsed: boolean) {
+    sidebarCollapsed.value = collapsed
+    await window.api.settings.set('sidebarCollapsed', String(collapsed))
+  }
+
+  async function setShowFileExt(enabled: boolean) {
+    showFileExt.value = enabled
+    await window.api.settings.set('showFileExt', String(enabled))
+  }
+
+  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, load, setMonitor, setAutostart, setZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt }
 })

@@ -23,6 +23,7 @@
   "dependencies": {
     "better-sqlite3": "^9.4.3",
     "pinia": "^2.1.7",
+    "pinyin-pro": "^3.28.0",
     "vue": "^3.4.21",
     "vue-router": "^4.3.0"
   },
@@ -30,7 +31,10 @@
     "appId": "com.airesourcemanager.app",
     "productName": "AI资源管家",
     "win": {
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "nsis": {
       "oneClick": false,

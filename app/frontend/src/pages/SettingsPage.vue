@@ -60,6 +60,25 @@
         </div>
       </section>
 
+      <!-- 显示设置 -->
+      <section class="section">
+        <h2 class="section-title">显示</h2>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">显示文件后缀</div>
+            <div class="setting-desc">在资源卡片标题中显示文件扩展名（如 .exe、.sai2）</div>
+          </div>
+          <button
+            class="toggle"
+            :class="{ on: settingsStore.showFileExt }"
+            @click="settingsStore.setShowFileExt(!settingsStore.showFileExt)"
+          >
+            <span class="toggle-thumb" />
+          </button>
+        </div>
+      </section>
+
       <!-- 数据管理 -->
       <section class="section">
         <h2 class="section-title">数据管理</h2>

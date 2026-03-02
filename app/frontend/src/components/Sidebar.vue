@@ -1,69 +1,79 @@
 <template>
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="3" y="3" width="7" height="7" rx="1.5" />
-        <rect x="14" y="3" width="7" height="7" rx="1.5" />
-        <rect x="3" y="14" width="7" height="7" rx="1.5" />
-        <rect x="14" y="14" width="7" height="7" rx="1.5" />
-      </svg>
-      <span class="logo-text">AI资源管家</span>
-      <button
-        class="edit-btn"
-        :class="{ active: editing }"
-        :title="editing ? '完成编辑' : '自定义侧边栏'"
-        @click="editing = !editing"
-      >
-        <span v-html="editing ? doneIcon : editIcon" />
-      </button>
-    </div>
-
-    <!-- 普通导航 -->
-    <nav v-if="!editing" class="nav-section">
-      <button
-        v-for="item in visibleNavItems"
-        :key="item.type"
-        class="nav-item"
-        :class="{ active: store.activeType === item.type }"
-        @click="select(item.type)"
-      >
-        <span class="nav-icon" v-html="item.svg" />
-        <span class="nav-label">{{ item.label }}</span>
-        <span v-if="store.counts[item.type]" class="nav-count">
-          {{ store.counts[item.type] }}
-        </span>
-      </button>
-    </nav>
-
-    <!-- 编辑模式 -->
-    <div v-else class="nav-section edit-mode">
-      <div class="edit-hint">拖拽排序 · 点击眼睛显隐</div>
-      <div
-        v-for="(cfg, idx) in settingsStore.sidebarNav"
-        :key="cfg.type"
-        class="edit-item"
-        :class="{ 'is-hidden': !cfg.visible, 'is-drag-over': dragOverIdx === idx }"
-        draggable="true"
-        @dragstart="onDragStart(idx)"
-        @dragover.prevent="onDragOver(idx)"
-        @drop.prevent="onDrop(idx)"
-        @dragend="onDragEnd"
-      >
-        <span class="drag-handle" v-html="dragHandleIcon" />
-        <span class="edit-icon" v-html="getNavDef(cfg.type)?.svg" />
-        <span class="edit-label">{{ getNavDef(cfg.type)?.label }}</span>
-        <button class="vis-btn" @click="toggleVisible(idx)" :title="cfg.visible ? '隐藏' : '显示'">
-          <span v-html="cfg.visible ? eyeIcon : eyeOffIcon" />
+  <aside class="sidebar" :class="{ collapsed: settingsStore.sidebarCollapsed }">
+    <div class="sidebar-content">
+      <div class="sidebar-header">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        </svg>
+        <span class="logo-text">AI资源管家</span>
+        <button
+          class="edit-btn"
+          :class="{ active: editing }"
+          :title="editing ? '完成编辑' : '自定义侧边栏'"
+          @click="editing = !editing"
+        >
+          <span v-html="editing ? doneIcon : editIcon" />
         </button>
+      </div>
+
+      <!-- 普通导航 -->
+      <nav v-if="!editing" class="nav-section">
+        <button
+          v-for="item in visibleNavItems"
+          :key="item.type"
+          class="nav-item"
+          :class="{ active: store.activeType === item.type }"
+          @click="select(item.type)"
+        >
+          <span class="nav-icon" v-html="item.svg" />
+          <span class="nav-label">{{ item.label }}</span>
+          <span v-if="store.counts[item.type]" class="nav-count">
+            {{ store.counts[item.type] }}
+          </span>
+        </button>
+      </nav>
+
+      <!-- 编辑模式 -->
+      <div v-else class="nav-section edit-mode">
+        <div class="edit-hint">拖拽排序 · 点击眼睛显隐</div>
+        <div
+          v-for="(cfg, idx) in settingsStore.sidebarNav"
+          :key="cfg.type"
+          class="edit-item"
+          :class="{ 'is-hidden': !cfg.visible, 'is-drag-over': dragOverIdx === idx }"
+          draggable="true"
+          @dragstart="onDragStart(idx)"
+          @dragover.prevent="onDragOver(idx)"
+          @drop.prevent="onDrop(idx)"
+          @dragend="onDragEnd"
+        >
+          <span class="drag-handle" v-html="dragHandleIcon" />
+          <span class="edit-icon" v-html="getNavDef(cfg.type)?.svg" />
+          <span class="edit-label">{{ getNavDef(cfg.type)?.label }}</span>
+          <button class="vis-btn" @click="toggleVisible(idx)" :title="cfg.visible ? '隐藏' : '显示'">
+            <span v-html="cfg.visible ? eyeIcon : eyeOffIcon" />
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <RouterLink to="/settings" class="nav-item">
+          <span class="nav-icon" v-html="settingsIcon" />
+          <span class="nav-label">设置</span>
+        </RouterLink>
       </div>
     </div>
 
-    <div class="sidebar-footer">
-      <RouterLink to="/settings" class="nav-item">
-        <span class="nav-icon" v-html="settingsIcon" />
-        <span class="nav-label">设置</span>
-      </RouterLink>
-    </div>
+    <button
+      class="panel-toggle"
+      @click="toggleCollapse"
+      :title="settingsStore.sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+    >
+      <span v-html="settingsStore.sidebarCollapsed ? chevronRightSvg : chevronLeftSvg" />
+    </button>
   </aside>
 </template>
 
@@ -93,6 +103,12 @@ const visibleNavItems = computed(() =>
 function select(type: string) {
   store.activeType = type as ResourceType | 'all'
   router.push('/library')
+}
+
+function toggleCollapse() {
+  // 收起时退出编辑模式
+  if (!settingsStore.sidebarCollapsed) editing.value = false
+  settingsStore.setSidebarCollapsed(!settingsStore.sidebarCollapsed)
 }
 
 // ── 编辑模式：拖拽排序 ────────────────────────────────────────────
@@ -129,16 +145,62 @@ const doneIcon      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const dragHandleIcon= `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`
 const eyeIcon       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`
 const eyeOffIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+const chevronLeftSvg  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>`
+const chevronRightSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>`
 </script>
 
 <style scoped>
 .sidebar {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
   width: 210px;
-  min-width: 210px;
   background: var(--surface);
   border-right: 1px solid var(--border);
+  transition: width 0.22s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 22px;
+}
+
+.sidebar-content {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .sidebar-content {
+  display: none;
+}
+
+/* ── 折叠切换条 ─────────────────────────────────────────────── */
+.panel-toggle {
+  width: 22px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+
+.panel-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.panel-toggle :deep(svg) {
+  width: 13px;
+  height: 13px;
 }
 
 .sidebar-header {
@@ -147,6 +209,8 @@ const eyeOffIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
   gap: 8px;
   padding: 10px 8px 10px 14px;
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .logo-icon {
@@ -184,6 +248,8 @@ const eyeOffIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
   text-decoration: none;
   transition: background 0.1s, color 0.1s;
   position: relative;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .nav-item:hover {

@@ -14,7 +14,7 @@ declare global {
       }
       tags: {
         getAll: () => Promise<Array<{ id: number; name: string }>>
-        getForType: (type?: string) => Promise<Array<{ id: number; name: string; count: number }>>
+        getForType: (type?: string, sort?: string) => Promise<Array<{ id: number; name: string; count: number }>>
         create: (name: string) => Promise<{ id: number; name: string }>
         remove: (id: number) => Promise<void>
         addToResource: (resourceId: string, tagId: number, source?: string) => Promise<void>

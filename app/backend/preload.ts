@@ -10,13 +10,20 @@ contextBridge.exposeInMainWorld('api', {
     remove: (id: string) => ipcRenderer.invoke('resources:remove', id),
     restore: (resource: object) => ipcRenderer.invoke('resources:restore', resource),
     ignore: (filePath: string) => ipcRenderer.invoke('resources:ignore', filePath),
-    add: (data: object) => ipcRenderer.invoke('resources:add', data)
+    add: (data: object) => ipcRenderer.invoke('resources:add', data),
+    batchRemove: (ids: string[]): Promise<number> => ipcRenderer.invoke('resources:batchRemove', ids),
+    batchUpdate: (ids: string[], data: object): Promise<any[]> => ipcRenderer.invoke('resources:batchUpdate', ids, data),
+    batchReplacePath: (oldPrefix: string, newPrefix: string): Promise<{ count: number; resources: any[] }> =>
+      ipcRenderer.invoke('resources:batchReplacePath', oldPrefix, newPrefix),
+    batchIgnore: (filePaths: string[]): Promise<number> => ipcRenderer.invoke('resources:batchIgnore', filePaths),
+    batchAdd: (items: Array<{ type: string; title: string; file_path: string; meta?: string }>): Promise<{ added: any[]; skipped: number }> =>
+      ipcRenderer.invoke('resources:batchAdd', items)
   },
 
   // 标签
   tags: {
     getAll: () => ipcRenderer.invoke('tags:getAll'),
-    getForType: (type?: string) => ipcRenderer.invoke('tags:getForType', type),
+    getForType: (type?: string, sort?: string) => ipcRenderer.invoke('tags:getForType', type, sort),
     create: (name: string) => ipcRenderer.invoke('tags:create', name),
     remove: (id: number) => ipcRenderer.invoke('tags:remove', id),
     addToResource: (resourceId: string, tagId: number, source?: string) =>
@@ -38,13 +45,20 @@ contextBridge.exposeInMainWorld('api', {
 
   // 文件操作
   files: {
-    openPath: (filePath: string) => ipcRenderer.invoke('files:openPath', filePath),
+    openPath: (filePath: string, meta?: string) => ipcRenderer.invoke('files:openPath', filePath, meta),
+    openAsAdmin: (filePath: string) => ipcRenderer.invoke('files:openAsAdmin', filePath),
     openInExplorer: (filePath: string) => ipcRenderer.invoke('files:openInExplorer', filePath),
+    resolveDropped: (paths: string[]): Promise<Array<{ type: string; title: string; file_path: string; meta?: string }>> =>
+      ipcRenderer.invoke('files:resolveDropped', paths),
     readImage: (filePath: string): Promise<string | null> => ipcRenderer.invoke('files:readImage', filePath),
     getAppIcon: (filePath: string): Promise<string | null> => ipcRenderer.invoke('files:getAppIcon', filePath),
     saveCover: (resourceId: string, dataUrl: string): Promise<string | null> => ipcRenderer.invoke('files:saveCover', resourceId, dataUrl),
     pickFile: (): Promise<string | null> => ipcRenderer.invoke('files:pickFile'),
-    pickImage: (): Promise<string | null> => ipcRenderer.invoke('files:pickImage')
+    pickImage: (): Promise<string | null> => ipcRenderer.invoke('files:pickImage'),
+    pickFolder: (): Promise<string | null> => ipcRenderer.invoke('files:pickFolder'),
+    pickMultipleFiles: (): Promise<string[] | null> => ipcRenderer.invoke('files:pickMultipleFiles'),
+    scanDirectory: (dirPath: string): Promise<Array<{ path: string; name: string; type: string }>> =>
+      ipcRenderer.invoke('files:scanDirectory', dirPath)
   },
 
   // 监听主进程推送的新资源
@@ -78,6 +92,18 @@ contextBridge.exposeInMainWorld('api', {
   loginItem: {
     get: (): Promise<boolean> => ipcRenderer.invoke('loginItem:get'),
     set: (enable: boolean): Promise<void> => ipcRenderer.invoke('loginItem:set', enable)
+  },
+
+  // 窗口控制（自定义标题栏）
+  win: {
+    minimize:    (): Promise<void> => ipcRenderer.invoke('window:minimize'),
+    maximize:    (): Promise<boolean> => ipcRenderer.invoke('window:maximize'),
+    close:       (): Promise<void> => ipcRenderer.invoke('window:close'),
+    isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
+    onMaximizeChange: (callback: (maximized: boolean) => void) => {
+      ipcRenderer.on('window:maximizeChange', (_e, val) => callback(val))
+      return () => ipcRenderer.removeAllListeners('window:maximizeChange')
+    }
   },
 
   // 应用控制 + 缩放（webFrame 在 preload 上下文中直接可用）

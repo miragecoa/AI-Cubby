@@ -1,23 +1,28 @@
 <template>
-  <div class="card" @dblclick="$emit('open', resource)" @contextmenu.prevent="openMenu($event)">
-    <div class="cover" :class="{ 'is-app': resource.type === 'app' }" @click.stop="$emit('open', resource)">
+  <div class="card" :class="{ 'is-selected': selected }" @dblclick="selectable ? $emit('toggle-select', resource) : $emit('open', resource)" @contextmenu.prevent="!selectable && openMenu($event)" @click="selectable ? $emit('toggle-select', resource) : undefined">
+    <div class="cover" :class="{ 'is-app': resource.type === 'app' }" @click.stop="selectable ? $emit('toggle-select', resource) : $emit('open', resource)">
       <img v-if="thumbSrc" :src="thumbSrc" :alt="resource.title" />
       <div v-else class="cover-placeholder" style="pointer-events:none">
         <span class="type-icon" v-html="typeIcon" />
       </div>
-      <!-- hover 覆盖层：▶ 运行 / ⏹ 结束 -->
-      <div class="cover-action" :class="{ 'is-running': isRunning }"
+      <!-- hover 覆盖层：▶ 运行 / ⏹ 结束（批量选择时隐藏，避免拦截点击） -->
+      <div v-if="!selectable" class="cover-action" :class="{ 'is-running': isRunning }"
         @click.stop="isRunning ? showKillConfirm = true : $emit('open', resource)">
         <div class="action-btn">
           <span v-html="isRunning ? stopIcon : playIcon" />
         </div>
       </div>
-      <!-- 运行中徽章 -->
-      <div v-if="isRunning" class="running-badge">
+      <!-- 运行中徽章（批量选择时隐藏） -->
+      <div v-if="isRunning && !selectable" class="running-badge">
         <span class="running-dot" />运行中
+      </div>
+      <!-- 批量选择 checkbox -->
+      <div v-if="selectable" class="select-checkbox" :class="{ checked: selected }" @click.stop="$emit('toggle-select', resource)">
+        <svg v-if="selected" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6l2.5 2.5 4.5-5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
       <!-- 快捷置顶按钮：左上角，hover 时出现；已置顶时常驻 -->
       <button
+        v-if="!selectable"
         class="pin-quick-btn"
         :class="{ 'is-pinned': resource.pinned }"
         @click.stop="togglePin"
@@ -27,7 +32,7 @@
       </button>
       <!-- 快捷忽略按钮：右上角，hover 时出现 -->
       <button
-        v-if="!isRunning"
+        v-if="!selectable"
         class="ignore-quick-btn"
         @click.stop="handleIgnoreClick"
         title="忽略此文件"
@@ -37,7 +42,7 @@
     </div>
 
     <div class="info">
-      <div class="title" :title="resource.title">{{ resource.title }}</div>
+      <div class="title" :title="displayTitle">{{ displayTitle }}</div>
       <!-- 统计信息（始终显示） -->
       <div class="stats-row">
         <span class="stat-item" :title="`共打开 ${resource.open_count} 次，累计 ${fmtDuration(resource.total_run_time)}`">
@@ -97,6 +102,9 @@
         <button @click="$emit('open', resource); showMenu = false">
           <span v-html="openIcon" />打开
         </button>
+        <button v-if="isExe" @click="openAsAdmin">
+          <span v-html="shieldIcon" />以管理员身份运行
+        </button>
         <button @click="openInExplorer">
           <span v-html="folderIcon" />在文件夹中显示
         </button>
@@ -118,7 +126,6 @@
 <script lang="ts">
 const _imgCache    = new Map<string, string | null>()
 const _iconCache   = new Map<string, string | null>()
-const _videoCache  = new Map<string, string | null>()
 const _savedCovers = new Set<string>()   // 本次会话已保存封面的资源 ID
 </script>
 
@@ -126,18 +133,39 @@ const _savedCovers = new Set<string>()   // 本次会话已保存封面的资源
 import { ref, computed, watchEffect, nextTick, onUnmounted } from 'vue'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
+import { useSettingsStore } from '../stores/settings'
 
-const props = defineProps<{ resource: Resource }>()
+const props = withDefaults(defineProps<{
+  resource: Resource
+  selectable?: boolean
+  selected?: boolean
+}>(), { selectable: false, selected: false })
 const emit = defineEmits<{
   open:   [resource: Resource]
   select: [resource: Resource]
   remove: [resource: Resource]
   ignore: [resource: Resource]
+  'toggle-select': [resource: Resource]
 }>()
 
 const store = useResourceStore()
+const settingsStore = useSettingsStore()
 const showKillConfirm = ref(false)
 const showIgnoreWarn = ref(false)
+
+const displayTitle = computed(() => {
+  const r = props.resource
+  if (!settingsStore.showFileExt) return r.title
+  // 从 file_path 提取扩展名追加到 title
+  const dot = r.file_path.lastIndexOf('.')
+  const sep = Math.max(r.file_path.lastIndexOf('/'), r.file_path.lastIndexOf('\\'))
+  if (dot > sep && dot > 0) {
+    const ext = r.file_path.slice(dot)
+    // title 已含扩展名或无扩展名类型（文件夹）则跳过
+    if (!r.title.toLowerCase().endsWith(ext.toLowerCase())) return r.title + ext
+  }
+  return r.title
+})
 
 async function togglePin() {
   const newPinned = props.resource.pinned ? 0 : 1
@@ -210,53 +238,6 @@ async function getCachedIcon(path: string): Promise<string | null> {
   return result
 }
 
-// 视频缩略图：用 local:// 协议 + Canvas 截取 30% 处帧，无需 FFmpeg
-function getCachedVideoThumb(filePath: string): Promise<string | null> {
-  if (_videoCache.has(filePath)) return Promise.resolve(_videoCache.get(filePath) ?? null)
-
-  return new Promise((resolve) => {
-    const video = document.createElement('video')
-    video.preload = 'metadata'
-    video.muted = true
-    video.playsInline = true
-
-    let done = false
-    const finish = (val: string | null) => {
-      if (done) return
-      done = true
-      video.src = ''
-      _videoCache.set(filePath, val)
-      resolve(val)
-    }
-    const timer = setTimeout(() => finish(null), 8000)
-
-    video.onloadedmetadata = () => {
-      const t = isFinite(video.duration) && video.duration > 1 ? video.duration * 0.3 : 0
-      video.currentTime = t
-    }
-
-    video.onseeked = () => {
-      clearTimeout(timer)
-      try {
-        const w = video.videoWidth  || 640
-        const h = video.videoHeight || 360
-        const canvas = document.createElement('canvas')
-        canvas.width  = 400
-        canvas.height = Math.round(400 * h / w)
-        const ctx = canvas.getContext('2d')
-        if (!ctx) { finish(null); return }
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        finish(canvas.toDataURL('image/jpeg', 0.85))
-      } catch { finish(null) }
-    }
-
-    video.onerror = () => { clearTimeout(timer); finish(null) }
-
-    // 用 local://local-file/C:/path 格式，避免 Chromium 把 C: 误解析成 hostname
-    const urlPath = filePath.replace(/\\/g, '/')
-    video.src = `local://local-file/${encodeURIComponent(urlPath)}`
-  })
-}
 
 const MAX_ICON_RETRIES = 3
 const iconRetries = ref(0)
@@ -317,9 +298,10 @@ watchEffect(async () => {
     return
   }
   if (r.type === 'video') {
-    const thumb = await getCachedVideoThumb(r.file_path)
+    // 使用 OS 级缩略图提取（nativeImage.createThumbnailFromPath），
+    // 仅读取必要字节，不会将整个视频加载到内存
+    const thumb = await getCachedImage(r.file_path)
     thumbSrc.value = thumb
-    // 首次提取成功后保存到磁盘，下次启动直接读缓存文件，无需重新解码
     if (thumb && !r.cover_path && !_savedCovers.has(r.id)) {
       _savedCovers.add(r.id)
       window.api.files.saveCover(r.id, thumb).catch(() => {})
@@ -336,14 +318,16 @@ const TYPE_ICONS: Record<string, string> = {
   video: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3V10z"/></svg>`,
   comic: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="8" height="11" rx="1"/><rect x="13" y="3" width="8" height="11" rx="1"/><rect x="3" y="16" width="8" height="5" rx="1"/><rect x="13" y="16" width="8" height="5" rx="1"/></svg>`,
   music: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
-  novel: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`
+  novel: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+  folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+  other: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`
 }
 
 const typeIcon = computed(() => TYPE_ICONS[props.resource.type] ?? TYPE_ICONS.app)
 
 const UNPLAYED_LABELS: Record<string, string> = {
   game: '未游玩', app: '未运行', video: '未观看',
-  image: '未查看', comic: '未阅读', music: '未收听', novel: '未阅读'
+  image: '未查看', comic: '未阅读', music: '未收听', novel: '未阅读', folder: '未打开', other: '未使用'
 }
 const unplayedLabel = computed(() => UNPLAYED_LABELS[props.resource.type] ?? '未使用')
 
@@ -355,8 +339,20 @@ const ignoreIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const pinIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"/></svg>`
 const clockIcon  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>`
 const killIcon   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`
+const shieldIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
 const playIcon   = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="8 4 21 12 8 20"/></svg>`
 const stopIcon   = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>`
+
+const isExe = computed(() => {
+  const fp = props.resource.file_path.toLowerCase()
+  return fp.endsWith('.exe') || fp.endsWith('.lnk')
+})
+
+async function openAsAdmin() {
+  showMenu.value = false
+  const updated = await window.api.files.openAsAdmin(props.resource.file_path)
+  if (updated) store.addOrUpdate(updated)
+}
 
 function openInExplorer() {
   window.api.files.openInExplorer(props.resource.file_path)
@@ -851,5 +847,33 @@ function openInExplorer() {
 
 .kill-confirm:hover {
   background: #dc2626;
+}
+
+/* ── 批量选中态 ── */
+.card.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.select-checkbox {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.select-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 </style>
