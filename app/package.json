@@ -27,15 +27,19 @@
     "vue": "^3.4.21",
     "vue-router": "^4.3.0"
   },
+  "author": "miragecoa",
   "build": {
     "appId": "com.airesourcemanager.app",
     "productName": "AI资源管家",
+    "icon": "resources/icon.ico",
     "win": {
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "sign": "./build/empty-sign.js"
     },
+    "forceCodeSigning": false,
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
