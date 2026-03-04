@@ -14,11 +14,14 @@ app/out/
 app/frontend/dist/
 
 # Electron packaged output
+app/dist/
 app/dist-build/
 release/
 
-# Database (user data, never commit)
+# User data (never commit)
 app/data/
+app/profiles.json
+app/profiles/
 *.db
 *.db-shm
 *.db-wal
