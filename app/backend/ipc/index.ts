@@ -163,7 +163,10 @@ export function registerIpcHandlers(): void {
   // ── 文件操作 ──────────────────────────────────────────
   ipcMain.handle('files:openPath', async (_e, filePath: string, meta?: string) => {
     const m = meta ? (() => { try { return JSON.parse(meta) } catch { return null } })() : null
-    if (m?.lnk_args) {
+    if (m?.steam_appid) {
+      // Steam 游戏：通过 steam:// 协议启动（确保走 Steam 客户端）
+      shell.openExternal(`steam://rungameid/${m.steam_appid}`).catch(() => {})
+    } else if (m?.lnk_args) {
       // 带快捷方式参数启动：等同双击快捷方式
       exec(`"${filePath}" ${m.lnk_args}`, { cwd: m.lnk_cwd || undefined })
     } else {

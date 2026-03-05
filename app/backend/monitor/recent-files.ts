@@ -218,7 +218,7 @@ function trySteamUpgrade(filePath: string): Resource | null {
   try {
     const info = detectSteamGame(filePath)
     if (!info) return null
-    return upgradeSteamGame(filePath, { name: info.name, coverPath: info.coverPath })
+    return upgradeSteamGame(filePath, { name: info.name, coverPath: info.coverPath, appId: info.appId })
   } catch (e) {
     console.warn('[Monitor] Steam detection error for:', filePath, e)
     return null

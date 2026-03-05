@@ -54,6 +54,10 @@
           AI 智能设置
         </button>
         <div class="toolbar-right">
+          <button class="scan-sys-toolbar-btn" @click="openScanModal" title="扫描系统最近使用的文件和运行中的程序">
+            <span class="btn-icon" v-html="scanSysSvg" />
+            系统扫描
+          </button>
           <div class="sort-wrap">
             <span class="sort-icon" v-html="sortSvg" />
             <select class="sort-select" :value="settingsStore.resourceSort" @change="onSortChange">
@@ -415,6 +419,37 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- 系统扫描弹窗 -->
+    <Teleport to="body">
+      <div v-if="showScanModal" class="modal-overlay" @mousedown.self="cancelScan">
+        <div class="scan-modal">
+          <!-- 初始状态 -->
+          <template v-if="!sysScanning && sysScanResult === null">
+            <span class="scan-modal-icon" v-html="scanSysSvg" />
+            <p class="scan-modal-desc">扫描系统最近使用的文件和运行中的程序</p>
+            <button class="scan-modal-btn" @click="doSystemScan">开始扫描</button>
+          </template>
+          <!-- 扫描中 -->
+          <template v-else-if="sysScanning">
+            <div class="spinner lg" />
+            <p class="scan-modal-desc">正在扫描系统…</p>
+            <button class="scan-modal-btn secondary" @click="cancelScan">取消</button>
+          </template>
+          <!-- 完成 -->
+          <template v-else>
+            <span class="scan-modal-done" v-html="checkSvg" />
+            <p class="scan-modal-desc">
+              {{ sysScanResult! > 0 ? `发现 ${sysScanResult} 个新资源` : '未发现新资源' }}
+            </p>
+            <div class="scan-modal-actions">
+              <button class="scan-modal-btn secondary" @click="doSystemScan">重新扫描</button>
+              <button class="scan-modal-btn" @click="showScanModal = false">完成</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -434,6 +469,10 @@ const store = useResourceStore()
 const settingsStore = useSettingsStore()
 const showAddModal = ref(false)
 const showAiComingSoon = ref(false)
+const showScanModal = ref(false)
+const sysScanning = ref(false)
+const sysScanResult = ref<number | null>(null)
+let scanGeneration = 0  // used to discard stale results on cancel
 
 // ── 渐进渲染（滚动到底部时加载更多卡片） ───────────────────
 const BATCH_SIZE = 60
@@ -878,7 +917,36 @@ const ignoreSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const deleteSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`
 const arrowSvg        = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>`
 const aiSvg           = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l2.4 7.2H22l-6 4.8 2.4 7.2L12 16.4l-6.4 4.8 2.4-7.2-6-4.8h7.6z"/></svg>`
+const scanSysSvg      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
+const checkSvg        = `<svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`
 const aiLargeSvg      = `<svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M24 4l4.8 14.4H44l-12 9.6 4.8 14.4L24 32.8l-12.8 9.6 4.8-14.4-12-9.6h15.2z"/><circle cx="24" cy="20" r="3" fill="var(--accent)" opacity="0.3"/></svg>`
+
+function openScanModal() {
+  sysScanResult.value = null
+  sysScanning.value = false
+  showScanModal.value = true
+}
+
+async function doSystemScan() {
+  if (sysScanning.value) return
+  sysScanning.value = true
+  sysScanResult.value = null
+  const gen = ++scanGeneration
+  try {
+    const found = await window.api.monitor.scanNow()
+    if (gen !== scanGeneration) return          // cancelled — discard
+    for (const r of found) store.addOrUpdate(r as any)
+    sysScanResult.value = found.length
+  } finally {
+    if (gen === scanGeneration) sysScanning.value = false
+  }
+}
+
+function cancelScan() {
+  scanGeneration++      // invalidate in-flight result
+  sysScanning.value = false
+  showScanModal.value = false
+}
 
 async function openResource(resource: Resource) {
   const updated = await window.api.files.openPath(resource.file_path, resource.meta)
@@ -1036,6 +1104,81 @@ async function deleteIgnored(filePath: string) {
   white-space: nowrap;
 }
 .ai-btn:hover { background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15)); }
+
+.scan-sys-toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.scan-sys-toolbar-btn:hover { background: rgba(99, 102, 241, 0.15); color: var(--text); }
+.scan-sys-toolbar-btn .btn-icon { width: 16px; height: 16px; }
+
+/* 系统扫描弹窗 */
+.scan-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-width: 320px;
+}
+.scan-modal-icon {
+  width: 56px; height: 56px;
+  color: var(--text-3);
+  opacity: 0.5;
+  display: flex;
+}
+.scan-modal-icon :deep(svg) { width: 56px; height: 56px; }
+.scan-modal-desc {
+  font-size: 14px;
+  color: var(--text-2);
+  text-align: center;
+  max-width: 320px;
+  line-height: 1.5;
+}
+.scan-modal-btn {
+  padding: 10px 28px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.scan-modal-btn:hover { opacity: 0.85; }
+.scan-modal-btn.secondary {
+  background: var(--surface-3);
+  border-color: var(--border);
+  color: var(--text-2);
+}
+.scan-modal-btn.secondary:hover { background: var(--border); color: var(--text); }
+.scan-modal-done {
+  width: 48px; height: 48px;
+  display: flex;
+}
+.scan-modal-done :deep(svg) { width: 48px; height: 48px; }
+.scan-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+.scan-modal .spinner.lg { width: 40px; height: 40px; }
 
 .ai-coming-modal {
   background: var(--surface);

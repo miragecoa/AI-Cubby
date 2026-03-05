@@ -28,7 +28,7 @@ declare global {
         set: (key: string, value: string) => Promise<void>
       }
       files: {
-        openPath: (filePath: string) => Promise<import('../stores/resources').Resource | null>
+        openPath: (filePath: string, meta?: string) => Promise<import('../stores/resources').Resource | null>
         openInExplorer: (filePath: string) => Promise<void>
         readImage: (filePath: string) => Promise<string | null>
         getAppIcon: (filePath: string) => Promise<string | null>

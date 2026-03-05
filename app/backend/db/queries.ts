@@ -187,7 +187,7 @@ export function getAllAppResources(): Resource[] {
  */
 export function upgradeSteamGame(
   filePath: string,
-  info: { name: string; coverPath: string | null }
+  info: { name: string; coverPath: string | null; appId?: string }
 ): Resource | null {
   const db = getDb()
   const existing = db.prepare('SELECT * FROM resources WHERE file_path = ?').get(filePath) as Resource | undefined
@@ -208,6 +208,15 @@ export function upgradeSteamGame(
   // 封面仅在用户尚未设置时写入
   if (!existing.cover_path && info.coverPath) {
     updates.cover_path = info.coverPath
+  }
+
+  // 存储 Steam AppID 到 meta（用于 steam:// 协议启动）
+  if (info.appId) {
+    const existingMeta = existing.meta ? (() => { try { return JSON.parse(existing.meta!) } catch { return {} } })() : {}
+    if (!existingMeta.steam_appid) {
+      existingMeta.steam_appid = info.appId
+      updates.meta = JSON.stringify(existingMeta) as any
+    }
   }
 
   if (Object.keys(updates).length === 0) return null
