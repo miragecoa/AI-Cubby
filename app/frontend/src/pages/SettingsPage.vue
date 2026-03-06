@@ -164,6 +164,7 @@
         <div class="about-card">
           <div class="about-name">AI资源管家</div>
           <div class="about-version">v{{ appVersion }} — 免费版</div>
+          <div class="about-desc" v-if="lastUpdateTime">更新于 {{ lastUpdateTime }}</div>
           <div class="about-desc">本地优先的多媒体资源管理器</div>
         </div>
       </section>
@@ -213,6 +214,7 @@ import { useSettingsStore } from '../stores/settings'
 const settingsStore = useSettingsStore()
 const dbPath = ref('')
 const appVersion = ref('0.1.0')
+const lastUpdateTime = ref('')
 const updateCheckStatus = ref<'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready' | 'error'>('idle')
 const updateCheckInfo = ref<any>(null)
 const updateDownloadPercent = ref(0)
@@ -296,6 +298,11 @@ onMounted(async () => {
   await settingsStore.load()
   dbPath.value = await window.api.app.getDbPath()
   appVersion.value = await window.api.app.getVersion()
+  const ts = await window.api.settings.get('update_lastAssetTimestamp')
+  if (ts) {
+    const d = new Date(ts)
+    lastUpdateTime.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
   await loadProfiles()
 })
 
