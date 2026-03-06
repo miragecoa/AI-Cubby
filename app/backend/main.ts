@@ -164,6 +164,20 @@ function createWindow(): void {
   }
 }
 
+// 单实例锁：防止重复启动，第二个实例会聚焦已有窗口
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
 
