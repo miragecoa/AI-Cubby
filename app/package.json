@@ -33,6 +33,17 @@
     "productName": "AI资源管家",
     "icon": "resources/icon.ico",
     "artifactName": "AI-Resource-Manager-${version}-portable-${os}-${arch}.${ext}",
+    "files": [
+      "out/**/*",
+      "resources/icon.*",
+      "package.json",
+      "!profiles/**",
+      "!.update-temp/**",
+      "!src/**",
+      "!backend/**",
+      "!frontend/**",
+      "!*.ts"
+    ],
     "win": {
       "target": [
         "nsis",
