@@ -163,37 +163,35 @@ export function applyAndRestart(): void {
   }
 
   const appDir = app.isPackaged ? dirname(process.execPath) : app.getAppPath()
-  const exeName = app.isPackaged ? require('path').basename(process.execPath) : 'AI资源管家.exe'
+  const exePath = app.isPackaged ? process.execPath : join(appDir, 'AI资源管家.exe')
   const pid = process.pid
-  const batPath = join(dirname(downloadedZipPath), 'update.bat')
+  const ps1Path = join(dirname(downloadedZipPath), 'update.ps1')
 
-  const script = `@echo off
-chcp 65001 >nul
-echo Waiting for app to exit...
-:wait
-tasklist /FI "PID eq ${pid}" 2>nul | find "${pid}" >nul
-if not errorlevel 1 (
-  timeout /t 1 /nobreak >nul
-  goto wait
-)
-echo Extracting update...
-tar -xf "${downloadedZipPath}" -C "${appDir}"
-echo Cleaning up...
-del "${downloadedZipPath}"
-echo Starting app...
-start "" "${join(appDir, exeName)}"
-del "%~f0"
-`
+  // PowerShell script: wait for exit → extract → restart → self-delete
+  // Single-quoted paths = literal strings in PS (no escaping needed)
+  // UTF-8 BOM ensures PowerShell reads Chinese characters correctly
+  const script = [
+    '$ErrorActionPreference = "SilentlyContinue"',
+    `while (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }`,
+    'Start-Sleep -Seconds 2',
+    `tar -xf '${downloadedZipPath}' -C '${appDir}'`,
+    `Remove-Item '${downloadedZipPath}' -Force`,
+    `Start-Process '${exePath}'`,
+    'Remove-Item $MyInvocation.MyCommand.Path -Force',
+  ].join('\r\n')
 
-  writeFileSync(batPath, script, 'utf8')
+  writeFileSync(ps1Path, '\uFEFF' + script, 'utf8')
 
   // Spawn detached — survives our process exit
-  const child = spawn('cmd.exe', ['/c', batPath], {
+  spawn('powershell.exe', [
+    '-WindowStyle', 'Hidden',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', ps1Path
+  ], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true
-  })
-  child.unref()
+  }).unref()
 
   app.quit()
 }
