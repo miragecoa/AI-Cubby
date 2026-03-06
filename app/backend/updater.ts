@@ -56,22 +56,13 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
     if (!asset) continue
 
     const isNewVersion = compareVersions(tag, currentVersion) > 0
-    const storedTimestamp = getSetting('update_lastAssetTimestamp')
 
-    // 首次运行：记录当前 timestamp，不报更新
-    if (!isNewVersion && tag === currentVersion && !storedTimestamp) {
-      setSetting('update_lastAssetTimestamp', asset.updated_at)
-      return noUpdate(currentVersion)
-    }
-
-    const isReUpload = !isNewVersion && tag === currentVersion && !!storedTimestamp && asset.updated_at !== storedTimestamp
-
-    if (isNewVersion || isReUpload) {
+    if (isNewVersion) {
       latestUpdateInfo = {
         hasUpdate: true,
         currentVersion,
         remoteVersion: tag,
-        isNewVersion,
+        isNewVersion: true,
         downloadUrl: asset.browser_download_url,
         assetSize: asset.size,
         assetUpdatedAt: asset.updated_at
@@ -79,8 +70,9 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
       return latestUpdateInfo
     }
 
-    // If we reach the current version with same timestamp, no update
-    if (tag === currentVersion && asset.updated_at === storedTimestamp) {
+    // Same version — silently sync timestamp (covers manual updates)
+    if (tag === currentVersion) {
+      setSetting('update_lastAssetTimestamp', asset.updated_at)
       return noUpdate(currentVersion)
     }
   }
