@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import { net } from 'electron'
 import { dirname, join } from 'path'
-import { existsSync, mkdirSync, writeFileSync, createWriteStream, unlinkSync, statSync } from 'fs'
+import { existsSync, mkdirSync, createWriteStream, unlinkSync, statSync } from 'fs'
 import { spawn } from 'child_process'
 import { getSetting, setSetting } from './db/queries'
 
@@ -118,8 +118,10 @@ export async function downloadUpdate(mainWindow: BrowserWindow | null): Promise<
   })
   if (!resp.ok) throw new Error(`Download failed: ${resp.status}`)
 
-  const totalSize = latestUpdateInfo.assetSize
+  // Prefer Content-Length from actual response (after redirect) over API size
+  const totalSize = Number(resp.headers.get('content-length')) || latestUpdateInfo.assetSize
   let received = 0
+  let lastProgressTime = 0
 
   // Stream download with progress
   const reader = resp.body!.getReader()
@@ -130,11 +132,16 @@ export async function downloadUpdate(mainWindow: BrowserWindow | null): Promise<
     if (done) break
     ws.write(Buffer.from(value))
     received += value.byteLength
-    if (totalSize > 0 && mainWindow) {
+    // Throttle progress events to avoid flooding IPC
+    const now = Date.now()
+    if (totalSize > 0 && now - lastProgressTime >= 200) {
+      lastProgressTime = now
       const percent = Math.round((received / totalSize) * 100)
-      mainWindow.webContents.send('updater:progress', percent)
+      BrowserWindow.getAllWindows()[0]?.webContents.send('updater:progress', percent)
     }
   }
+  // Send final 100%
+  BrowserWindow.getAllWindows()[0]?.webContents.send('updater:progress', 100)
   ws.end()
   await new Promise<void>((resolve, reject) => {
     ws.on('finish', resolve)
@@ -165,28 +172,24 @@ export function applyAndRestart(): void {
   const appDir = app.isPackaged ? dirname(process.execPath) : app.getAppPath()
   const exePath = app.isPackaged ? process.execPath : join(appDir, 'AI资源管家.exe')
   const pid = process.pid
-  const ps1Path = join(dirname(downloadedZipPath), 'update.ps1')
 
-  // PowerShell script: wait for exit → extract → restart → self-delete
-  // Single-quoted paths = literal strings in PS (no escaping needed)
-  // UTF-8 BOM ensures PowerShell reads Chinese characters correctly
-  const script = [
-    '$ErrorActionPreference = "SilentlyContinue"',
-    `while (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }`,
-    'Start-Sleep -Seconds 2',
+  // Build PowerShell command — single-quoted paths are literal in PS
+  const cmd = [
+    '$ErrorActionPreference="SilentlyContinue"',
+    `while(Get-Process -Id ${pid} -EA SilentlyContinue){Start-Sleep 1}`,
+    'Start-Sleep 2',
     `tar -xf '${downloadedZipPath}' -C '${appDir}'`,
     `Remove-Item '${downloadedZipPath}' -Force`,
+    `Remove-Item (Split-Path '${downloadedZipPath}') -Recurse -Force`,
     `Start-Process '${exePath}'`,
-    'Remove-Item $MyInvocation.MyCommand.Path -Force',
-  ].join('\r\n')
+  ].join('; ')
 
-  writeFileSync(ps1Path, '\uFEFF' + script, 'utf8')
+  // Encode as UTF-16LE Base64 → avoids .ps1 file, execution policy, and encoding issues
+  const encoded = Buffer.from(cmd, 'utf16le').toString('base64')
 
-  // Spawn detached — survives our process exit
   spawn('powershell.exe', [
     '-WindowStyle', 'Hidden',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', ps1Path
+    '-EncodedCommand', encoded
   ], {
     detached: true,
     stdio: 'ignore',
