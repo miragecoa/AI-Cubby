@@ -42,3 +42,4 @@ Thumbs.db
 *.lic
 *.pem
 *.key
+app/.update-temp/
