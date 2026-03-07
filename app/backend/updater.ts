@@ -169,32 +169,32 @@ export function applyAndRestart(): void {
   const exePath = app.isPackaged ? process.execPath : join(appDir, 'AI资源管家.exe')
   const pid = process.pid
 
-  // Build PowerShell command — single-quoted paths are literal in PS
-  const logPath = join(dirname(downloadedZipPath), 'update.log')
+  // Build PowerShell command with visible console for debugging
   const cmd = [
-    `$log = '${logPath}'`,
-    `"$(Get-Date) - Waiting for PID ${pid}" | Out-File $log`,
+    `Write-Host "=== AI Resource Manager Updater ===" -ForegroundColor Cyan`,
+    `Write-Host "Waiting for PID ${pid} to exit..."`,
     `while(Get-Process -Id ${pid} -EA SilentlyContinue){Start-Sleep 1}`,
-    '"$(Get-Date) - Process exited, waiting 3s..." | Out-File $log -Append',
+    `Write-Host "Process exited. Waiting 3s for file handles..."`,
     'Start-Sleep 3',
-    `"$(Get-Date) - Extracting..." | Out-File $log -Append`,
-    `try { Expand-Archive -Path '${downloadedZipPath}' -DestinationPath '${appDir}' -Force -EA Stop; "$(Get-Date) - Extract OK" | Out-File $log -Append } catch { "$(Get-Date) - Extract FAILED: $_" | Out-File $log -Append }`,
+    `Write-Host "Extracting: ${downloadedZipPath}"`,
+    `Write-Host "Target: ${appDir}"`,
+    `try { Expand-Archive -Path '${downloadedZipPath}' -DestinationPath '${appDir}' -Force -EA Stop; Write-Host "Extract OK!" -ForegroundColor Green } catch { Write-Host "Extract FAILED: $_" -ForegroundColor Red }`,
     `Remove-Item '${downloadedZipPath}' -Force -EA SilentlyContinue`,
-    `"$(Get-Date) - Starting app..." | Out-File $log -Append`,
+    `Write-Host "Starting app..."`,
     `Start-Process '${exePath}'`,
-    `"$(Get-Date) - Done" | Out-File $log -Append`,
+    `Write-Host "Done! This window will close in 5s..." -ForegroundColor Green`,
+    'Start-Sleep 5',
   ].join('; ')
 
-  // Encode as UTF-16LE Base64 → avoids .ps1 file, execution policy, and encoding issues
+  // Encode as UTF-16LE Base64 → avoids encoding issues with Chinese paths
   const encoded = Buffer.from(cmd, 'utf16le').toString('base64')
 
   spawn('powershell.exe', [
-    '-WindowStyle', 'Hidden',
+    '-NoExit',
     '-EncodedCommand', encoded
   ], {
     detached: true,
     stdio: 'ignore',
-    windowsHide: true
   }).unref()
 
   app.quit()
