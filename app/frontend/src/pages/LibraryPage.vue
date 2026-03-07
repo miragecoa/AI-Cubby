@@ -217,7 +217,7 @@
                 :class="{ selected: selectedId === item.id, 'batch-selected': batchMode && selectedIds.has(item.id) }"
                 @click="batchMode ? toggleSelect(item) : onCardSelect(item)"
                 @dblclick="openResource(item)"
-                @contextmenu.prevent="onCardSelect(item)"
+                @contextmenu.prevent="openListMenu($event, item)"
               >
                 <span class="lr-thumb">
                   <img v-if="listThumbCache.get(item.id)" :src="listThumbCache.get(item.id)" class="lr-thumb-img" />
@@ -236,6 +236,42 @@
               </div>
               <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
             </div>
+            <!-- 列表视图右键菜单 -->
+            <Teleport to="body">
+              <div v-if="listMenu.show" class="ctx-backdrop" @mousedown="listMenu.show = false" />
+              <div v-if="listMenu.show" ref="listMenuRef" class="context-menu" :style="{ left: listMenu.x + 'px', top: listMenu.y + 'px' }">
+                <button @click="onCardSelect(listMenu.item!); listMenu.show = false">
+                  <span v-html="ctxIcons.detail" />查看详情
+                </button>
+                <button @click="openResource(listMenu.item!); listMenu.show = false">
+                  <span v-html="ctxIcons.open" />打开
+                </button>
+                <button v-if="isExeFile(listMenu.item!)" @click="listMenuAdminRun">
+                  <span v-html="ctxIcons.shield" />以管理员身份运行
+                </button>
+                <button v-if="listMenu.item!.type !== 'webpage'" @click="listMenuShowInFolder">
+                  <span v-html="ctxIcons.folder" />在文件夹中显示
+                </button>
+                <button v-if="store.runningMap.has(listMenu.item!.id)" @click="listMenuKillTarget = listMenu.item!; listMenu.show = false" class="danger">
+                  <span v-html="ctxIcons.kill" />强制结束进程
+                </button>
+                <hr />
+                <button @click="ignoreResource(listMenu.item!); listMenu.show = false" class="danger">
+                  <span v-html="ctxIcons.ignore" />忽略此文件
+                </button>
+              </div>
+              <!-- 强制结束确认对话框 -->
+              <div v-if="listMenuKillTarget" class="kill-overlay" @mousedown.self="listMenuKillTarget = null">
+                <div class="kill-dialog">
+                  <div class="kill-title">强制结束进程</div>
+                  <div class="kill-msg">确定要强制结束「{{ listMenuKillTarget.title }}」吗？</div>
+                  <div class="kill-actions">
+                    <button class="kill-cancel" @click="listMenuKillTarget = null">取消</button>
+                    <button class="kill-confirm" @click="doListKill">强制结束</button>
+                  </div>
+                </div>
+              </div>
+            </Teleport>
             <!-- 滚动到最底部才显示的导入按钮 -->
             <div
               v-if="store.activeType === 'webpage' || store.activeType === 'app'"
@@ -847,6 +883,57 @@ const selectedResource = computed(() =>
 
 function onCardSelect(resource: Resource) {
   selectedId.value = selectedId.value === resource.id ? null : resource.id
+}
+
+// 列表视图右键菜单
+const listMenu = reactive({ show: false, x: 0, y: 0, item: null as Resource | null })
+const listMenuRef = ref<HTMLElement | null>(null)
+const listMenuKillTarget = ref<Resource | null>(null)
+const ctxIcons = {
+  open:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
+  detail: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+  ignore: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`,
+  kill:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`,
+  shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+}
+
+function isExeFile(r: Resource) {
+  const fp = r.file_path.toLowerCase()
+  return fp.endsWith('.exe') || fp.endsWith('.lnk')
+}
+
+function openListMenu(e: MouseEvent, item: Resource) {
+  if (batchMode.value) { toggleSelect(item); return }
+  listMenu.item = item
+  listMenu.x = e.clientX
+  listMenu.y = e.clientY
+  listMenu.show = true
+  nextTick(() => {
+    if (!listMenuRef.value) return
+    const rect = listMenuRef.value.getBoundingClientRect()
+    if (listMenu.x + rect.width > window.innerWidth) listMenu.x = e.clientX - rect.width
+    if (listMenu.y + rect.height > window.innerHeight) listMenu.y = e.clientY - rect.height
+  })
+}
+
+async function listMenuAdminRun() {
+  if (!listMenu.item) return
+  listMenu.show = false
+  const updated = await window.api.files.openAsAdmin(listMenu.item.file_path)
+  if (updated) store.addOrUpdate(updated)
+}
+
+function listMenuShowInFolder() {
+  if (!listMenu.item) return
+  window.api.files.openInExplorer(listMenu.item.file_path)
+  listMenu.show = false
+}
+
+async function doListKill() {
+  if (!listMenuKillTarget.value) return
+  await window.api.monitor.kill(listMenuKillTarget.value.id)
+  listMenuKillTarget.value = null
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -2676,4 +2763,66 @@ async function deleteIgnored(filePath: string) {
   transition: opacity .3s ease;
 }
 .import-footer.visible { opacity: 1; }
+
+/* 列表视图右键菜单 */
+.ctx-backdrop {
+  position: fixed; inset: 0; z-index: 999;
+}
+.context-menu {
+  position: fixed; z-index: 1000;
+  min-width: 170px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+.context-menu button {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 14px;
+  background: none; border: none; color: var(--text); font-size: 13px; font-family: inherit;
+  cursor: pointer; text-align: left;
+}
+.context-menu button span {
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; flex-shrink: 0; line-height: 0;
+}
+.context-menu button span :deep(svg) { width: 16px; height: 16px; }
+.context-menu button:hover { background: var(--surface); }
+.context-menu button.danger { color: var(--danger); }
+.context-menu button.danger:hover { background: rgba(239,68,68,.1); }
+.context-menu hr {
+  border: none; border-top: 1px solid var(--border); margin: 4px 0;
+}
+.kill-overlay {
+  position: fixed; inset: 0; z-index: 1001;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.5);
+}
+.kill-dialog {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px 28px; min-width: 320px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.4);
+}
+.kill-title {
+  font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 12px;
+}
+.kill-msg {
+  font-size: 13px; color: var(--text-2); margin-bottom: 20px; line-height: 1.5;
+}
+.kill-actions {
+  display: flex; justify-content: flex-end; gap: 10px;
+}
+.kill-cancel, .kill-confirm {
+  padding: 7px 18px; border-radius: 6px; font-size: 13px;
+  border: none; cursor: pointer; font-family: inherit;
+}
+.kill-cancel {
+  background: var(--surface); color: var(--text-2); border: 1px solid var(--border);
+}
+.kill-cancel:hover { background: var(--surface-2); }
+.kill-confirm {
+  background: var(--danger); color: #fff;
+}
+.kill-confirm:hover { background: #dc2626; }
 </style>
