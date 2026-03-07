@@ -46,7 +46,7 @@
         <div class="setting-row">
           <div class="setting-info">
             <div class="setting-label">缩放比例</div>
-            <div class="setting-desc">调整整体界面大小，立即生效并自动保存</div>
+            <div class="setting-desc">调整整体界面大小，确认后生效</div>
           </div>
           <div class="zoom-controls">
             <div class="zoom-group">
@@ -54,15 +54,15 @@
                 v-for="level in zoomLevels"
                 :key="level.value"
                 class="zoom-btn"
-                :class="{ active: settingsStore.zoom === level.value }"
-                @click="settingsStore.setZoom(level.value)"
+                :class="{ active: pendingZoom === level.value }"
+                @click="pendingZoom = level.value"
               >{{ level.label }}</button>
             </div>
             <div class="zoom-slider-row">
               <input
                 type="range"
                 class="zoom-slider"
-                :value="settingsStore.zoom"
+                :value="pendingZoom"
                 min="0.5"
                 max="3"
                 step="0.05"
@@ -71,13 +71,17 @@
               <input
                 type="number"
                 class="zoom-number"
-                :value="Math.round(settingsStore.zoom * 100)"
+                :value="Math.round(pendingZoom * 100)"
                 min="50"
                 max="300"
                 step="5"
                 @change="onZoomInput"
               />
               <span class="zoom-unit">%</span>
+            </div>
+            <div v-if="pendingZoom !== settingsStore.zoom" class="zoom-confirm-row">
+              <button class="zoom-apply-btn" @click="applyZoom">应用</button>
+              <button class="zoom-cancel-btn" @click="pendingZoom = settingsStore.zoom">取消</button>
             </div>
           </div>
         </div>
@@ -359,14 +363,18 @@ const zoomLevels = [
   { label: '200%', value: 2.0  }
 ]
 
+const pendingZoom = ref(settingsStore.zoom)
+watch(() => settingsStore.zoom, (v) => { pendingZoom.value = v })
+
 function onZoomSlider(e: Event) {
-  const val = parseFloat((e.target as HTMLInputElement).value)
-  settingsStore.setZoom(val)
+  pendingZoom.value = parseFloat((e.target as HTMLInputElement).value)
 }
 function onZoomInput(e: Event) {
   const raw = parseInt((e.target as HTMLInputElement).value, 10)
-  const clamped = Math.min(300, Math.max(50, isNaN(raw) ? 100 : raw))
-  settingsStore.setZoom(clamped / 100)
+  pendingZoom.value = Math.min(3, Math.max(0.5, isNaN(raw) ? 1 : raw / 100))
+}
+function applyZoom() {
+  settingsStore.setZoom(pendingZoom.value)
 }
 </script>
 
@@ -550,6 +558,38 @@ function onZoomInput(e: Event) {
   color: var(--text-3);
   margin-left: -4px;
 }
+
+.zoom-confirm-row {
+  display: flex;
+  gap: 6px;
+}
+
+.zoom-apply-btn {
+  padding: 4px 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.zoom-apply-btn:hover { opacity: 0.88; }
+
+.zoom-cancel-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.zoom-cancel-btn:hover { border-color: var(--text-3); color: var(--text); }
 
 .zoom-btn {
   padding: 5px 10px;
