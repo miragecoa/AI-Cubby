@@ -48,14 +48,37 @@
             <div class="setting-label">缩放比例</div>
             <div class="setting-desc">调整整体界面大小，立即生效并自动保存</div>
           </div>
-          <div class="zoom-group">
-            <button
-              v-for="level in zoomLevels"
-              :key="level.value"
-              class="zoom-btn"
-              :class="{ active: settingsStore.zoom === level.value }"
-              @click="settingsStore.setZoom(level.value)"
-            >{{ level.label }}</button>
+          <div class="zoom-controls">
+            <div class="zoom-group">
+              <button
+                v-for="level in zoomLevels"
+                :key="level.value"
+                class="zoom-btn"
+                :class="{ active: settingsStore.zoom === level.value }"
+                @click="settingsStore.setZoom(level.value)"
+              >{{ level.label }}</button>
+            </div>
+            <div class="zoom-slider-row">
+              <input
+                type="range"
+                class="zoom-slider"
+                :value="settingsStore.zoom"
+                min="0.5"
+                max="3"
+                step="0.05"
+                @input="onZoomSlider"
+              />
+              <input
+                type="number"
+                class="zoom-number"
+                :value="Math.round(settingsStore.zoom * 100)"
+                min="50"
+                max="300"
+                step="5"
+                @change="onZoomInput"
+              />
+              <span class="zoom-unit">%</span>
+            </div>
           </div>
         </div>
       </section>
@@ -335,6 +358,16 @@ const zoomLevels = [
   { label: '150%', value: 1.5  },
   { label: '200%', value: 2.0  }
 ]
+
+function onZoomSlider(e: Event) {
+  const val = parseFloat((e.target as HTMLInputElement).value)
+  settingsStore.setZoom(val)
+}
+function onZoomInput(e: Event) {
+  const raw = parseInt((e.target as HTMLInputElement).value, 10)
+  const clamped = Math.min(300, Math.max(50, isNaN(raw) ? 100 : raw))
+  settingsStore.setZoom(clamped / 100)
+}
 </script>
 
 <style scoped>
@@ -453,10 +486,69 @@ const zoomLevels = [
 }
 
 /* Zoom selector */
+.zoom-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .zoom-group {
   display: flex;
   gap: 4px;
-  flex-shrink: 0;
+}
+
+.zoom-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoom-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 140px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.zoom-slider::-webkit-slider-thumb:hover {
+  background: var(--accent-2);
+  transform: scale(1.2);
+}
+
+.zoom-number {
+  width: 46px;
+  padding: 3px 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+}
+.zoom-number::-webkit-inner-spin-button,
+.zoom-number::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.zoom-number:focus { border-color: var(--accent); }
+
+.zoom-unit {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-left: -4px;
 }
 
 .zoom-btn {
