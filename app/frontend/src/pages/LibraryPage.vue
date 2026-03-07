@@ -64,6 +64,14 @@
           AI 智能设置
         </button>
         <div class="toolbar-right">
+          <div class="view-toggle">
+            <button class="view-toggle-btn" :class="{ active: settingsStore.viewMode === 'grid' }" @click="settingsStore.setViewMode('grid')" title="网格视图">
+              <span v-html="gridViewSvg" />
+            </button>
+            <button class="view-toggle-btn" :class="{ active: settingsStore.viewMode === 'list' }" @click="settingsStore.setViewMode('list')" title="列表视图">
+              <span v-html="listViewSvg" />
+            </button>
+          </div>
           <button class="scan-sys-toolbar-btn" @click="openScanModal" title="扫描系统最近使用的文件和运行中的程序">
             <span class="btn-icon" v-html="scanSysSvg" />
             系统扫描
@@ -175,7 +183,8 @@
           </div>
 
           <div v-else ref="gridScrollRef" class="grid-scroll">
-            <div class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
+            <!-- 网格视图 -->
+            <div v-if="settingsStore.viewMode === 'grid'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
               <ResourceCard
                 v-for="item in visibleItems"
                 :key="item.id"
@@ -188,7 +197,37 @@
                 @remove="removeResource"
                 @ignore="ignoreResource"
               />
-              <!-- 渐进渲染哨兵：滚动到此处时加载更多卡片 -->
+              <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
+            </div>
+            <!-- 列表视图 -->
+            <div v-else class="list-view">
+              <div class="list-header">
+                <span class="lh-name">名称</span>
+                <span class="lh-type">类型</span>
+                <span class="lh-date">修改日期</span>
+                <span class="lh-count">打开次数</span>
+                <span class="lh-tags">标签</span>
+              </div>
+              <div
+                v-for="item in visibleItems"
+                :key="item.id"
+                class="list-row"
+                :class="{ selected: selectedId === item.id, 'batch-selected': batchMode && selectedIds.has(item.id) }"
+                @click="batchMode ? toggleSelect(item) : onCardSelect(item)"
+                @dblclick="openResource(item)"
+                @contextmenu.prevent="onCardSelect(item)"
+              >
+                <span class="lr-name" :title="item.file_path">
+                  <input v-if="batchMode" type="checkbox" :checked="selectedIds.has(item.id)" class="lr-checkbox" />
+                  {{ item.title }}
+                </span>
+                <span class="lr-type">{{ listTypeLabel(item.type) }}</span>
+                <span class="lr-date">{{ formatListDate(item.updated_at) }}</span>
+                <span class="lr-count">{{ item.open_count }}次</span>
+                <span class="lr-tags">
+                  <span v-for="tag in (item.tags || []).slice(0, 3)" :key="tag.id" class="lr-tag">{{ tag.name }}</span>
+                </span>
+              </div>
               <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
             </div>
             <!-- 滚动到最底部才显示的导入按钮 -->
@@ -1102,6 +1141,18 @@ function getBasename(filePath: string): string {
   return filePath.replace(/^.*[\\/]/, '')
 }
 
+const LIST_TYPE_LABELS: Record<string, string> = {
+  image: '图片', game: '游戏', app: '应用程序', video: '视频',
+  comic: '漫画', music: '音乐', novel: '小说', webpage: '网页',
+  folder: '文件夹', other: '其他'
+}
+function listTypeLabel(type: string) { return LIST_TYPE_LABELS[type] ?? type }
+function formatListDate(ts: number) {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 const ignoredFiltered = computed(() => {
   if (store.activeType === 'all') return ignoredPaths.value
   return ignoredPaths.value.filter(p => inferType(p) === store.activeType)
@@ -1142,6 +1193,8 @@ const deleteSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const arrowSvg        = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>`
 const aiSvg           = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l2.4 7.2H22l-6 4.8 2.4 7.2L12 16.4l-6.4 4.8 2.4-7.2-6-4.8h7.6z"/></svg>`
 const scanSysSvg      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
+const gridViewSvg     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`
+const listViewSvg     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`
 const checkSvg        = `<svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`
 const updateSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
 const aiLargeSvg      = `<svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M24 4l4.8 14.4H44l-12 9.6 4.8 14.4L24 32.8l-12.8 9.6 4.8-14.4-12-9.6h15.2z"/><circle cx="24" cy="20" r="3" fill="var(--accent)" opacity="0.3"/></svg>`
@@ -1673,6 +1726,78 @@ async function deleteIgnored(filePath: string) {
 .grid-sentinel {
   height: 1px;
   grid-column: 1 / -1;
+}
+
+/* ── 视图切换按钮 ── */
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.view-toggle-btn {
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, color 0.15s;
+}
+.view-toggle-btn.active {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--accent-2);
+}
+.view-toggle-btn:hover:not(.active) { color: var(--text); }
+.view-toggle-btn :deep(svg) { width: 16px; height: 16px; }
+
+/* ── 列表视图 ── */
+.list-view {
+  padding: 0 16px 16px;
+}
+.list-header {
+  display: flex;
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+  user-select: none;
+}
+.list-row {
+  display: flex;
+  align-items: center;
+  padding: 7px 14px;
+  font-size: 13px;
+  color: var(--text-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.list-row:hover { background: var(--surface-2); }
+.list-row.selected { background: rgba(99, 102, 241, 0.1); }
+.list-row.batch-selected { background: rgba(99, 102, 241, 0.15); }
+
+.lh-name, .lr-name { flex: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lh-type, .lr-type { width: 70px; flex-shrink: 0; }
+.lh-date, .lr-date { width: 130px; flex-shrink: 0; font-size: 12px; color: var(--text-3); }
+.lh-count, .lr-count { width: 70px; flex-shrink: 0; text-align: center; font-size: 12px; }
+.lh-tags, .lr-tags { flex: 2; min-width: 0; display: flex; gap: 4px; overflow: hidden; }
+
+.lr-name { display: flex; align-items: center; gap: 6px; }
+.lr-checkbox { accent-color: var(--accent); }
+.lr-type { font-size: 12px; color: var(--text-3); }
+.lr-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent-2);
+  border-radius: 3px;
+  white-space: nowrap;
 }
 
 .sort-wrap {

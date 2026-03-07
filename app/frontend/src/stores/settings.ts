@@ -23,11 +23,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const sidebarCollapsed = ref(false)
   const showFileExt = ref(true)
   const autoUpdate = ref(true)
+  const viewMode = ref<'grid' | 'list'>('grid')
   const loaded = ref(false)
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
@@ -38,6 +39,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.settings.get('sidebarCollapsed'),
       window.api.settings.get('showFileExt'),
       window.api.settings.get('autoUpdate'),
+      window.api.settings.get('viewMode'),
     ])
     monitorEnabled.value = monitorVal !== 'false'
     autostartEnabled.value = autostartVal
@@ -50,6 +52,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (collapsedVal) sidebarCollapsed.value = collapsedVal === 'true'
     if (fileExtVal !== null && fileExtVal !== undefined) showFileExt.value = fileExtVal !== 'false'
     autoUpdate.value = autoUpdateVal !== 'false'
+    if (viewModeVal === 'list') viewMode.value = 'list'
 
     if (navVal) {
       try {
@@ -118,5 +121,10 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('autoUpdate', String(enabled))
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, load, setMonitor, setAutostart, setZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate }
+  async function setViewMode(mode: 'grid' | 'list') {
+    viewMode.value = mode
+    await window.api.settings.set('viewMode', mode)
+  }
+
+  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, viewMode, load, setMonitor, setAutostart, setZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setViewMode }
 })
