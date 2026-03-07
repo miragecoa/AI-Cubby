@@ -113,6 +113,7 @@ export const useResourceStore = defineStore('resources', () => {
     music: items.value.filter((r) => r.type === 'music').length,
     novel: items.value.filter((r) => r.type === 'novel').length,
     folder: items.value.filter((r) => r.type === 'folder').length,
+    webpage: items.value.filter((r) => r.type === 'webpage').length,
     other: items.value.filter((r) => r.type === 'other').length
   }))
 

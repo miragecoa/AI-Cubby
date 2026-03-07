@@ -157,28 +157,34 @@
             <div v-else class="empty-hint">打开图片、视频或程序后，AI资源管家会自动记录</div>
           </div>
 
-          <div v-else class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
-            <ResourceCard
-              v-for="item in visibleItems"
-              :key="item.id"
-              :resource="item"
-              :selectable="batchMode"
-              :selected="selectedIds.has(item.id)"
-              @toggle-select="toggleSelect(item)"
-              @select="onCardSelect"
-              @open="openResource"
-              @remove="removeResource"
-              @ignore="ignoreResource"
-            />
-            <!-- 渐进渲染哨兵：滚动到此处时加载更多卡片 -->
-            <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
-          </div>
-          <!-- 网页分类底部导入按钮 -->
-          <div v-if="store.activeType === 'webpage' && store.filtered.length > 0" class="webpage-import-footer">
-            <button class="chrome-import-btn" @click="importChromeBookmarks" :disabled="chromeImporting">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M21.17 8H12"/><path d="M3.95 6.06L8.54 14"/><path d="M10.88 21.94L15.46 14"/></svg>
-              {{ chromeImporting ? '导入中...' : '导入 Chrome 书签' }}
-            </button>
+          <div v-else ref="gridScrollRef" class="grid-scroll">
+            <div class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
+              <ResourceCard
+                v-for="item in visibleItems"
+                :key="item.id"
+                :resource="item"
+                :selectable="batchMode"
+                :selected="selectedIds.has(item.id)"
+                @toggle-select="toggleSelect(item)"
+                @select="onCardSelect"
+                @open="openResource"
+                @remove="removeResource"
+                @ignore="ignoreResource"
+              />
+              <!-- 渐进渲染哨兵：滚动到此处时加载更多卡片 -->
+              <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
+            </div>
+            <!-- 网页分类：滚动到最底部才显示导入按钮 -->
+            <div
+              v-if="store.activeType === 'webpage'"
+              class="webpage-import-footer"
+              :class="{ visible: chromeImportVisible }"
+            >
+              <button class="chrome-import-btn" @click="importChromeBookmarks" :disabled="chromeImporting">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M21.17 8H12"/><path d="M3.95 6.06L8.54 14"/><path d="M10.88 21.94L15.46 14"/></svg>
+                {{ chromeImporting ? '导入中...' : '导入 Chrome 书签' }}
+              </button>
+            </div>
           </div>
         </template>
       </div>
@@ -511,7 +517,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, reactive } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, reactive, nextTick } from 'vue'
 import { useResourceStore } from '../stores/resources'
 import type { Resource, ResourceType } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
@@ -531,7 +537,27 @@ const sysScanning = ref(false)
 const sysScanResult = ref<number | null>(null)
 let scanGeneration = 0  // used to discard stale results on cancel
 
-// ── Chrome 书签导入 ──────────────────────────────────────
+// ── Chrome 书签导入（滚动到底部才显示按钮） ──────────────
+const gridScrollRef = ref<HTMLElement | null>(null)
+const chromeImportVisible = ref(false)
+
+function onGridScroll(e: Event) {
+  const el = e.target as HTMLElement
+  // 距离底部 ≤ 2px 视为到底
+  chromeImportVisible.value = el.scrollHeight - el.scrollTop - el.clientHeight <= 2
+}
+
+watch(gridScrollRef, (el, oldEl) => {
+  oldEl?.removeEventListener('scroll', onGridScroll)
+  chromeImportVisible.value = false
+  if (el) {
+    el.addEventListener('scroll', onGridScroll, { passive: true })
+    // 内容不足以滚动时也要检查一次
+    nextTick(() => {
+      chromeImportVisible.value = el.scrollHeight <= el.clientHeight
+    })
+  }
+})
 const chromeImporting = ref(false)
 async function importChromeBookmarks() {
   chromeImporting.value = true
@@ -546,15 +572,39 @@ async function importChromeBookmarks() {
       title: b.name || new URL(b.url).hostname,
       file_path: b.url,
     }))
-    const { added, skipped } = await window.api.resources.batchAdd(items)
-    // Fetch favicons for newly added resources
+    const { added, existing } = await window.api.resources.batchAdd(items)
+    const allResources = [...added, ...existing]
+
+    // 根据书签文件夹路径自动创建标签并关联（单次 IPC 调用）
+    const urlToFolder = new Map<string, string>()
+    for (const b of bookmarks) {
+      if (b.folder) urlToFolder.set(b.url, b.folder)
+    }
+    const assignments: Array<{ resourceId: string; tagNames: string[] }> = []
+    for (const resource of allResources) {
+      const folder = urlToFolder.get(resource.file_path)
+      if (!folder) continue
+      const tagNames = folder.split('/').filter(s => s)
+      if (tagNames.length) assignments.push({ resourceId: resource.id, tagNames })
+    }
+    if (assignments.length) {
+      await window.api.tags.batchAssign(assignments, 'chrome-import')
+    }
+
+    // 标签关联完成后刷新列表
+    await store.loadAll()
+    alert(`已导入 ${added.length} 个书签${existing.length > 0 ? `，${existing.length} 个已存在` : ''}`)
+    // 后台批量获取 favicon（仅新增的）
     for (const resource of added) {
-      window.api.webpage.fetchFavicon(resource.file_path).then(icon => {
-        if (icon) window.api.files.saveCover(resource.id, icon)
+      window.api.webpage.fetchFavicon(resource.file_path).then(async icon => {
+        if (!icon) return
+        const coverPath = await window.api.files.saveCover(resource.id, icon)
+        if (!coverPath) return
+        // 从 store 取最新版本（含标签），只更新 cover_path
+        const current = store.items.find(r => r.id === resource.id)
+        store.addOrUpdate({ ...(current || resource), cover_path: coverPath })
       }).catch(() => {})
     }
-    await store.loadAll()
-    alert(`已导入 ${added.length} 个书签${skipped > 0 ? `，${skipped} 个已存在` : ''}`)
   } catch (e: any) {
     alert('导入失败: ' + (e?.message ?? ''))
   } finally {
@@ -907,6 +957,8 @@ function toggleTag(id: number) {
     store.activeTags.splice(idx, 1)
   } else {
     store.activeTags.push(id)
+    // 记录点击时间，用于"最近使用"排序
+    window.api.tags.touch(id).then(() => loadTags()).catch(() => {})
   }
 }
 
@@ -1520,9 +1572,13 @@ async function deleteIgnored(filePath: string) {
   animation: spin 0.7s linear infinite;
 }
 
-.grid {
+.grid-scroll {
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.grid {
   padding: 16px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width, 225px), 1fr));
@@ -2280,5 +2336,8 @@ async function deleteIgnored(filePath: string) {
   display: flex;
   justify-content: center;
   padding: 24px 0 12px;
+  opacity: 0;
+  transition: opacity .3s ease;
 }
+.webpage-import-footer.visible { opacity: 1; }
 </style>

@@ -7,7 +7,7 @@ import { isUNC } from '../utils/fs-safe'
 import {
   getAllResources, getResourceById, updateResource, removeResource,
   addManualResource, getResourceByPath, recordProcessStart, restoreResource,
-  getAllTags, getTagsForType, createTag, removeTag, addTagToResource, removeTagFromResource,
+  getAllTags, getTagsForType, createTag, removeTag, touchTag, addTagToResource, removeTagFromResource,
   searchResources, getSetting, setSetting,
   addIgnoredPath, getAllIgnoredPaths, removeIgnoredPath, removeResourceByPath,
   batchRemoveResources, batchReplacePath
@@ -115,13 +115,13 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('resources:batchAdd', (_e, items: Array<{ type: string; title: string; file_path: string; meta?: string }>) => {
     const added: any[] = []
-    let skipped = 0
+    const existing: any[] = []
     for (const item of items) {
       const result = addManualResource(item)
       if (!result.existed) added.push(result.resource)
-      else skipped++
+      else existing.push(result.resource)
     }
-    return { added, skipped }
+    return { added, existing }
   })
 
   // ── 忽略列表管理 ───────────────────────────────────────
@@ -143,8 +143,34 @@ export function registerIpcHandlers(): void {
     return true
   })
 
+  ipcMain.handle('tags:touch', (_e, id: number) => {
+    touchTag(id)
+    return true
+  })
+
   ipcMain.handle('tags:addToResource', (_e, resourceId: string, tagId: number, source = 'manual') => {
     addTagToResource(resourceId, tagId, source)
+    return true
+  })
+
+  // 批量关联标签：[{ resourceId, tagNames }] → 自动创建不存在的标签 + 关联
+  ipcMain.handle('tags:batchAssign', (_e, assignments: Array<{ resourceId: string; tagNames: string[] }>, source = 'manual') => {
+    const nameToId = new Map<string, number>()
+    // 收集所有标签名
+    const allNames = new Set<string>()
+    for (const a of assignments) for (const n of a.tagNames) allNames.add(n)
+    // 批量创建（INSERT OR IGNORE）并建立映射
+    for (const name of allNames) {
+      const tag = createTag(name)
+      nameToId.set(name, tag.id)
+    }
+    // 批量关联
+    for (const a of assignments) {
+      for (const name of a.tagNames) {
+        const tagId = nameToId.get(name)
+        if (tagId) addTagToResource(a.resourceId, tagId, source)
+      }
+    }
     return true
   })
 
@@ -497,10 +523,13 @@ function flattenBookmarks(
   out: Array<{ name: string; url: string; folder: string }>
 ): void {
   if (!node) return
-  const folder = parentFolder ? `${parentFolder}/${node.name}` : (node.name || '')
   if (node.type === 'url' && node.url) {
-    out.push({ name: node.name || '', url: node.url, folder })
+    // URL 节点用父级文件夹路径，不包含自身名称
+    out.push({ name: node.name || '', url: node.url, folder: parentFolder })
+    return
   }
+  // 文件夹节点：拼接路径传给子节点
+  const folder = parentFolder ? `${parentFolder}/${node.name}` : (node.name || '')
   if (node.children) {
     for (const child of node.children) {
       flattenBookmarks(child, folder, out)

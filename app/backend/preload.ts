@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('api', {
     batchReplacePath: (oldPrefix: string, newPrefix: string): Promise<{ count: number; resources: any[] }> =>
       ipcRenderer.invoke('resources:batchReplacePath', oldPrefix, newPrefix),
     batchIgnore: (filePaths: string[]): Promise<number> => ipcRenderer.invoke('resources:batchIgnore', filePaths),
-    batchAdd: (items: Array<{ type: string; title: string; file_path: string; meta?: string }>): Promise<{ added: any[]; skipped: number }> =>
+    batchAdd: (items: Array<{ type: string; title: string; file_path: string; meta?: string }>): Promise<{ added: any[]; existing: any[] }> =>
       ipcRenderer.invoke('resources:batchAdd', items)
   },
 
@@ -26,8 +26,11 @@ contextBridge.exposeInMainWorld('api', {
     getForType: (type?: string, sort?: string) => ipcRenderer.invoke('tags:getForType', type, sort),
     create: (name: string) => ipcRenderer.invoke('tags:create', name),
     remove: (id: number) => ipcRenderer.invoke('tags:remove', id),
+    touch: (id: number) => ipcRenderer.invoke('tags:touch', id),
     addToResource: (resourceId: string, tagId: number, source?: string) =>
       ipcRenderer.invoke('tags:addToResource', resourceId, tagId, source),
+    batchAssign: (assignments: Array<{ resourceId: string; tagNames: string[] }>, source?: string): Promise<boolean> =>
+      ipcRenderer.invoke('tags:batchAssign', assignments, source),
     removeFromResource: (resourceId: string, tagId: number) =>
       ipcRenderer.invoke('tags:removeFromResource', resourceId, tagId)
   },

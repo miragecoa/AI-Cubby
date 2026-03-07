@@ -32,6 +32,7 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE resources ADD COLUMN last_run_at INTEGER',
     'ALTER TABLE resources ADD COLUMN pinned INTEGER DEFAULT 0',
     'ALTER TABLE resource_tags ADD COLUMN assigned_at INTEGER DEFAULT 0',
+    'ALTER TABLE tags ADD COLUMN last_clicked_at INTEGER DEFAULT 0',
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
   }

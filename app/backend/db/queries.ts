@@ -261,7 +261,7 @@ export function getTagsForType(type?: string, sort = 'count'): Array<{ id: numbe
   const ORDER_MAP: Record<string, string> = {
     count:        'count DESC, t.name ASC',
     name:         't.name ASC',
-    lastUsed:     'MAX(r.last_run_at) DESC, count DESC',
+    lastUsed:     't.last_clicked_at DESC, count DESC',
     lastAssigned: 'MAX(rt.assigned_at) DESC, count DESC',
   }
   const orderBy = ORDER_MAP[sort] ?? ORDER_MAP.count
@@ -286,6 +286,10 @@ export function createTag(name: string): Tag {
 
 export function removeTag(id: number): void {
   getDb().prepare('DELETE FROM tags WHERE id = ?').run(id)
+}
+
+export function touchTag(id: number): void {
+  getDb().prepare('UPDATE tags SET last_clicked_at = ? WHERE id = ?').run(Date.now(), id)
 }
 
 export function addTagToResource(resourceId: string, tagId: number, source = 'manual'): void {
