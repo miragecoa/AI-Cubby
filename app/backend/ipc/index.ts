@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { execFile, exec } from 'child_process'
 import { readdir } from 'fs/promises'
 import { join, dirname, extname, basename } from 'path'
+import { isUNC } from '../utils/fs-safe'
 import {
   getAllResources, getResourceById, updateResource, removeResource,
   addManualResource, getResourceByPath, recordProcessStart, restoreResource,
@@ -36,6 +37,7 @@ const thumbCache   = new Map<string, string | null>()
 
 // 在 exe 同目录及父目录中搜索图标文件（.ico 优先，其次常见图标文件名）
 function findNearbyIcon(exePath: string): string | null {
+  if (isUNC(exePath)) return null  // Skip slow network directory scanning
   const ICON_NAMES = ['icon.png', 'logo.png', 'icon.jpg', 'logo.jpg']
   try {
     for (const dir of [dirname(exePath), dirname(dirname(exePath))]) {
@@ -329,7 +331,12 @@ export function registerIpcHandlers(): void {
     async function walk(dir: string) {
       if (results.length >= MAX) return
       try {
-        const entries = await readdir(dir, { withFileTypes: true })
+        const entries = await (isUNC(dir)
+          ? Promise.race([
+              readdir(dir, { withFileTypes: true }),
+              new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 10_000))
+            ])
+          : readdir(dir, { withFileTypes: true }))
         for (const entry of entries) {
           if (results.length >= MAX) return
           const full = join(dir, entry.name)
