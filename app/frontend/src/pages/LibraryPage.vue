@@ -1941,10 +1941,10 @@ async function deleteIgnored(filePath: string) {
   width: 6px; height: 6px; border-radius: 50%;
   background: #22c55e; flex-shrink: 0; margin-right: -2px;
 }
-.lh-thumb, .lr-thumb { width: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.lh-thumb, .lr-thumb { width: calc(24px + 10px * var(--list-zoom, 1)); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .lr-thumb-img { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); object-fit: cover; border-radius: 4px; }
 .lr-thumb-placeholder { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); display: flex; align-items: center; justify-content: center; color: var(--text-3); }
-.lr-thumb-placeholder :deep(svg) { width: 18px; height: 18px; }
+.lr-thumb-placeholder :deep(svg) { width: calc(14px + 4px * var(--list-zoom, 1)); height: calc(14px + 4px * var(--list-zoom, 1)); }
 
 .lh-name, .lr-name { width: var(--col-name, 300px); flex-shrink: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lh-type, .lr-type { width: var(--col-type, 70px); flex-shrink: 0; }
