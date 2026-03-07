@@ -152,9 +152,12 @@
             <div class="setting-desc" v-else-if="updateCheckStatus === 'ready'" style="color: #4ade80;">更新已就绪，重启即可完成</div>
             <div class="setting-desc" v-else-if="updateCheckStatus === 'error'" style="color: #ef4444;">操作失败，请稍后重试</div>
           </div>
-          <button v-if="updateCheckStatus === 'available'" class="profile-btn update-action-btn" @click="settingsDownloadAndApply">下载并更新</button>
-          <button v-else-if="updateCheckStatus === 'ready'" class="profile-btn update-action-btn" @click="settingsApplyUpdate">重启并更新</button>
-          <button v-else-if="updateCheckStatus !== 'downloading'" class="profile-btn" @click="manualCheckUpdate" :disabled="updateCheckStatus === 'checking'">检查更新</button>
+          <div class="setting-actions">
+            <button v-if="updateCheckStatus === 'available'" class="profile-btn update-action-btn" @click="settingsDownloadAndApply">下载并更新</button>
+            <button v-else-if="updateCheckStatus === 'ready'" class="profile-btn update-action-btn" @click="settingsApplyUpdate">重启并更新</button>
+            <button v-else-if="updateCheckStatus !== 'downloading'" class="profile-btn" @click="manualCheckUpdate" :disabled="updateCheckStatus === 'checking'">检查更新</button>
+            <button class="profile-btn" @click="openGitHubRelease">手动更新</button>
+          </div>
         </div>
       </section>
 
@@ -243,6 +246,10 @@ async function settingsDownloadAndApply() {
 
 function settingsApplyUpdate() {
   window.api.updater.apply()
+}
+
+function openGitHubRelease() {
+  window.api.app.openUrl('https://github.com/miragecoa/AI-Resource-Manager/releases')
 }
 
 // ── 配置文件 ──
@@ -525,6 +532,10 @@ const zoomLevels = [
   color: #ef4444;
 }
 
+.setting-actions {
+  display: flex;
+  gap: 8px;
+}
 .update-action-btn {
   background: var(--accent) !important;
   border-color: var(--accent) !important;

@@ -112,7 +112,8 @@ contextBridge.exposeInMainWorld('api', {
     setZoom: (factor: number): void => webFrame.setZoomFactor(factor),
     getZoom: (): number => webFrame.getZoomFactor(),
     getDbPath: (): Promise<string> => ipcRenderer.invoke('app:getDbPath'),
-    getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion')
+    getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
+    openUrl: (url: string): Promise<void> => ipcRenderer.invoke('app:openUrl', url)
   },
 
   // 自动更新

@@ -408,6 +408,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('app:quit', () => app.quit())
   ipcMain.handle('app:getDbPath', () => dbPath)
   ipcMain.handle('app:getVersion', () => app.getVersion())
+  ipcMain.handle('app:openUrl', (_e, url: string) => shell.openExternal(url))
 
   // ── 自动更新 ──────────────────────────────────────────
   ipcMain.handle('updater:check', () => {
