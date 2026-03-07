@@ -200,19 +200,20 @@
               <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
             </div>
             <!-- 列表视图 -->
-            <div v-else class="list-view">
-              <div class="list-header">
+            <div v-else class="list-view" :style="{ '--list-zoom': settingsStore.cardZoom }">
+              <div class="list-header" :style="colStyle">
                 <span class="lh-thumb"></span>
-                <span class="lh-name">名称</span>
-                <span class="lh-type">类型</span>
-                <span class="lh-date">修改日期</span>
-                <span class="lh-count">打开次数</span>
+                <span class="lh-name">名称</span><div class="col-resizer" @mousedown="startColResize('name', $event)" />
+                <span class="lh-type">类型</span><div class="col-resizer" @mousedown="startColResize('type', $event)" />
+                <span class="lh-date">修改日期</span><div class="col-resizer" @mousedown="startColResize('date', $event)" />
+                <span class="lh-count">打开次数</span><div class="col-resizer" @mousedown="startColResize('count', $event)" />
                 <span class="lh-tags">标签</span>
               </div>
               <div
                 v-for="item in visibleItems"
                 :key="item.id"
                 class="list-row"
+                :style="colStyle"
                 :class="{ selected: selectedId === item.id, 'batch-selected': batchMode && selectedIds.has(item.id) }"
                 @click="batchMode ? toggleSelect(item) : onCardSelect(item)"
                 @dblclick="openResource(item)"
@@ -1162,6 +1163,43 @@ const LIST_TYPE_ICONS: Record<string, string> = {
 }
 function listTypeIcon(type: string) { return LIST_TYPE_ICONS[type] ?? LIST_TYPE_ICONS.app }
 
+// 列表视图列宽
+const colStyle = computed(() => {
+  const c = settingsStore.listColumns
+  return {
+    '--col-name': c.name + 'px',
+    '--col-type': c.type + 'px',
+    '--col-date': c.date + 'px',
+    '--col-count': c.count + 'px',
+    '--col-tags': c.tags + 'px',
+  }
+})
+
+let _resizeCol = ''
+let _resizeStartX = 0
+let _resizeStartW = 0
+
+function startColResize(col: string, e: MouseEvent) {
+  _resizeCol = col
+  _resizeStartX = e.clientX
+  _resizeStartW = settingsStore.listColumns[col]
+  document.addEventListener('mousemove', onColResizeMove)
+  document.addEventListener('mouseup', onColResizeEnd)
+  e.preventDefault()
+}
+
+function onColResizeMove(e: MouseEvent) {
+  const delta = e.clientX - _resizeStartX
+  const newWidth = Math.max(40, _resizeStartW + delta)
+  settingsStore.listColumns[_resizeCol] = newWidth
+}
+
+function onColResizeEnd() {
+  document.removeEventListener('mousemove', onColResizeMove)
+  document.removeEventListener('mouseup', onColResizeEnd)
+  settingsStore.setListColumns(settingsStore.listColumns)
+}
+
 // 列表视图缩略图缓存（通过 IPC 读取图片）
 const listThumbCache = reactive(new Map<string, string>())
 watch([visibleItems, () => settingsStore.viewMode], () => {
@@ -1786,7 +1824,7 @@ async function deleteIgnored(filePath: string) {
 .list-header {
   display: flex;
   padding: 8px 14px;
-  font-size: 11px;
+  font-size: calc(10px + 1px * var(--list-zoom, 1));
   color: var(--text-3);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -1798,8 +1836,8 @@ async function deleteIgnored(filePath: string) {
 .list-row {
   display: flex;
   align-items: center;
-  padding: 7px 14px;
-  font-size: 13px;
+  padding: calc(5px + 2px * var(--list-zoom, 1)) 14px;
+  font-size: calc(11px + 2px * var(--list-zoom, 1));
   color: var(--text-2);
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   cursor: pointer;
@@ -1810,15 +1848,15 @@ async function deleteIgnored(filePath: string) {
 .list-row.batch-selected { background: rgba(99, 102, 241, 0.15); }
 
 .lh-thumb, .lr-thumb { width: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-.lr-thumb-img { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; }
-.lr-thumb-placeholder { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+.lr-thumb-img { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); object-fit: cover; border-radius: 4px; }
+.lr-thumb-placeholder { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); display: flex; align-items: center; justify-content: center; color: var(--text-3); }
 .lr-thumb-placeholder :deep(svg) { width: 18px; height: 18px; }
 
-.lh-name, .lr-name { flex: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lh-type, .lr-type { width: 70px; flex-shrink: 0; }
-.lh-date, .lr-date { width: 130px; flex-shrink: 0; font-size: 12px; color: var(--text-3); }
-.lh-count, .lr-count { width: 70px; flex-shrink: 0; text-align: center; font-size: 12px; }
-.lh-tags, .lr-tags { flex: 2; min-width: 0; display: flex; gap: 4px; overflow: hidden; }
+.lh-name, .lr-name { width: var(--col-name, 300px); flex-shrink: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lh-type, .lr-type { width: var(--col-type, 70px); flex-shrink: 0; }
+.lh-date, .lr-date { width: var(--col-date, 130px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
+.lh-count, .lr-count { width: var(--col-count, 70px); flex-shrink: 0; text-align: center; font-size: 12px; }
+.lh-tags, .lr-tags { width: var(--col-tags, 200px); flex-shrink: 1; min-width: 0; display: flex; gap: 4px; overflow: hidden; }
 
 .lr-name { display: flex; align-items: center; gap: 6px; }
 .lr-checkbox { accent-color: var(--accent); }
@@ -1831,6 +1869,23 @@ async function deleteIgnored(filePath: string) {
   border-radius: 3px;
   white-space: nowrap;
 }
+
+.col-resizer {
+  width: 6px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  align-self: stretch;
+  position: relative;
+}
+.col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 20%; bottom: 20%;
+  left: 2px; width: 1px;
+  background: var(--border);
+  transition: background 0.15s;
+}
+.col-resizer:hover::after { background: var(--accent); }
 
 .sort-wrap {
   display: flex;

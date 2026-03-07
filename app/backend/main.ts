@@ -15,6 +15,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'local', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
 ])
 import { initDatabase } from './db/index'
+import { getSetting, setSetting } from './db/queries'
 import { ensureProfiles } from './db/profiles'
 import { registerIpcHandlers } from './ipc/index'
 import { startMonitor } from './monitor/recent-files'
@@ -121,9 +122,15 @@ function createTray(): void {
 }
 
 function createWindow(): void {
+  // 恢复上次窗口位置和大小
+  let savedBounds: { x?: number; y?: number; width: number; height: number } = { width: 1600, height: 1000 }
+  try {
+    const raw = getSetting('windowBounds')
+    if (raw) savedBounds = { ...savedBounds, ...JSON.parse(raw) }
+  } catch { /* use defaults */ }
+
   mainWindow = new BrowserWindow({
-    width: 1600,
-    height: 1000,
+    ...savedBounds,
     minWidth: 900,
     minHeight: 600,
     show: false,
@@ -145,6 +152,19 @@ function createWindow(): void {
   // 最大化/还原事件转发给渲染进程（用于更新自定义标题栏按钮图标）
   mainWindow.on('maximize',   () => mainWindow?.webContents.send('window:maximizeChange', true))
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximizeChange', false))
+
+  // 窗口移动/缩放后保存位置（防抖 500ms）
+  let saveBoundsTimer: ReturnType<typeof setTimeout>
+  function saveBounds() {
+    clearTimeout(saveBoundsTimer)
+    saveBoundsTimer = setTimeout(() => {
+      if (mainWindow && !mainWindow.isMaximized() && !mainWindow.isMinimized()) {
+        setSetting('windowBounds', JSON.stringify(mainWindow.getBounds()))
+      }
+    }, 500)
+  }
+  mainWindow.on('resize', saveBounds)
+  mainWindow.on('move', saveBounds)
 
   // 关闭按钮 → 隐藏到托盘，而非退出
   mainWindow.on('close', (event) => {
