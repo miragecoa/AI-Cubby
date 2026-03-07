@@ -202,6 +202,7 @@
             <!-- 列表视图 -->
             <div v-else class="list-view">
               <div class="list-header">
+                <span class="lh-thumb"></span>
                 <span class="lh-name">名称</span>
                 <span class="lh-type">类型</span>
                 <span class="lh-date">修改日期</span>
@@ -217,6 +218,10 @@
                 @dblclick="openResource(item)"
                 @contextmenu.prevent="onCardSelect(item)"
               >
+                <span class="lr-thumb">
+                  <img v-if="listThumbCache.get(item.id)" :src="listThumbCache.get(item.id)" class="lr-thumb-img" />
+                  <span v-else class="lr-thumb-placeholder" v-html="listTypeIcon(item.type)" />
+                </span>
                 <span class="lr-name" :title="item.file_path">
                   <input v-if="batchMode" type="checkbox" :checked="selectedIds.has(item.id)" class="lr-checkbox" />
                   {{ item.title }}
@@ -1147,6 +1152,28 @@ const LIST_TYPE_LABELS: Record<string, string> = {
   folder: '文件夹', other: '其他'
 }
 function listTypeLabel(type: string) { return LIST_TYPE_LABELS[type] ?? type }
+
+const LIST_TYPE_ICONS: Record<string, string> = {
+  image: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`,
+  game:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 12h4M8 10v4"/><circle cx="15.5" cy="11.5" r=".6" fill="currentColor"/><circle cx="17.5" cy="13.5" r=".6" fill="currentColor"/><path d="M21 12c0 5-2.5 8-9 8S3 17 3 12 5.5 4 12 4s9 3 9 8z"/></svg>`,
+  app:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><circle cx="7" cy="7" r=".8" fill="currentColor"/><circle cx="10" cy="7" r=".8" fill="currentColor"/></svg>`,
+  video: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3V10z"/></svg>`,
+  webpage: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+}
+function listTypeIcon(type: string) { return LIST_TYPE_ICONS[type] ?? LIST_TYPE_ICONS.app }
+
+// 列表视图缩略图缓存（通过 IPC 读取图片）
+const listThumbCache = reactive(new Map<string, string>())
+watch([visibleItems, () => settingsStore.viewMode], () => {
+  if (settingsStore.viewMode !== 'list') return
+  for (const item of visibleItems.value) {
+    if (!item.cover_path || listThumbCache.has(item.id)) continue
+    listThumbCache.set(item.id, '') // 占位，防止重复请求
+    window.api.files.readImage(item.cover_path).then(src => {
+      if (src) listThumbCache.set(item.id, src)
+    }).catch(() => {})
+  }
+}, { immediate: true })
 function formatListDate(ts: number) {
   if (!ts) return '—'
   const d = new Date(ts)
@@ -1781,6 +1808,11 @@ async function deleteIgnored(filePath: string) {
 .list-row:hover { background: var(--surface-2); }
 .list-row.selected { background: rgba(99, 102, 241, 0.1); }
 .list-row.batch-selected { background: rgba(99, 102, 241, 0.15); }
+
+.lh-thumb, .lr-thumb { width: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.lr-thumb-img { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; }
+.lr-thumb-placeholder { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+.lr-thumb-placeholder :deep(svg) { width: 18px; height: 18px; }
 
 .lh-name, .lr-name { flex: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lh-type, .lr-type { width: 70px; flex-shrink: 0; }
