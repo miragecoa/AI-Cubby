@@ -222,7 +222,7 @@ export function skipUpdate(): void {
 
 // ── Auto-update scheduler ────────────────────────────────
 
-export function initAutoUpdater(mainWindow: BrowserWindow): void {
+export function initAutoUpdater(_mainWindow: BrowserWindow): void {
   const doCheck = async () => {
     try {
       const autoUpdate = getSetting('autoUpdate')
@@ -236,8 +236,11 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
       const skippedTs = getSetting('update_skippedTimestamp')
       if (skippedVer === info.remoteVersion && skippedTs === info.assetUpdatedAt) return
 
-      // Notify renderer about available update
-      mainWindow.webContents.send('updater:update-available', info)
+      // Notify renderer about available update — use fresh window reference
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('updater:update-available', info)
+      }
     } catch (e) {
       console.warn('[Updater] Auto-check failed:', e)
     }

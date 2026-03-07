@@ -219,6 +219,7 @@
                 @dblclick="openResource(item)"
                 @contextmenu.prevent="openListMenu($event, item)"
               >
+                <span v-if="store.runningMap.has(item.id)" class="lr-running-dot" />
                 <span class="lr-thumb">
                   <img v-if="listThumbCache.get(item.id)" :src="listThumbCache.get(item.id)" class="lr-thumb-img" />
                   <span v-else class="lr-thumb-placeholder" v-html="listTypeIcon(item.type)" />
@@ -1936,6 +1937,10 @@ async function deleteIgnored(filePath: string) {
 .list-row.selected { background: rgba(99, 102, 241, 0.1); }
 .list-row.batch-selected { background: rgba(99, 102, 241, 0.15); }
 
+.lr-running-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #22c55e; flex-shrink: 0; margin-right: -2px;
+}
 .lh-thumb, .lr-thumb { width: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .lr-thumb-img { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); object-fit: cover; border-radius: 4px; }
 .lr-thumb-placeholder { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); display: flex; align-items: center; justify-content: center; color: var(--text-3); }
