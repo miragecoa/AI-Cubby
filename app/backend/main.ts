@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, Menu, Tray, nativeImage, protocol, net } fro
 import { join } from 'path'
 import { deflateSync } from 'zlib'
 import { existsSync, createReadStream, statSync } from 'fs'
+import { pathToFileURL } from './utils/fs-safe'
 import { execFile } from 'child_process'
 
 // Windows 终端默认使用 GBK 编码，切换到 UTF-8 (65001) 让中文日志正常显示
@@ -240,7 +241,7 @@ app.whenReady().then(() => {
 
       // 小文件（<20MB）：用 net.fetch 简单转发（图片、图标等）
       if (fileSize < 20 * 1024 * 1024) {
-        const target = 'file:///' + filePath.replace(/\\/g, '/')
+        const target = pathToFileURL(filePath)
         return net.fetch(target, { headers: Object.fromEntries(request.headers) })
       }
 

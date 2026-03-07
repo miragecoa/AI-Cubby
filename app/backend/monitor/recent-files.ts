@@ -1,6 +1,7 @@
 import { app, shell } from 'electron'
 import { watch, readdirSync, existsSync, FSWatcher } from 'fs'
 import { extname, basename, join } from 'path'
+import { isUNC } from '../utils/fs-safe'
 import { spawn, execFile, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { createInterface } from 'readline'
@@ -302,6 +303,7 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
 
 /** 递归收集一个目录下所有 .lnk 文件的完整路径 */
 function collectLnkFiles(dir: string, result: string[] = []): string[] {
+  if (isUNC(dir)) return result  // Skip network directories to avoid blocking
   try {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const fullPath = join(dir, entry.name)
@@ -634,8 +636,8 @@ function processLnk(lnkPath: string): Resource | null {
     return null
   }
 
-  // 目标文件已被删除，跳过
-  if (!existsSync(target)) return null
+  // 目标文件已被删除，跳过（UNC 路径跳过检查，NAS 可能暂时离线）
+  if (!isUNC(target) && !existsSync(target)) return null
 
   const ext = extname(target).toLowerCase()
 
