@@ -149,9 +149,16 @@
             <div class="empty-text">暂无资源</div>
             <div v-if="store.activeType === 'webpage'" class="empty-hint">
               收藏网页链接，或一键导入 Chrome 书签
-              <button class="chrome-import-btn" @click="importChromeBookmarks" :disabled="chromeImporting">
+              <button class="import-footer-btn" @click="importChromeBookmarks" :disabled="chromeImporting">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M21.17 8H12"/><path d="M3.95 6.06L8.54 14"/><path d="M10.88 21.94L15.46 14"/></svg>
                 {{ chromeImporting ? '导入中...' : '导入 Chrome 书签' }}
+              </button>
+            </div>
+            <div v-else-if="store.activeType === 'app'" class="empty-hint">
+              一键添加 Windows 常用系统工具
+              <button class="import-footer-btn" @click="addPresetApps" :disabled="presetAdding">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                {{ presetAdding ? '添加中...' : '添加常用工具' }}
               </button>
             </div>
             <div v-else class="empty-hint">打开图片、视频或程序后，AI资源管家会自动记录</div>
@@ -174,15 +181,19 @@
               <!-- 渐进渲染哨兵：滚动到此处时加载更多卡片 -->
               <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
             </div>
-            <!-- 网页分类：滚动到最底部才显示导入按钮 -->
+            <!-- 滚动到最底部才显示的导入按钮 -->
             <div
-              v-if="store.activeType === 'webpage'"
-              class="webpage-import-footer"
-              :class="{ visible: chromeImportVisible }"
+              v-if="store.activeType === 'webpage' || store.activeType === 'app'"
+              class="import-footer"
+              :class="{ visible: footerVisible }"
             >
-              <button class="chrome-import-btn" @click="importChromeBookmarks" :disabled="chromeImporting">
+              <button v-if="store.activeType === 'webpage'" class="import-footer-btn" @click="importChromeBookmarks" :disabled="chromeImporting">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M21.17 8H12"/><path d="M3.95 6.06L8.54 14"/><path d="M10.88 21.94L15.46 14"/></svg>
                 {{ chromeImporting ? '导入中...' : '导入 Chrome 书签' }}
+              </button>
+              <button v-if="store.activeType === 'app'" class="import-footer-btn" @click="addPresetApps" :disabled="presetAdding">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                {{ presetAdding ? '添加中...' : '添加常用工具' }}
               </button>
             </div>
           </div>
@@ -215,6 +226,7 @@
               </button>
             </div>
           </div>
+          <input v-model="tagSearch" class="tag-search-input" placeholder="搜索标签…" />
           <div v-if="availableTags.length" class="tag-list">
             <button
               v-for="tag in availableTags"
@@ -537,24 +549,24 @@ const sysScanning = ref(false)
 const sysScanResult = ref<number | null>(null)
 let scanGeneration = 0  // used to discard stale results on cancel
 
-// ── Chrome 书签导入（滚动到底部才显示按钮） ──────────────
+// ── 底部导入按钮（滚动到底部才显示） ──────────────────────
 const gridScrollRef = ref<HTMLElement | null>(null)
-const chromeImportVisible = ref(false)
+const footerVisible = ref(false)
 
 function onGridScroll(e: Event) {
   const el = e.target as HTMLElement
   // 距离底部 ≤ 2px 视为到底
-  chromeImportVisible.value = el.scrollHeight - el.scrollTop - el.clientHeight <= 2
+  footerVisible.value = el.scrollHeight - el.scrollTop - el.clientHeight <= 2
 }
 
 watch(gridScrollRef, (el, oldEl) => {
   oldEl?.removeEventListener('scroll', onGridScroll)
-  chromeImportVisible.value = false
+  footerVisible.value = false
   if (el) {
     el.addEventListener('scroll', onGridScroll, { passive: true })
     // 内容不足以滚动时也要检查一次
     nextTick(() => {
-      chromeImportVisible.value = el.scrollHeight <= el.clientHeight
+      footerVisible.value = el.scrollHeight <= el.clientHeight
     })
   }
 })
@@ -609,6 +621,43 @@ async function importChromeBookmarks() {
     alert('导入失败: ' + (e?.message ?? ''))
   } finally {
     chromeImporting.value = false
+  }
+}
+
+const presetAdding = ref(false)
+async function addPresetApps() {
+  presetAdding.value = true
+  try {
+    const presets = await window.api.resources.getPresetApps()
+    if (!presets.length) { alert('未找到可添加的工具'); return }
+    const { added, existing } = await window.api.resources.batchAdd(
+      presets.map(p => ({ type: p.type, title: p.title, file_path: p.file_path }))
+    )
+    const allResources = [...added, ...existing]
+    // 标签关联
+    const pathToTags = new Map(presets.map(p => [p.file_path, p.tags]))
+    const assignments = allResources
+      .filter(r => pathToTags.has(r.file_path))
+      .map(r => ({ resourceId: r.id, tagNames: pathToTags.get(r.file_path)! }))
+    if (assignments.length) await window.api.tags.batchAssign(assignments, 'preset')
+    await store.loadAll()
+    importToastMsg.value = `已添加 ${added.length} 个工具${existing.length ? `，${existing.length} 个已存在` : ''}`
+    importToastVisible.value = true
+    // 后台获取图标（仅新增）
+    for (const r of added) {
+      window.api.files.getAppIcon(r.file_path).then(async icon => {
+        if (!icon) return
+        const coverPath = await window.api.files.saveCover(r.id, icon)
+        if (coverPath) {
+          const current = store.items.find(i => i.id === r.id)
+          store.addOrUpdate({ ...(current || r), cover_path: coverPath })
+        }
+      }).catch(() => {})
+    }
+  } catch (e: any) {
+    alert('添加失败: ' + (e?.message ?? ''))
+  } finally {
+    presetAdding.value = false
   }
 }
 
@@ -918,6 +967,7 @@ async function doBatchDelete() {
 // 标签筛选面板
 const tagPanelCollapsed = ref(localStorage.getItem('tagPanelCollapsed') === '1')
 const dbTags = ref<Array<{ id: number; name: string; count: number }>>([])
+const tagSearch = ref('')
 
 watch(tagPanelCollapsed, (val) => {
   localStorage.setItem('tagPanelCollapsed', val ? '1' : '0')
@@ -945,10 +995,15 @@ const untaggedCount = computed(() => {
 })
 
 const availableTags = computed(() => {
-  if (untaggedCount.value > 0) {
-    return [{ id: 0, name: '未分类', count: untaggedCount.value }, ...dbTags.value]
+  let tags = dbTags.value
+  if (tagSearch.value) {
+    const q = tagSearch.value.toLowerCase()
+    tags = tags.filter(t => t.name.toLowerCase().includes(q))
   }
-  return dbTags.value
+  if (!tagSearch.value && untaggedCount.value > 0) {
+    return [{ id: 0, name: '未分类', count: untaggedCount.value }, ...tags]
+  }
+  return tags
 })
 
 function toggleTag(id: number) {
@@ -985,8 +1040,9 @@ onMounted(async () => {
     // 系统扫描
     showScanModal.value = true
     doSystemScan()
-    // Chrome 书签导入
+    // Chrome 书签导入 + 常用工具
     importChromeBookmarks()
+    addPresetApps()
   }
 })
 
@@ -1842,6 +1898,21 @@ async function deleteIgnored(filePath: string) {
 
 .clear-tags-btn:hover { background: rgba(99, 102, 241, 0.12); }
 
+.tag-search-input {
+  width: calc(100% - 16px);
+  margin: 0 8px 4px;
+  padding: 5px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+.tag-search-input:focus { border-color: var(--accent); }
+.tag-search-input::placeholder { color: var(--text-3); }
+
 .tag-list {
   flex: 1;
   overflow-y: auto;
@@ -2324,8 +2395,8 @@ async function deleteIgnored(filePath: string) {
   margin-left: 4px; font-size: 10px; opacity: 0.5;
 }
 
-/* ── Chrome 导入 ───────────────────────────────────────── */
-.chrome-import-btn {
+/* ── 底部导入按钮 ──────────────────────────────────────── */
+.import-footer-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2340,15 +2411,15 @@ async function deleteIgnored(filePath: string) {
   transition: all .15s;
   pointer-events: auto;
 }
-.chrome-import-btn:hover { border-color: var(--accent); color: var(--accent-2); }
-.chrome-import-btn:disabled { opacity: .5; cursor: not-allowed; }
-.chrome-import-btn svg { flex-shrink: 0; }
-.webpage-import-footer {
+.import-footer-btn:hover { border-color: var(--accent); color: var(--accent-2); }
+.import-footer-btn:disabled { opacity: .5; cursor: not-allowed; }
+.import-footer-btn svg { flex-shrink: 0; }
+.import-footer {
   display: flex;
   justify-content: center;
   padding: 24px 0 12px;
   opacity: 0;
   transition: opacity .3s ease;
 }
-.webpage-import-footer.visible { opacity: 1; }
+.import-footer.visible { opacity: 1; }
 </style>

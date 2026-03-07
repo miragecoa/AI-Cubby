@@ -124,6 +124,39 @@ export function registerIpcHandlers(): void {
     return { added, existing }
   })
 
+  // ── 预设常用工具 ──────────────────────────────────────
+  ipcMain.handle('resources:getPresetApps', () => {
+    const S32 = 'C:\\Windows\\System32'
+    const presets: Array<{ title: string; path: string; tags: string[] }> = [
+      // 命令行
+      { title: '命令提示符',   path: `${S32}\\cmd.exe`,    tags: ['Windows 工具', '命令行'] },
+      { title: 'PowerShell',   path: `${S32}\\WindowsPowerShell\\v1.0\\powershell.exe`, tags: ['Windows 工具', '命令行'] },
+      // 系统管理
+      { title: '任务管理器',   path: `${S32}\\Taskmgr.exe`,   tags: ['Windows 工具', '系统管理'] },
+      { title: '控制面板',     path: `${S32}\\control.exe`,   tags: ['Windows 工具', '系统管理'] },
+      { title: '注册表编辑器', path: 'C:\\Windows\\regedit.exe', tags: ['Windows 工具', '系统管理'] },
+      { title: '资源监视器',   path: `${S32}\\resmon.exe`,    tags: ['Windows 工具', '系统管理'] },
+      { title: '事件查看器',   path: `${S32}\\eventvwr.exe`,  tags: ['Windows 工具', '系统管理'] },
+      { title: '系统配置',     path: `${S32}\\msconfig.exe`,  tags: ['Windows 工具', '系统管理'] },
+      { title: '磁盘清理',     path: `${S32}\\cleanmgr.exe`,  tags: ['Windows 工具', '系统管理'] },
+      // 实用工具
+      { title: '记事本',       path: `${S32}\\notepad.exe`,   tags: ['Windows 工具', '实用工具'] },
+      { title: '计算器',       path: `${S32}\\calc.exe`,      tags: ['Windows 工具', '实用工具'] },
+      { title: '画图',         path: `${S32}\\mspaint.exe`,   tags: ['Windows 工具', '实用工具'] },
+      { title: '截图工具',     path: `${S32}\\SnippingTool.exe`, tags: ['Windows 工具', '实用工具'] },
+    ]
+    // Windows Terminal（可能未安装）
+    try {
+      const wtPath = require('child_process').execSync('where wt.exe', { encoding: 'utf8' }).trim().split('\n')[0]
+      if (wtPath && existsSync(wtPath)) {
+        presets.push({ title: 'Windows Terminal', path: wtPath, tags: ['Windows 工具', '命令行'] })
+      }
+    } catch { /* not installed */ }
+    return presets
+      .filter(p => existsSync(p.path))
+      .map(p => ({ type: 'app', title: p.title, file_path: p.path, tags: p.tags }))
+  })
+
   // ── 忽略列表管理 ───────────────────────────────────────
   ipcMain.handle('ignoredPaths:getAll', () => getAllIgnoredPaths())
 

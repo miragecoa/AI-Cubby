@@ -17,7 +17,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('resources:batchReplacePath', oldPrefix, newPrefix),
     batchIgnore: (filePaths: string[]): Promise<number> => ipcRenderer.invoke('resources:batchIgnore', filePaths),
     batchAdd: (items: Array<{ type: string; title: string; file_path: string; meta?: string }>): Promise<{ added: any[]; existing: any[] }> =>
-      ipcRenderer.invoke('resources:batchAdd', items)
+      ipcRenderer.invoke('resources:batchAdd', items),
+    getPresetApps: (): Promise<Array<{ type: string; title: string; file_path: string; tags: string[] }>> =>
+      ipcRenderer.invoke('resources:getPresetApps'),
   },
 
   // 标签
