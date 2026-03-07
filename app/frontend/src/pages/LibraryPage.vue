@@ -539,6 +539,7 @@ import AddResourceModal from '../components/AddResourceModal.vue'
 import DropImportModal from '../components/DropImportModal.vue'
 import type { DropItem } from '../components/DropImportModal.vue'
 import ResourceDetailPanel from '../components/ResourceDetailPanel.vue'
+import { match as pinyinMatch } from 'pinyin-pro'
 
 const store = useResourceStore()
 const settingsStore = useSettingsStore()
@@ -998,7 +999,7 @@ const availableTags = computed(() => {
   let tags = dbTags.value
   if (tagSearch.value) {
     const q = tagSearch.value.toLowerCase()
-    tags = tags.filter(t => t.name.toLowerCase().includes(q))
+    tags = tags.filter(t => t.name.toLowerCase().includes(q) || pinyinMatch(t.name, q) !== null)
   }
   if (!tagSearch.value && untaggedCount.value > 0) {
     return [{ id: 0, name: '未分类', count: untaggedCount.value }, ...tags]
