@@ -1205,9 +1205,11 @@ const listThumbCache = reactive(new Map<string, string>())
 watch([visibleItems, () => settingsStore.viewMode], () => {
   if (settingsStore.viewMode !== 'list') return
   for (const item of visibleItems.value) {
-    if (!item.cover_path || listThumbCache.has(item.id)) continue
+    if (listThumbCache.has(item.id)) continue
+    const thumbPath = item.cover_path || ((item.type === 'image' || item.type === 'video') ? item.file_path : null)
+    if (!thumbPath) continue
     listThumbCache.set(item.id, '') // 占位，防止重复请求
-    window.api.files.readImage(item.cover_path).then(src => {
+    window.api.files.readImage(thumbPath).then(src => {
       if (src) listThumbCache.set(item.id, src)
     }).catch(() => {})
   }
