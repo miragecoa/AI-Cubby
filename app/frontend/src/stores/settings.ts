@@ -24,11 +24,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const showFileExt = ref(true)
   const autoUpdate = ref(true)
   const viewMode = ref<'grid' | 'list'>('grid')
+  const listColumns = ref<Record<string, number>>({ name: 300, type: 70, date: 130, count: 70, tags: 200 })
   const loaded = ref(false)
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeVal, listColVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
@@ -40,6 +41,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.settings.get('showFileExt'),
       window.api.settings.get('autoUpdate'),
       window.api.settings.get('viewMode'),
+      window.api.settings.get('listColumns'),
     ])
     monitorEnabled.value = monitorVal !== 'false'
     autostartEnabled.value = autostartVal
@@ -53,6 +55,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (fileExtVal !== null && fileExtVal !== undefined) showFileExt.value = fileExtVal !== 'false'
     autoUpdate.value = autoUpdateVal !== 'false'
     if (viewModeVal === 'list') viewMode.value = 'list'
+    if (listColVal) { try { listColumns.value = { ...listColumns.value, ...JSON.parse(listColVal) } } catch {} }
 
     if (navVal) {
       try {
@@ -126,5 +129,10 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('viewMode', mode)
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, viewMode, load, setMonitor, setAutostart, setZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setViewMode }
+  async function setListColumns(cols: Record<string, number>) {
+    listColumns.value = { ...cols }
+    await window.api.settings.set('listColumns', JSON.stringify(cols))
+  }
+
+  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, viewMode, listColumns, load, setMonitor, setAutostart, setZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setViewMode, setListColumns }
 })
