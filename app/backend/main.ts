@@ -284,6 +284,12 @@ app.whenReady().then(() => {
   initDatabase()
   registerIpcHandlers()
 
+  // 首次运行默认开启开机自启
+  if (!getSetting('autoStartInitialized')) {
+    app.setLoginItemSettings({ openAtLogin: true })
+    setSetting('autoStartInitialized', 'true')
+  }
+
   createTray()
   createWindow()
 
