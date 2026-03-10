@@ -16,7 +16,6 @@ import { scanRecentFolder, scanProcesses, setMonitorPaused, getRunningSessions, 
 import { dbPath, dataDir } from '../db/index'
 import { checkForUpdate, downloadUpdate, applyAndRestart, skipUpdate, forceUpdate } from '../updater'
 import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest } from '../db/profiles'
-import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest } from '../db/profiles'
 
 // 主进程级缓存：进程生命周期内有效，避免重复调用系统 API
 // 扫描目录时可识别的文件扩展名 → 资源类型
@@ -33,7 +32,7 @@ const SCAN_EXT_TYPES: Record<string, string> = {
 }
 
 const appIconCache = new Map<string, string | null>()
-const thumbCache   = new Map<string, string | null>()
+const thumbCache = new Map<string, string | null>()
 
 // 在 exe 同目录及父目录中搜索图标文件（.ico 优先，其次常见图标文件名）
 function findNearbyIcon(exePath: string): string | null {
@@ -129,21 +128,21 @@ export function registerIpcHandlers(): void {
     const S32 = 'C:\\Windows\\System32'
     const presets: Array<{ title: string; path: string; tags: string[] }> = [
       // 命令行
-      { title: '命令提示符',   path: `${S32}\\cmd.exe`,    tags: ['Windows 工具', '命令行'] },
-      { title: 'PowerShell',   path: `${S32}\\WindowsPowerShell\\v1.0\\powershell.exe`, tags: ['Windows 工具', '命令行'] },
+      { title: '命令提示符', path: `${S32}\\cmd.exe`, tags: ['Windows 工具', '命令行'] },
+      { title: 'PowerShell', path: `${S32}\\WindowsPowerShell\\v1.0\\powershell.exe`, tags: ['Windows 工具', '命令行'] },
       // 系统管理
-      { title: '任务管理器',   path: `${S32}\\Taskmgr.exe`,   tags: ['Windows 工具', '系统管理'] },
-      { title: '控制面板',     path: `${S32}\\control.exe`,   tags: ['Windows 工具', '系统管理'] },
+      { title: '任务管理器', path: `${S32}\\Taskmgr.exe`, tags: ['Windows 工具', '系统管理'] },
+      { title: '控制面板', path: `${S32}\\control.exe`, tags: ['Windows 工具', '系统管理'] },
       { title: '注册表编辑器', path: 'C:\\Windows\\regedit.exe', tags: ['Windows 工具', '系统管理'] },
-      { title: '资源监视器',   path: `${S32}\\resmon.exe`,    tags: ['Windows 工具', '系统管理'] },
-      { title: '事件查看器',   path: `${S32}\\eventvwr.exe`,  tags: ['Windows 工具', '系统管理'] },
-      { title: '系统配置',     path: `${S32}\\msconfig.exe`,  tags: ['Windows 工具', '系统管理'] },
-      { title: '磁盘清理',     path: `${S32}\\cleanmgr.exe`,  tags: ['Windows 工具', '系统管理'] },
+      { title: '资源监视器', path: `${S32}\\resmon.exe`, tags: ['Windows 工具', '系统管理'] },
+      { title: '事件查看器', path: `${S32}\\eventvwr.exe`, tags: ['Windows 工具', '系统管理'] },
+      { title: '系统配置', path: `${S32}\\msconfig.exe`, tags: ['Windows 工具', '系统管理'] },
+      { title: '磁盘清理', path: `${S32}\\cleanmgr.exe`, tags: ['Windows 工具', '系统管理'] },
       // 实用工具
-      { title: '记事本',       path: `${S32}\\notepad.exe`,   tags: ['Windows 工具', '实用工具'] },
-      { title: '计算器',       path: `${S32}\\calc.exe`,      tags: ['Windows 工具', '实用工具'] },
-      { title: '画图',         path: `${S32}\\mspaint.exe`,   tags: ['Windows 工具', '实用工具'] },
-      { title: '截图工具',     path: `${S32}\\SnippingTool.exe`, tags: ['Windows 工具', '实用工具'] },
+      { title: '记事本', path: `${S32}\\notepad.exe`, tags: ['Windows 工具', '实用工具'] },
+      { title: '计算器', path: `${S32}\\calc.exe`, tags: ['Windows 工具', '实用工具'] },
+      { title: '画图', path: `${S32}\\mspaint.exe`, tags: ['Windows 工具', '实用工具'] },
+      { title: '截图工具', path: `${S32}\\SnippingTool.exe`, tags: ['Windows 工具', '实用工具'] },
     ]
     // Windows Terminal（可能未安装）
     try {
@@ -227,15 +226,15 @@ export function registerIpcHandlers(): void {
     const m = meta ? (() => { try { return JSON.parse(meta) } catch { return null } })() : null
     if (m?.steam_appid) {
       // Steam 游戏：通过 steam:// 协议启动（确保走 Steam 客户端）
-      shell.openExternal(`steam://rungameid/${m.steam_appid}`).catch(() => {})
+      shell.openExternal(`steam://rungameid/${m.steam_appid}`).catch(() => { })
     } else if (m?.lnk_args) {
       // 带快捷方式参数启动：等同双击快捷方式
       exec(`"${filePath}" ${m.lnk_args}`, { cwd: m.lnk_cwd || undefined })
     } else if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
       // 网页资源：用默认浏览器打开
-      shell.openExternal(filePath).catch(() => {})
+      shell.openExternal(filePath).catch(() => { })
     } else {
-      shell.openPath(filePath).catch(() => {})
+      shell.openPath(filePath).catch(() => { })
     }
     // 非 exe 资源（图片/视频/漫画/音乐/小说等）WMI 无法追踪进程，直接在此计次
     if (!filePath.toLowerCase().endsWith('.exe')) {
@@ -395,9 +394,9 @@ export function registerIpcHandlers(): void {
       try {
         const entries = await (isUNC(dir)
           ? Promise.race([
-              readdir(dir, { withFileTypes: true }),
-              new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 10_000))
-            ])
+            readdir(dir, { withFileTypes: true }),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 10_000))
+          ])
           : readdir(dir, { withFileTypes: true }))
         for (const entry of entries) {
           if (results.length >= MAX) return
@@ -440,15 +439,18 @@ export function registerIpcHandlers(): void {
   // ── 开机自启 ──────────────────────────────────────────
   ipcMain.handle('loginItem:get', () => app.getLoginItemSettings().openAtLogin)
   ipcMain.handle('loginItem:set', (_e, enable: boolean) => {
-    app.setLoginItemSettings({ openAtLogin: enable })
+    app.setLoginItemSettings({ openAtLogin: enable, path: process.execPath })
+    // 记录用户的手动选择，防止自动修正逻辑覆盖
+    setSetting('autoStartDisabled', enable ? 'false' : 'true')
+    setSetting('autoStartInitialized', 'true')
     return true
   })
 
   // ── 监听控制 ──────────────────────────────────────────
-  ipcMain.handle('monitor:pause',  () => { setMonitorPaused(true);  return true })
+  ipcMain.handle('monitor:pause', () => { setMonitorPaused(true); return true })
   ipcMain.handle('monitor:resume', () => { setMonitorPaused(false); return true })
   ipcMain.handle('monitor:running', () => getRunningSessions())
-  ipcMain.handle('monitor:kill',  (_e, resourceId: string) => { killRunningResource(resourceId); return true })
+  ipcMain.handle('monitor:kill', (_e, resourceId: string) => { killRunningResource(resourceId); return true })
 
   // 立即扫描：Recent/Desktop .lnk + 运行中进程，返回所有新增/更新的资源
   ipcMain.handle('monitor:scanNow', async () => {

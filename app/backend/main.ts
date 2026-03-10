@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Menu, Tray, nativeImage, protocol, net } from 'electron'
+import { app, BrowserWindow, shell, Menu, Tray, nativeImage, NativeImage, protocol, net } from 'electron'
 import { join } from 'path'
 import { deflateSync } from 'zlib'
 import { existsSync, createReadStream, statSync } from 'fs'
@@ -7,7 +7,7 @@ import { execFile } from 'child_process'
 
 // Windows 终端默认使用 GBK 编码，切换到 UTF-8 (65001) 让中文日志正常显示
 if (process.platform === 'win32') {
-  execFile('cmd.exe', ['/c', 'chcp', '65001'], { windowsHide: true }, () => {})
+  execFile('cmd.exe', ['/c', 'chcp', '65001'], { windowsHide: true }, () => { })
 }
 
 // 必须在 app ready 之前声明自定义 scheme（用于本地文件预览）
@@ -78,10 +78,10 @@ function makeSolidPng(r: number, g: number, b: number, size = 16): Buffer {
   ])
 }
 
-let fileIcon: nativeImage | null | undefined = undefined  // undefined = not yet checked
+let fileIcon: NativeImage | null | undefined = undefined  // undefined = not yet checked
 
 /** 只加载用户放在 resources/ 里的真实图标，找不到返回 null */
-function loadFileIcon(): nativeImage | null {
+function loadFileIcon(): NativeImage | null {
   if (fileIcon !== undefined) return fileIcon
 
   const resourcesDir = join(app.getAppPath(), 'resources')
@@ -104,7 +104,7 @@ function loadFileIcon(): nativeImage | null {
 }
 
 /** 托盘图标：有真实文件用真实的，否则用程序内生成的纯色 PNG 兜底 */
-function createTrayIcon(): nativeImage {
+function createTrayIcon(): NativeImage {
   return loadFileIcon() ?? nativeImage.createFromBuffer(makeSolidPng(0x63, 0x66, 0xF1))
 }
 
@@ -150,7 +150,7 @@ function createWindow(): void {
   })
 
   // 最大化/还原事件转发给渲染进程（用于更新自定义标题栏按钮图标）
-  mainWindow.on('maximize',   () => mainWindow?.webContents.send('window:maximizeChange', true))
+  mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximizeChange', true))
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximizeChange', false))
 
   // 窗口移动/缩放后保存位置（防抖 500ms）
@@ -284,10 +284,27 @@ app.whenReady().then(() => {
   initDatabase()
   registerIpcHandlers()
 
-  // 首次运行默认开启开机自启
-  if (!getSetting('autoStartInitialized')) {
-    app.setLoginItemSettings({ openAtLogin: true })
-    setSetting('autoStartInitialized', 'true')
+  // ── 开机自启动（便携版适配） ──────────────────────────
+  // 首次运行默认开启；每次启动验证注册表路径与当前 exe 一致（便携版移动文件夹后自动修正）
+  // 仅在用户没有显式关闭时执行生效
+  {
+    const userDisabled = getSetting('autoStartDisabled') === 'true'
+    const exePath = process.execPath
+    if (!userDisabled) {
+      const current = app.getLoginItemSettings()
+      if (!getSetting('autoStartInitialized') || !current.openAtLogin) {
+        // 未初始化，或被意外关闭（如安全软件清理、文件夹移动等），自动重新注册
+        app.setLoginItemSettings({ openAtLogin: true, path: exePath })
+        setSetting('autoStartInitialized', 'true')
+        console.log('[AutoStart] Registered/Repaired, exe:', exePath)
+      } else {
+        console.log('[AutoStart] Already active, exe:', exePath)
+      }
+    } else {
+      console.log('[AutoStart] Skipped (User disabled)')
+      // 确保系统内的注册也被关闭（防止清理不彻底）
+      app.setLoginItemSettings({ openAtLogin: false, path: exePath })
+    }
   }
 
   createTray()
