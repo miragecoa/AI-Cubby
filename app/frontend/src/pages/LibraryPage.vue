@@ -22,7 +22,7 @@
             type="search"
           />
           <button class="ai-btn combine-right" @click="showAiSearchComingSoon = true" title="AI 模糊搜索资源：通过自然语言描述轻松找到文件">
-            <span class="btn-icon" v-html="aiSvg" />
+            <span class="btn-icon" v-html="searchSvg" />
             <span class="btn-text">AI 搜索</span>
           </button>
         </div>
