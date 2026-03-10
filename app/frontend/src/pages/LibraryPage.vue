@@ -5,22 +5,26 @@
       <div class="toolbar-row">
         <button v-if="!showIgnored" class="add-btn" @click="showAddModal = true" title="手动添加资源">
           <span class="btn-icon" v-html="addSvg" />
-          添加
+          <span class="btn-text">添加</span>
         </button>
 
         <button v-if="!showIgnored" class="add-btn batch-enter-btn" @click="enterBatchMode" title="批量操作">
           <span class="btn-icon" v-html="batchSvg" />
-          批量
+          <span class="btn-text">批量</span>
         </button>
 
-        <div class="search-wrap" v-if="!showIgnored">
+        <div class="search-wrap combined" v-if="!showIgnored">
           <span class="search-icon" v-html="searchSvg" />
           <input
             v-model="store.searchQuery"
-            class="search"
+            class="search combine-left"
             placeholder="搜索资源..."
             type="search"
           />
+          <button class="ai-btn combine-right" @click="showAiSearchComingSoon = true" title="AI 模糊搜索资源：通过自然语言描述轻松找到文件">
+            <span class="btn-icon" v-html="aiSvg" />
+            <span class="btn-text">AI 搜索</span>
+          </button>
         </div>
 
         <div class="toolbar-right">
@@ -53,7 +57,7 @@
             @click="toggleIgnored"
           >
             <span class="btn-icon" v-html="ignoreListSvg" />
-            已忽略{{ ignoredFiltered.length ? ` (${ignoredFiltered.length})` : '' }}
+            <span class="btn-text">已忽略{{ ignoredFiltered.length ? ` (${ignoredFiltered.length})` : '' }}</span>
           </button>
         </div>
       </div>
@@ -61,7 +65,7 @@
       <div class="toolbar-row" v-if="!showIgnored">
         <button class="ai-btn" @click="showAiComingSoon = true" title="AI 智能设置">
           <span class="btn-icon" v-html="aiSvg" />
-          AI 智能设置
+          <span class="btn-text">AI 智能设置</span>
         </button>
         <div class="toolbar-right">
           <div class="view-toggle">
@@ -74,7 +78,7 @@
           </div>
           <button class="scan-sys-toolbar-btn" @click="openScanModal" title="扫描系统最近使用的文件和运行中的程序">
             <span class="btn-icon" v-html="scanSysSvg" />
-            系统扫描
+            <span class="btn-text">系统扫描</span>
           </button>
           <div class="sort-wrap">
             <span class="sort-icon" v-html="sortSvg" />
@@ -544,6 +548,25 @@
       </div>
     </Teleport>
 
+    <!-- AI 搜索 — 敬请期待 -->
+    <Teleport to="body">
+      <div v-if="showAiSearchComingSoon" class="modal-overlay" @mousedown.self="showAiSearchComingSoon = false">
+        <div class="ai-coming-modal" style="width: 420px;">
+          <span class="ai-coming-icon" v-html="aiLargeSvg" />
+          <div class="ai-coming-title">很快将会上线 AI 搜索功能</div>
+          <div class="ai-coming-desc" style="text-align: left; padding: 0 10px;">
+            想象一下，你可以直接搜：<br><br>
+            • 我去年用过的剪辑软件<br>
+            • 我昨天处理的文件<br>
+            • 上周老板发我的让我填的公司报表<br>
+            • 上次我们公司参展使用的ppt
+          </div>
+          <div class="ai-coming-badge">即将上线</div>
+          <button class="ai-coming-close" @click="showAiSearchComingSoon = false">期待一下</button>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- 系统扫描弹窗 -->
     <Teleport to="body">
       <div v-if="showScanModal" class="modal-overlay" @mousedown.self="cancelScan">
@@ -637,6 +660,7 @@ const store = useResourceStore()
 const settingsStore = useSettingsStore()
 const showAddModal = ref(false)
 const showAiComingSoon = ref(false)
+const showAiSearchComingSoon = ref(false)
 const showScanModal = ref(false)
 const sysScanning = ref(false)
 const sysScanResult = ref<number | null>(null)
@@ -1559,6 +1583,29 @@ async function deleteIgnored(filePath: string) {
 .search:focus { border-color: var(--accent); }
 .search::-webkit-search-cancel-button { display: none; }
 
+.search-wrap.combined {
+  display: flex;
+  align-items: stretch;
+  min-width: 140px; /* 保证有一个最小可用宽度 */
+}
+
+.search.combine-left {
+  flex: 1; /* 让输入框占用剩余空间 */
+  min-width: 0; /* 允许输入框在空间不足时压缩 */
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.search.combine-left:not(:focus) {
+  border-right-color: transparent;
+}
+
+.ai-btn.combine-right {
+  flex-shrink: 0; /* 确保右侧按钮不会被意外挤压变形 */
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: 0;
+}
+
 .result-count {
   font-size: 13px;
   color: var(--text-3);
@@ -1570,6 +1617,16 @@ async function deleteIgnored(filePath: string) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .btn-text {
+    display: none;
+  }
+  .add-btn, .ai-btn, .scan-sys-toolbar-btn, .ignored-toggle {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 }
 
 .btn-icon { width: 13px; height: 13px; display: flex; flex-shrink: 0; }
