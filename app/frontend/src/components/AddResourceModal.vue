@@ -247,7 +247,23 @@
                 </button>
               </div>
               <div v-if="scanResults.length" class="scan-stats">
-                <span class="scan-stats-text">共 {{ scanResults.length }} 个文件</span>
+                <div class="scan-type-tabs">
+                  <button
+                    class="scan-type-tab" :class="{ active: scanTypeFilter === 'all' }"
+                    @click="clickTypeTab('all')"
+                  >
+                    <span class="tab-check" :class="typeSelectionState('all')" />
+                    全部 {{ scanResults.length }}
+                  </button>
+                  <button
+                    v-for="t in scanTypeTabs" :key="t"
+                    class="scan-type-tab" :class="{ active: scanTypeFilter === t }"
+                    @click="clickTypeTab(t)"
+                  >
+                    <span class="tab-check" :class="typeSelectionState(t)" />
+                    {{ typeLabel(t) }} {{ scanTypeCounts[t] }}
+                  </button>
+                </div>
                 <button class="scan-toggle-all" @click="toggleScanSelectAll">
                   {{ scanAllSelected ? '取消全选' : '全选' }}
                 </button>
@@ -258,9 +274,9 @@
               <div class="spinner" />
               <span class="scan-center-text">正在扫描目录…</span>
             </div>
-            <div v-else-if="scanResults.length" class="scan-file-list">
+            <div v-else-if="filteredScanResults.length" class="scan-file-list">
               <label
-                v-for="file in scanResults" :key="file.path"
+                v-for="file in filteredScanResults" :key="file.path"
                 class="scan-file-row" :class="{ selected: file.selected }"
               >
                 <input type="checkbox" v-model="file.selected" class="scan-checkbox" />
@@ -270,7 +286,7 @@
               </label>
             </div>
             <div v-else-if="scanDirPath && !scanDirLoading" class="scan-center">
-              <span class="scan-center-text">未找到可识别的文件</span>
+              <span class="scan-center-text">{{ scanResults.length ? '该类型下无文件' : '未找到可识别的文件' }}</span>
             </div>
             <div v-else class="scan-center" :class="{ 'drag-over': isDragOver }"
               @dragover.prevent="isDragOver = true"
@@ -492,8 +508,30 @@ const scanDirPath = ref('')
 const scanResults = ref<Array<{ path: string; name: string; type: string; selected: boolean }>>([])
 const scanDirLoading = ref(false)
 
+const scanTypeFilter = ref('all')
+
+const scanTypeCounts = computed(() => {
+  const counts: Record<string, number> = { all: scanResults.value.length }
+  for (const r of scanResults.value) counts[r.type] = (counts[r.type] ?? 0) + 1
+  return counts
+})
+
+const scanTypeTabs = computed(() => {
+  const typeOrder = ['image', 'video', 'document', 'app', 'game', 'music', 'comic', 'novel', 'folder']
+  const present = typeOrder.filter(t => (scanTypeCounts.value[t] ?? 0) > 0)
+  return present
+})
+
+const filteredScanResults = computed(() =>
+  scanTypeFilter.value === 'all'
+    ? scanResults.value
+    : scanResults.value.filter(r => r.type === scanTypeFilter.value)
+)
+
 const scanSelectedCount = computed(() => scanResults.value.filter(r => r.selected).length)
-const scanAllSelected = computed(() => scanResults.value.length > 0 && scanResults.value.every(r => r.selected))
+const scanAllSelected = computed(() =>
+  filteredScanResults.value.length > 0 && filteredScanResults.value.every(r => r.selected)
+)
 
 // ── 系统扫描模式状态 ────────────────────────────────────
 const sysScanning = ref(false)
@@ -532,6 +570,7 @@ function resetAll() {
   scanDirPath.value = ''
   scanResults.value = []
   scanDirLoading.value = false
+  scanTypeFilter.value = 'all'
   sysScanning.value = false
   sysScanResult.value = null
   submitting.value = false
@@ -716,7 +755,23 @@ async function pickScanDir() {
 
 function toggleScanSelectAll() {
   const newVal = !scanAllSelected.value
-  for (const r of scanResults.value) r.selected = newVal
+  for (const r of filteredScanResults.value) r.selected = newVal
+}
+
+function typeSelectionState(type: string): 'all' | 'partial' | 'none' {
+  const items = type === 'all' ? scanResults.value : scanResults.value.filter(r => r.type === type)
+  if (items.length === 0) return 'none'
+  const n = items.filter(r => r.selected).length
+  if (n === 0) return 'none'
+  if (n === items.length) return 'all'
+  return 'partial'
+}
+
+function clickTypeTab(type: string) {
+  scanTypeFilter.value = type
+  const items = type === 'all' ? scanResults.value : scanResults.value.filter(r => r.type === type)
+  const newVal = typeSelectionState(type) !== 'all'
+  for (const r of items) r.selected = newVal
 }
 
 async function importScanned() {
@@ -1338,6 +1393,82 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
 .scan-stats-text {
   font-size: 12px;
   color: var(--text-3);
+}
+
+.scan-type-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.scan-type-tab {
+  font-size: 12px;
+  font-family: inherit;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.1s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.scan-type-tab:hover { background: var(--surface-3); }
+.scan-type-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.tab-check {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.5px solid currentColor;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  position: relative;
+}
+.tab-check.all {
+  background: currentColor;
+  opacity: 1;
+}
+.tab-check.all::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 3.5px;
+  border-left: 1.5px solid var(--bg);
+  border-bottom: 1.5px solid var(--bg);
+  transform: rotate(-45deg) translate(0.5px, -0.5px);
+}
+.tab-check.partial {
+  opacity: 1;
+}
+.tab-check.partial::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 1px;
+}
+.scan-type-tab.active .tab-check {
+  border-color: rgba(255,255,255,0.8);
+}
+.scan-type-tab.active .tab-check.all {
+  background: rgba(255,255,255,0.9);
+}
+.scan-type-tab.active .tab-check.all::after {
+  border-color: var(--accent);
+}
+.scan-type-tab.active .tab-check.partial::after {
+  background: rgba(255,255,255,0.9);
 }
 
 .scan-toggle-all {
