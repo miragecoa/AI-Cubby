@@ -211,6 +211,18 @@ Electron 29 + Vue 3 + TypeScript + SQLite (better-sqlite3) + electron-vite
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=miragecoa%2FAI-Resource-Manager&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
 ## 开源协议
 
 [AGPL-3.0 License](LICENSE) — 代码开源可用，修改后须开源。商业授权请联系作者。
