@@ -1,5 +1,5 @@
 import { app, shell } from 'electron'
-import { watch, readdirSync, existsSync, FSWatcher } from 'fs'
+import { watch, readdirSync, existsSync, statSync, FSWatcher } from 'fs'
 import { extname, basename, join } from 'path'
 import { isUNC } from '../utils/fs-safe'
 import { spawn, execFile, ChildProcess } from 'child_process'
@@ -682,7 +682,14 @@ function processLnk(lnkPath: string): Resource | null {
     return null
   }
 
-  const type = EXT_MAP[ext]
+  // 文件夹：无扩展名且目标是目录
+  if (ext === '') {
+    try {
+      if (!statSync(target).isDirectory()) return null
+    } catch { return null }
+  }
+
+  const type = ext === '' ? 'folder' : EXT_MAP[ext]
   if (!type) {
     console.log('[Monitor] Unknown ext, skipping:', ext, target)
     return null
@@ -697,7 +704,9 @@ function processLnk(lnkPath: string): Resource | null {
   const exeName = basename(target, ext)
   // 快捷方式名称与 exe 名不同 → 用户自定义命名（如「VK加速器全球版」「Google Chrome」）
   const isUserNamed = lnkName.toLowerCase() !== exeName.toLowerCase()
-  const title = isUserNamed ? lnkName : exeName
+  // 文件夹类型：用 target 实际名称，去掉 Windows 自动追加的消歧括号（如 "project (4)"）
+  const rawTitle = isUserNamed ? lnkName : exeName
+  const title = type === 'folder' ? rawTitle.replace(/\s*\(\d+\)$/, '') : rawTitle
   if (isUserNamed) {
     // 建立 exe→lnk 映射，供 WMI 通道使用
     exeToLnkName.set(target.toLowerCase(), title)
