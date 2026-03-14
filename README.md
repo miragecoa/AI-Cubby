@@ -213,11 +213,11 @@ Electron 29 + Vue 3 + TypeScript + SQLite (better-sqlite3) + electron-vite
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=miragecoa%2FAI-Resource-Manager&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=miragecoa%2FAI-Resource-Manager&type=timeline&legend=bottom-right">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=timeline&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=timeline&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=miragecoa/AI-Resource-Manager&type=timeline&legend=top-left" />
  </picture>
 </a>
 

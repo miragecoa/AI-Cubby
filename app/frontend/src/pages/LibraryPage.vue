@@ -953,9 +953,10 @@ const listSortedFiltered = computed(() => {
   const typeDir = typeSortDir.value === 'asc' ? 1 : typeSortDir.value === 'desc' ? -1 : 0
 
   return base.slice().sort((a, b) => {
-    // 置顶 / 运行中始终最前
-    const aScore = (a.pinned ? 2 : 0) + (store.runningMap.has(a.id) ? 1 : 0)
-    const bScore = (b.pinned ? 2 : 0) + (store.runningMap.has(b.id) ? 1 : 0)
+    // 置顶始终最前；列头排序时 running 不干扰数值排序
+    const runW = (listSortCol.value || typeSortDir.value) ? 0 : 1
+    const aScore = (a.pinned ? 2 : 0) + (store.runningMap.has(a.id) ? runW : 0)
+    const bScore = (b.pinned ? 2 : 0) + (store.runningMap.has(b.id) ? runW : 0)
     if (aScore !== bScore) return bScore - aScore
 
     // 主键：类型升降序（面板设置）
