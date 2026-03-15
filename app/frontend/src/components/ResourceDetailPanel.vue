@@ -249,10 +249,10 @@ async function pickCover() {
 }
 
 // ─── Debounced save ────────────────────────────────────────────────
-let saveTimer: ReturnType<typeof setTimeout> | null = null
+const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 function debounceSave(field: string, value: any) {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => saveField(field, value), 650)
+  if (saveTimers[field]) clearTimeout(saveTimers[field])
+  saveTimers[field] = setTimeout(() => saveField(field, value), 650)
 }
 async function saveField(field: string, value: any) {
   const updated = await window.api.resources.update(props.resource.id, { [field]: value } as any)

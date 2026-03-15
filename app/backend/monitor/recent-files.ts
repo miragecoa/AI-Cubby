@@ -369,7 +369,7 @@ function preloadLnkNames(folders: string[]): void {
       try {
         const shortcut = shell.readShortcutLink(lnkPath)
         if (!shortcut.target) continue
-        const lnkName = basename(lnkPath, '.lnk')
+        const lnkName = basename(lnkPath, '.lnk').replace(/\.\d+$/, '')
         const exeName = basename(shortcut.target, extname(shortcut.target))
         // 只收录用户自定义命名的快捷方式（名称与 exe 不同，说明是有意义的别名）
         if (lnkName.toLowerCase() !== exeName.toLowerCase()) {
@@ -715,7 +715,7 @@ function processLnk(lnkPath: string): Resource | null {
     return null
   }
 
-  const lnkName = basename(lnkPath, '.lnk')
+  const lnkName = basename(lnkPath, '.lnk').replace(/\.\d+$/, '')
   const exeName = basename(target, ext)
   // 快捷方式名称与 exe 名不同 → 用户自定义命名（如「VK加速器全球版」「Google Chrome」）
   const isUserNamed = lnkName.toLowerCase() !== exeName.toLowerCase()

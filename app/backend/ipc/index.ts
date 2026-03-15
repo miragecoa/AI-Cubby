@@ -266,7 +266,7 @@ export function registerIpcHandlers(): void {
             } catch {
               type = SCAN_EXT_TYPES[extname(shortcut.target).toLowerCase()] || 'other'
             }
-            const lnkName = basename(p, '.lnk')
+            const lnkName = basename(p, '.lnk').replace(/\.\d+$/, '')
             const meta: Record<string, string> = {}
             if (shortcut.args) meta.lnk_args = shortcut.args
             if (shortcut.cwd) meta.lnk_cwd = shortcut.cwd
