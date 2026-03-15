@@ -21,6 +21,9 @@
             placeholder="搜索资源..."
             type="search"
           />
+          <button v-if="store.searchQuery" class="search-clear" @click="store.searchQuery = ''" title="清除搜索">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
           <button class="ai-btn combine-right" @click="showAiSearchComingSoon = true" title="AI 模糊搜索资源：通过自然语言描述轻松找到文件">
             <span class="btn-icon" v-html="searchSvg" />
             <span class="btn-text">AI 搜索</span>
@@ -1864,6 +1867,22 @@ async function deleteIgnored(filePath: string) {
 .search::placeholder { color: var(--text-3); }
 .search:focus { border-color: var(--accent); }
 .search::-webkit-search-cancel-button { display: none; }
+
+.search-clear {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-right: none;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.search-clear:hover { color: var(--text); }
 
 .search-wrap.combined {
   display: flex;

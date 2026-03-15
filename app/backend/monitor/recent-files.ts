@@ -197,6 +197,8 @@ let recentWatcher: FSWatcher | null = null
 let desktopWatcher: FSWatcher | null = null
 let processWatcherProc: ChildProcess | null = null
 let monitorPaused = false
+let monitorStopped = false
+let onNewEntryCb: ((entry: Resource) => void) | null = null
 
 /** 暂停/恢复自动捕获（手动添加对话框打开时暂停，防止用户浏览文件时被自动入库） */
 export function setMonitorPaused(paused: boolean): void {
@@ -323,6 +325,16 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
     processWatcherProc.on('exit', (code) => {
       console.warn('[Monitor] WMI process watcher exited, code:', code)
       processWatcherProc = null
+      // 非主动停止时自动重启（例如更新后首次启动 WMI 环境未稳定导致闪退）
+      if (!monitorStopped && onNewEntryCb) {
+        console.log('[Monitor] Scheduling WMI watcher restart in 3s...')
+        setTimeout(() => {
+          if (!monitorStopped && !processWatcherProc && onNewEntryCb) {
+            console.log('[Monitor] Restarting WMI process watcher...')
+            startProcessWatcher(onNewEntryCb)
+          }
+        }, 3000)
+      }
     })
 
     console.log('[Monitor] WMI process watcher started')
@@ -418,6 +430,8 @@ async function checkInitialRunning(): Promise<void> {
 }
 
 export function startMonitor(onNewEntry: (entry: Resource) => void, onRunningChange?: (event: RunningEvent) => void): void {
+  monitorStopped = false
+  onNewEntryCb = onNewEntry
   onRunningChangeCb = onRunningChange
   const recentPath = app.getPath('recent')
   const desktopPath = app.getPath('desktop')
@@ -470,6 +484,7 @@ export function startMonitor(onNewEntry: (entry: Resource) => void, onRunningCha
 }
 
 export function stopMonitor(): void {
+  monitorStopped = true
   recentWatcher?.close(); recentWatcher = null
   desktopWatcher?.close(); desktopWatcher = null
   if (processWatcherProc) { processWatcherProc.kill(); processWatcherProc = null }

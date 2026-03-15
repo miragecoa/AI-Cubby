@@ -175,16 +175,16 @@
               {{ updateCheckInfo?.isNewVersion ? `发现新版本 v${updateCheckInfo.remoteVersion}` : `v${updateCheckInfo?.remoteVersion} 有更新` }}
               ({{ ((updateCheckInfo?.assetSize || 0) / 1024 / 1024).toFixed(1) }} MB)
             </div>
-            <div class="setting-desc" v-else-if="updateCheckStatus === 'downloading' || updateCheckStatus === 'force-downloading'">正在下载… {{ updateDownloadPercent }}%</div>
-            <div class="setting-desc" v-else-if="updateCheckStatus === 'ready'" style="color: #4ade80;">更新已就绪，重启即可完成</div>
-            <div class="setting-desc" v-else-if="updateCheckStatus === 'error'" style="color: #ef4444;">操作失败，请稍后重试</div>
+            <div class="setting-desc" v-else-if="updateCheckStatus === 'downloading' || updateCheckStatus === 'force-downloading'">正在下载… {{ updateDownloadPercent }}%，请耐心等待</div>
+            <div class="setting-desc" v-else-if="updateCheckStatus === 'ready'" style="color: #4ade80;">下载完成，点击「重启并更新」完成安装（若无响应可多点几次）</div>
+            <div class="setting-desc" v-else-if="updateCheckStatus === 'error'" style="color: #ef4444;">操作失败，请重试或点击「前往下载页」手动更新</div>
           </div>
           <div class="setting-actions">
             <button v-if="updateCheckStatus === 'available'" class="profile-btn update-action-btn" @click="settingsDownloadAndApply">下载并更新</button>
             <button v-else-if="updateCheckStatus === 'ready'" class="profile-btn update-action-btn" @click="settingsApplyUpdate">重启并更新</button>
-            <button v-else-if="updateCheckStatus !== 'downloading'" class="profile-btn" @click="manualCheckUpdate" :disabled="updateCheckStatus === 'checking'">检查更新</button>
-            <button class="profile-btn" @click="openGitHubRelease">手动更新</button>
-            <button class="profile-btn" @click="forceUpdateLatest" :disabled="updateCheckStatus === 'downloading' || updateCheckStatus === 'force-downloading'">强制拉取</button>
+            <button v-else-if="updateCheckStatus !== 'downloading' && updateCheckStatus !== 'force-downloading'" class="profile-btn" @click="manualCheckUpdate" :disabled="updateCheckStatus === 'checking'">检查更新</button>
+            <button class="profile-btn" @click="openGitHubRelease">前往下载页</button>
+            <button class="profile-btn" @click="forceUpdateLatest" :disabled="updateCheckStatus === 'downloading' || updateCheckStatus === 'force-downloading'">强制更新</button>
           </div>
         </div>
       </section>
@@ -261,15 +261,23 @@ async function manualCheckUpdate() {
   }
 }
 
-async function settingsDownloadAndApply() {
+function settingsDownloadAndApply() {
   updateCheckStatus.value = 'downloading'
   updateDownloadPercent.value = 0
-  try {
-    await window.api.updater.download()
-    updateCheckStatus.value = 'ready'
-  } catch {
-    updateCheckStatus.value = 'error'
-  }
+
+  // Fire-and-forget: download() returns null immediately; done/error arrive as events
+  // Don't call the unsub functions — they call removeAllListeners and would nuke LibraryPage's listeners
+  window.api.onDownloadDone(() => {
+    if (updateCheckStatus.value === 'downloading') {
+      updateCheckStatus.value = 'ready'
+    }
+  })
+  window.api.onDownloadError(() => {
+    if (updateCheckStatus.value === 'downloading') {
+      updateCheckStatus.value = 'error'
+    }
+  })
+  window.api.updater.download()
 }
 
 function settingsApplyUpdate() {
