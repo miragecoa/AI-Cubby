@@ -40,22 +40,21 @@
         </div>
       </section>
 
-      <!-- 隐私目录 -->
+      <!-- 离线模式 -->
       <section class="section">
-        <button class="section-collapse-btn" @click="blockedDirsExpanded = !blockedDirsExpanded">
-          <h2 class="section-title" style="margin-bottom:0">隐私目录</h2>
-          <span class="section-collapse-hint">如：私人照片、工作合同等</span>
-          <svg class="section-collapse-chevron" :class="{ open: blockedDirsExpanded }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div v-show="blockedDirsExpanded" class="blocked-dirs-wrap">
-          <div class="blocked-dirs-desc">以下目录中的文件不会被自动收录（已收录的不受影响）</div>
-          <div v-for="dir in blockedDirs" :key="dir" class="blocked-dir-row">
-            <span class="blocked-dir-path">{{ dir }}</span>
-            <button class="blocked-dir-remove" @click="removeBlockedDir(dir)" title="移除">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+        <h2 class="section-title">AI 功能</h2>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">离线模式</div>
+            <div class="setting-desc">开启后仅接收软件更新，所有 AI 功能将提示「当前为离线模式」</div>
           </div>
-          <button class="blocked-dir-add" @click="addBlockedDir">+ 添加目录</button>
+          <button
+            class="toggle"
+            :class="{ on: settingsStore.offlineMode }"
+            @click="settingsStore.setOfflineMode(!settingsStore.offlineMode)"
+          >
+            <span class="toggle-thumb" />
+          </button>
         </div>
       </section>
 
@@ -378,22 +377,6 @@ async function forceUpdateLatest() {
   }
 }
 
-// ── 隐私目录 ──
-const blockedDirs = ref<string[]>([])
-const blockedDirsExpanded = ref(false)
-
-async function addBlockedDir() {
-  const dir = await window.api.files.pickFolder()
-  if (!dir) return
-  await window.api.blockedDirs.add(dir)
-  blockedDirs.value = await window.api.blockedDirs.getAll()
-}
-
-async function removeBlockedDir(dir: string) {
-  await window.api.blockedDirs.remove(dir)
-  blockedDirs.value = blockedDirs.value.filter(d => d !== dir)
-}
-
 // ── 配置文件 ──
 const profiles = ref<Array<{ id: string; name: string }>>([])
 const activeProfileId = ref('')
@@ -453,7 +436,6 @@ onMounted(async () => {
     lastUpdateTime.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
   await loadProfiles()
-  blockedDirs.value = await window.api.blockedDirs.getAll()
 
   try {
     changelog.value = await window.api.updater.getChangelog()
@@ -926,108 +908,6 @@ function applyZoom() {
 
 .changelog-sub-item.expanded > .changelog-header .changelog-chevron {
   transform: rotate(180deg);
-  color: var(--accent);
-}
-
-/* Blocked dirs */
-.section-collapse-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 11px 14px;
-  cursor: pointer;
-  color: inherit;
-  font-family: inherit;
-  transition: border-color 0.15s;
-  text-align: left;
-}
-.section-collapse-btn:hover {
-  border-color: var(--text-3);
-}
-.section-collapse-hint {
-  font-size: 12px;
-  color: var(--text-3);
-  flex: 1;
-}
-.section-collapse-chevron {
-  color: var(--text-3);
-  flex-shrink: 0;
-  transition: transform 0.2s;
-}
-.section-collapse-chevron.open {
-  transform: rotate(180deg);
-}
-
-.blocked-dirs-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 2px;
-}
-
-.blocked-dirs-desc {
-  font-size: 12px;
-  color: var(--text-3);
-  padding: 8px 14px 6px;
-}
-
-.blocked-dir-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.blocked-dir-path {
-  flex: 1;
-  font-size: 13px;
-  color: var(--text-2);
-  font-family: 'Consolas', 'Courier New', monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.blocked-dir-remove {
-  background: none;
-  border: none;
-  padding: 2px;
-  cursor: pointer;
-  color: var(--text-3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
-  flex-shrink: 0;
-}
-.blocked-dir-remove:hover {
-  color: #ef4444;
-  background: rgba(239,68,68,0.1);
-}
-
-.blocked-dir-add {
-  align-self: flex-start;
-  margin-top: 2px;
-  padding: 6px 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-2);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-.blocked-dir-add:hover {
-  border-color: var(--accent);
   color: var(--accent);
 }
 

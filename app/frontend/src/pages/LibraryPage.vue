@@ -79,9 +79,9 @@
               <span v-html="listViewSvg" />
             </button>
           </div>
-          <button class="scan-sys-toolbar-btn" @click="openScanModal" title="扫描系统最近使用的文件和运行中的程序">
+          <button class="scan-sys-toolbar-btn" @click="openScanModal" title="读取 Windows 使用历史，导入最近打开的文件记录">
             <span class="btn-icon" v-html="scanSysSvg" />
-            <span class="btn-text">系统扫描</span>
+            <span class="btn-text">使用历史</span>
           </button>
         </div>
       </div>
@@ -139,19 +139,43 @@
         </div>
         <!-- 已忽略文件视图 -->
         <template v-if="showIgnored">
-          <div v-if="ignoredFiltered.length === 0" class="empty-state">
-            <span class="empty-icon" v-html="ignoreListSvg" />
-            <div class="empty-text">暂无已忽略文件</div>
-            <div class="empty-hint">右键资源卡片 → 「忽略此文件」后会在这里出现</div>
+          <!-- Tab 切换 -->
+          <div class="ignored-tabs">
+            <button class="ignored-tab" :class="{ active: ignoredTab === 'files' }" @click="ignoredTab = 'files'">文件忽略</button>
+            <button class="ignored-tab" :class="{ active: ignoredTab === 'dirs' }" @click="switchToBlockedDirs">隐私目录</button>
           </div>
-          <div v-else class="ignored-list">
-            <div v-for="p in ignoredFiltered" :key="p" class="ignored-row">
-              <span class="ignored-name" :title="p">{{ getBasename(p) }}</span>
-              <span class="ignored-path" :title="p">{{ p }}</span>
-              <button class="unignore-btn" @click="unignore(p)">取消忽略</button>
-              <button class="delete-ignored-btn" @click="deleteIgnored(p)">删除</button>
+
+          <!-- 文件忽略 tab -->
+          <template v-if="ignoredTab === 'files'">
+            <div v-if="ignoredFiltered.length === 0" class="empty-state">
+              <span class="empty-icon" v-html="ignoreListSvg" />
+              <div class="empty-text">暂无已忽略文件</div>
+              <div class="empty-hint">右键资源卡片 → 「忽略此文件」后会在这里出现</div>
             </div>
-          </div>
+            <div v-else class="ignored-list">
+              <div v-for="p in ignoredFiltered" :key="p" class="ignored-row">
+                <span class="ignored-name" :title="p">{{ getBasename(p) }}</span>
+                <span class="ignored-path" :title="p">{{ p }}</span>
+                <button class="unignore-btn" @click="unignore(p)">取消忽略</button>
+                <button class="delete-ignored-btn" @click="deleteIgnored(p)">删除</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- 隐私目录 tab -->
+          <template v-else>
+            <div class="ignored-list">
+              <div v-if="blockedDirs.length === 0" class="blocked-empty-hint">
+                以下目录中的文件不会被自动收录（已收录的不受影响）。暂无黑名单目录。
+              </div>
+              <div v-else class="blocked-desc">以下目录中的文件不会被自动收录（已收录的不受影响）</div>
+              <div v-for="dir in blockedDirs" :key="dir" class="ignored-row">
+                <span class="ignored-path" style="flex:1" :title="dir">{{ dir }}</span>
+                <button class="delete-ignored-btn" @click="removeBlockedDir(dir)">移除</button>
+              </div>
+              <button class="blocked-add-btn" @click="addBlockedDir">+ 添加目录</button>
+            </div>
+          </template>
         </template>
 
         <!-- 普通库视图 -->
@@ -645,13 +669,13 @@
           <!-- 初始状态 -->
           <template v-if="!sysScanning && sysScanResult === null">
             <span class="scan-modal-icon" v-html="scanSysSvg" />
-            <p class="scan-modal-desc">扫描系统最近使用的文件和运行中的程序</p>
-            <button class="scan-modal-btn" @click="doSystemScan">开始扫描</button>
+            <p class="scan-modal-desc">读取 Windows 使用历史，导入最近打开的文件记录</p>
+            <button class="scan-modal-btn" @click="doSystemScan">开始读取</button>
           </template>
           <!-- 扫描中 -->
           <template v-else-if="sysScanning">
             <div class="spinner lg" />
-            <p class="scan-modal-desc">正在扫描系统…</p>
+            <p class="scan-modal-desc">正在读取使用历史…</p>
             <button class="scan-modal-btn secondary" @click="cancelScan">取消</button>
           </template>
           <!-- 完成 -->
@@ -661,7 +685,7 @@
               {{ sysScanResult! > 0 ? `发现 ${sysScanResult} 个新资源` : '未发现新资源' }}
             </p>
             <div class="scan-modal-actions">
-              <button class="scan-modal-btn secondary" @click="doSystemScan">重新扫描</button>
+              <button class="scan-modal-btn secondary" @click="doSystemScan">重新读取</button>
               <button class="scan-modal-btn" @click="showScanModal = false">完成</button>
             </div>
           </template>
@@ -1549,7 +1573,9 @@ const sortOptions: Array<{ value: ResourceSortField; label: string }> = [
 ]
 
 const showIgnored = ref(false)
+const ignoredTab = ref<'files' | 'dirs'>('files')
 const ignoredPaths = ref<string[]>([])
+const blockedDirs = ref<string[]>([])
 
 const TYPE_BY_EXT: Record<string, ResourceType> = {
   '.jpg': 'image', '.jpeg': 'image', '.png': 'image',
@@ -1654,6 +1680,23 @@ async function toggleIgnored() {
   if (showIgnored.value) {
     ignoredPaths.value = await window.api.ignoredPaths.getAll()
   }
+}
+
+async function switchToBlockedDirs() {
+  ignoredTab.value = 'dirs'
+  blockedDirs.value = await window.api.blockedDirs.getAll()
+}
+
+async function addBlockedDir() {
+  const dir = await window.api.files.pickFolder()
+  if (!dir) return
+  await window.api.blockedDirs.add(dir)
+  blockedDirs.value = await window.api.blockedDirs.getAll()
+}
+
+async function removeBlockedDir(dir: string) {
+  await window.api.blockedDirs.remove(dir)
+  blockedDirs.value = blockedDirs.value.filter(d => d !== dir)
 }
 
 async function unignore(filePath: string) {
@@ -2692,6 +2735,64 @@ async function deleteIgnored(filePath: string) {
   color: var(--text-3);
   margin-left: -2px;
 }
+
+/* ── 已忽略 tabs ── */
+.ignored-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 12px 16px 0;
+  flex-shrink: 0;
+}
+
+.ignored-tab {
+  padding: 6px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  border-bottom: none;
+  color: var(--text-3);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.ignored-tab:hover { color: var(--text-2); }
+
+.ignored-tab.active {
+  background: var(--surface-3);
+  color: var(--text);
+  font-weight: 500;
+  border-color: var(--border);
+}
+
+.blocked-empty-hint {
+  font-size: 13px;
+  color: var(--text-3);
+  padding: 4px 0 8px;
+  line-height: 1.5;
+}
+
+.blocked-desc {
+  font-size: 12px;
+  color: var(--text-3);
+  padding-bottom: 6px;
+}
+
+.blocked-add-btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 14px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.blocked-add-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── 已忽略文件列表 ── */
 .ignored-list {

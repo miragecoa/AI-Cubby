@@ -315,12 +315,12 @@
           <div class="modal-body-full scan-sys-body">
             <template v-if="!sysScanning && sysScanResult === null">
               <span class="scan-sys-icon" v-html="scanSysIcon" />
-              <p class="scan-sys-desc">扫描系统最近使用的文件和运行中的程序</p>
-              <button class="scan-sys-btn" @click="doSystemScan">开始扫描</button>
+              <p class="scan-sys-desc">读取 Windows 使用历史，导入最近打开的文件记录</p>
+              <button class="scan-sys-btn" @click="doSystemScan">开始读取</button>
             </template>
             <template v-else-if="sysScanning">
               <div class="spinner lg" />
-              <p class="scan-sys-desc">正在扫描系统…</p>
+              <p class="scan-sys-desc">正在读取使用历史…</p>
             </template>
             <template v-else>
               <span class="scan-sys-done" v-html="checkIcon" />
@@ -328,7 +328,7 @@
                 {{ sysScanResult! > 0 ? `发现 ${sysScanResult} 个新资源` : '未发现新资源' }}
               </p>
               <div class="scan-sys-actions">
-                <button class="scan-sys-btn secondary" @click="doSystemScan">重新扫描</button>
+                <button class="scan-sys-btn secondary" @click="doSystemScan">重新读取</button>
                 <button class="btn-add" @click="close">完成</button>
               </div>
             </template>
@@ -364,7 +364,7 @@ const modeTabs = [
   { key: 'file' as const, label: '单个文件', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>` },
   { key: 'folder' as const, label: '文件夹', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>` },
   { key: 'scan-dir' as const, label: '扫描目录', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="12" y1="11" x2="12" y2="17"/></svg>` },
-  { key: 'scan-sys' as const, label: '系统扫描', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>` },
+  { key: 'scan-sys' as const, label: '使用历史', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>` },
   { key: 'webpage' as const, label: '网页', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>` },
 ]
 

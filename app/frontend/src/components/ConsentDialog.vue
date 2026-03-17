@@ -33,6 +33,17 @@
           </button>
         </div>
 
+        <!-- 离线模式 -->
+        <div class="offline-row">
+          <div class="offline-info">
+            <div class="offline-label">离线模式</div>
+            <div class="offline-desc">仅接收软件更新，AI 功能不可用</div>
+          </div>
+          <button class="toggle" :class="{ on: offlineMode }" @click="offlineMode = !offlineMode">
+            <span class="toggle-thumb" />
+          </button>
+        </div>
+
         <!-- 隐私说明 -->
         <p class="privacy">
           <span class="privacy-icon" v-html="lockIcon" />
@@ -79,6 +90,7 @@ import { ref } from 'vue'
 const emit = defineEmits<{ (e: 'consent', mode: 'auto' | 'manual'): void }>()
 
 const mode = ref<'auto' | 'manual'>('auto')
+const offlineMode = ref(false)
 const blockedDirs = ref<string[]>([])
 
 const appIcon   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M7 8l3 3 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
@@ -104,6 +116,7 @@ async function start() {
   if (mode.value === 'manual') {
     await window.api.settings.set('monitorEnabled', 'false')
   }
+  await window.api.settings.set('offlineMode', String(offlineMode.value))
   emit('consent', mode.value)
 }
 
@@ -263,6 +276,68 @@ async function quit() {
 
 .mode-check.visible { opacity: 1; }
 .mode-check :deep(svg) { width: 16px; height: 16px; }
+
+/* 离线模式行 */
+.offline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+.offline-info { flex: 1; min-width: 0; }
+
+.offline-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.offline-desc {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.toggle {
+  width: 36px;
+  height: 20px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: var(--text-3);
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+  display: block;
+}
+
+.toggle.on .toggle-thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
 
 /* 隐私说明 */
 .privacy {
