@@ -17,6 +17,7 @@ jobs:
         run: |
           git remote add gitee https://leyradc:${{ secrets.GITEE_TOKEN }}@gitee.com/leyradc/ai-resource-manager.git
           git push gitee HEAD:main --force
+          git push gitee refs/tags/${{ github.event.release.tag_name }} --force
 
       - name: Create Gitee Release
         env:
