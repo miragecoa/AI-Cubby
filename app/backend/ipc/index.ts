@@ -563,7 +563,7 @@ export function registerIpcHandlers(): void {
     return null
   })
   ipcMain.handle('updater:apply', () => {
-    applyAndRestart()
+    applyAndRestart().catch(e => console.error('[Updater] applyAndRestart failed:', e))
   })
   ipcMain.handle('updater:skip', () => {
     skipUpdate()

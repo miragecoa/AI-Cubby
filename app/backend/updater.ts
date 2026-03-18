@@ -154,7 +154,7 @@ export async function forceUpdate(): Promise<void> {
   const latest = await resp.json() as LatestJson
   const downloadUrl = `${R2_PUBLIC_URL}/${latest.tag}/${latest.filename}`
   downloadedZipPath = await followDownload(downloadUrl, latest.size)
-  applyAndRestart()
+  await applyAndRestart()
 }
 
 export async function downloadUpdate(_mainWindow: BrowserWindow | null): Promise<string> {
@@ -171,7 +171,25 @@ export async function downloadUpdate(_mainWindow: BrowserWindow | null): Promise
 
 // ── Apply and restart ────────────────────────────────────
 
-export function applyAndRestart(): void {
+// Inline fallback updater script (used when R2 script is unavailable)
+function buildInlineScript(zipPath: string, appDir: string, exePath: string, pid: number): string {
+  return [
+    `$host.UI.RawUI.WindowTitle='AI Resource Manager Updater'`,
+    `Write-Host 'Waiting for app to exit...' -ForegroundColor Cyan`,
+    `while(Get-Process -Id ${pid} -EA SilentlyContinue){Start-Sleep 1}`,
+    `Start-Sleep 2`,
+    `$oldExeName=[System.IO.Path]::GetFileName('${exePath}')`,
+    `$beforeExes=Get-ChildItem -Path '${appDir}' -Filter '*.exe' -File | Select-Object -ExpandProperty Name`,
+    `Write-Host 'Extracting update...'`,
+    `try { Expand-Archive -Path '${zipPath}' -DestinationPath '${appDir}' -Force -EA Stop; Write-Host 'OK' -ForegroundColor Green } catch { Write-Host "FAILED: $_" -ForegroundColor Red; Read-Host 'Press Enter to exit'; exit 1 }`,
+    `$newExe=Get-ChildItem -Path '${appDir}' -Filter '*.exe' -File | Where-Object { $beforeExes -notcontains $_.Name } | Select-Object -First 1`,
+    `if($newExe){ Remove-Item '${exePath}' -Force -EA SilentlyContinue; Rename-Item $newExe.FullName $oldExeName -Force }`,
+    `Remove-Item '${zipPath}' -Force -EA SilentlyContinue`,
+    `Start-Process '${exePath}'`,
+  ].join('; ')
+}
+
+export async function applyAndRestart(): Promise<void> {
   if (!downloadedZipPath || !existsSync(downloadedZipPath)) {
     throw new Error('No downloaded update to apply')
   }
@@ -180,25 +198,29 @@ export function applyAndRestart(): void {
   const exePath = app.isPackaged ? process.execPath : join(appDir, 'AI资源管家.exe')
   const pid = process.pid
 
-  const cmd = [
-    `$host.UI.RawUI.WindowTitle='AI Resource Manager Updater'`,
-    `Write-Host 'Waiting for app to exit...' -ForegroundColor Cyan`,
-    `while(Get-Process -Id ${pid} -EA SilentlyContinue){Start-Sleep 1}`,
-    'Start-Sleep 2',
-    // Snapshot existing exe names before extraction so we can detect a renamed exe
-    `$oldExeName=[System.IO.Path]::GetFileName('${exePath}')`,
-    `$beforeExes=Get-ChildItem -Path '${appDir}' -Filter '*.exe' -File | Select-Object -ExpandProperty Name`,
-    `Write-Host 'Extracting update...'`,
-    `try { Expand-Archive -Path '${downloadedZipPath}' -DestinationPath '${appDir}' -Force -EA Stop; Write-Host 'OK' -ForegroundColor Green } catch { Write-Host "FAILED: $_" -ForegroundColor Red; Read-Host 'Press Enter to exit'; exit 1 }`,
-    // If the zip introduced a new-named exe (exe rename), replace the old exe with it
-    `$newExe=Get-ChildItem -Path '${appDir}' -Filter '*.exe' -File | Where-Object { $beforeExes -notcontains $_.Name } | Select-Object -First 1`,
-    `if($newExe){ Remove-Item '${exePath}' -Force -EA SilentlyContinue; Rename-Item $newExe.FullName $oldExeName -Force }`,
-    `Remove-Item '${downloadedZipPath}' -Force -EA SilentlyContinue`,
-    `Start-Process '${exePath}'`,
-  ].join('; ')
+  // Try to fetch the latest updater script from R2 so that even old app versions
+  // get the newest update logic (exe rename, Win11 conhost fix, etc.) without
+  // needing to ship a new release just for updater changes.
+  let script: string
+  try {
+    const resp = await net.fetch(
+      `${R2_PUBLIC_URL}/updater.ps1?_t=${Date.now()}`,
+      { cache: 'no-store', headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
+    )
+    if (!resp.ok) throw new Error(`status ${resp.status}`)
+    const template = await resp.text()
+    script = template
+      .replace(/__ZIP_PATH__/g, downloadedZipPath)
+      .replace(/__APP_DIR__/g, appDir)
+      .replace(/__EXE_PATH__/g, exePath)
+      .replace(/__PID__/g, String(pid))
+  } catch (e) {
+    console.warn('[Updater] Failed to fetch remote updater script, using inline fallback:', e)
+    script = buildInlineScript(downloadedZipPath, appDir, exePath, pid)
+  }
 
   // Encode as UTF-16LE Base64 → avoids encoding issues with Chinese paths
-  const encoded = Buffer.from(cmd, 'utf16le').toString('base64')
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
 
   // Write a .cmd launcher so users can see the extraction progress window.
   // We host it under conhost.exe explicitly: on Win11, the default terminal is
