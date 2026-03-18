@@ -19,38 +19,55 @@ jobs:
           git push gitee main --force
 
       - name: Create Gitee Release
-        id: create_release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
-          BODY=$(echo '${{ toJson(github.event.release.body) }}' | sed 's/^"//;s/"$//')
-          RESPONSE=$(curl -s -X POST \
-            "https://gitee.com/api/v5/repos/leyradc/ai-resource-manager/releases" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"access_token\": \"${{ secrets.GITEE_TOKEN }}\",
-              \"tag_name\": \"${{ github.event.release.tag_name }}\",
-              \"name\": \"${{ github.event.release.name }}\",
-              \"body\": \"同步自 GitHub Release。下载地址见下方附件。\n\n${{ github.event.release.tag_name }}\",
-              \"prerelease\": false,
-              \"target_commitish\": \"main\"
-            }")
-          echo "RELEASE_ID=$(echo $RESPONSE | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"id\"])')" >> $GITHUB_ENV
+          RELEASE_ID=$(python3 -c "
+          import json, os, urllib.request
+          data = json.dumps({
+              'access_token': os.environ['GITEE_TOKEN'],
+              'tag_name': os.environ['RELEASE_TAG'],
+              'name': os.environ['RELEASE_NAME'],
+              'body': os.environ.get('RELEASE_BODY', ''),
+              'prerelease': False,
+              'target_commitish': 'main'
+          }).encode()
+          req = urllib.request.Request(
+              'https://gitee.com/api/v5/repos/leyradc/ai-resource-manager/releases',
+              data=data,
+              headers={'Content-Type': 'application/json'},
+              method='POST'
+          )
+          with urllib.request.urlopen(req) as r:
+              resp = json.loads(r.read())
+          print(resp['id'])
+          ")
+          echo "RELEASE_ID=$RELEASE_ID" >> $GITHUB_ENV
 
       - name: Download & Upload assets to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          ASSETS_JSON: ${{ toJson(github.event.release.assets) }}
         run: |
-          # 下载 GitHub Release 的所有附件
-          echo '${{ toJson(github.event.release.assets) }}' | python3 -c "
-          import sys, json, subprocess, os
-          assets = json.load(sys.stdin)
+          python3 -c "
+          import json, os, subprocess
+          assets = json.loads(os.environ['ASSETS_JSON'])
+          release_id = os.environ['RELEASE_ID']
+          token = os.environ['GITEE_TOKEN']
           for a in assets:
               name = a['name']
               url = a['browser_download_url']
               print(f'Downloading {name}...')
               subprocess.run(['curl', '-L', '-o', name, url], check=True)
-              print(f'Uploading {name}...')
-              subprocess.run([
+              print(f'Uploading {name} to Gitee release {release_id}...')
+              result = subprocess.run([
                   'curl', '-s', '-X', 'POST',
-                  f'https://gitee.com/api/v5/repos/leyradc/ai-resource-manager/releases/{os.environ[\"RELEASE_ID\"]}/attach_files',
-                  '-F', f'access_token=${{ secrets.GITEE_TOKEN }}',
+                  f'https://gitee.com/api/v5/repos/leyradc/ai-resource-manager/releases/{release_id}/attach_files',
+                  '-F', f'access_token={token}',
                   '-F', f'file=@{name}'
-              ], check=True)
+              ], capture_output=True, text=True)
+              print(result.stdout)
           "
