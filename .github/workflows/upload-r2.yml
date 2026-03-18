@@ -1,0 +1,39 @@
+name: Upload Release to Cloudflare R2
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir artifacts
+          gh release download ${{ github.event.release.tag_name }} \
+            --repo ${{ github.repository }} \
+            --dir ./artifacts
+          echo "Assets:"
+          ls -lh ./artifacts/
+
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          ENDPOINT="https://a851dc5e529a04a83d87176e91cfad51.r2.cloudflarestorage.com"
+          PUBLIC_BASE="https://pub-e99883270f2047d9a6151090f7da8a5c.r2.dev"
+
+          for f in ./artifacts/*; do
+            filename=$(basename "$f")
+            echo "Uploading $filename..."
+            aws s3 cp "$f" "s3://ai-resource-manager/$TAG/$filename" \
+              --endpoint-url "$ENDPOINT" \
+              --no-progress
+            echo "Done: $PUBLIC_BASE/$TAG/$filename"
+          done
