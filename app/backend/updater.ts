@@ -53,9 +53,10 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
   const currentVersion = app.getVersion()
 
   // Check from R2 (China-accessible, no GitHub API dependency)
+  // Add timestamp to bust CDN cache on R2/Cloudflare
   const resp = await net.fetch(
-    `${R2_PUBLIC_URL}/latest.json`,
-    { headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
+    `${R2_PUBLIC_URL}/latest.json?_t=${Date.now()}`,
+    { headers: { 'User-Agent': 'AI-Resource-Manager-Updater', 'Cache-Control': 'no-cache' } }
   )
   if (!resp.ok) throw new Error(`R2 update check failed: ${resp.status}`)
 
@@ -146,8 +147,8 @@ function followDownload(url: string, totalSize: number): Promise<string> {
 /** 强制拉取最新 Release（无视版本号），下载并应用 */
 export async function forceUpdate(): Promise<void> {
   const resp = await net.fetch(
-    `${R2_PUBLIC_URL}/latest.json`,
-    { headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
+    `${R2_PUBLIC_URL}/latest.json?_t=${Date.now()}`,
+    { headers: { 'User-Agent': 'AI-Resource-Manager-Updater', 'Cache-Control': 'no-cache' } }
   )
   if (!resp.ok) throw new Error(`R2 fetch failed: ${resp.status}`)
   const latest = await resp.json() as LatestJson

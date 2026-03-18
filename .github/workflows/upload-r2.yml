@@ -48,7 +48,9 @@ jobs:
 
             # Generate latest.json
             size=$(stat -c%s "$f")
-            published="${{ github.event.release.published_at || '' }}"
+            # Use release published_at if available, else current UTC time
+            published="${{ github.event.release.published_at }}"
+            if [ -z "$published" ]; then published=$(date -u +"%Y-%m-%dT%H:%M:%SZ"); fi
             node -e "
               const fs = require('fs');
               fs.writeFileSync('latest.json', JSON.stringify({
