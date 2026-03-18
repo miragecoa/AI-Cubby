@@ -16,7 +16,7 @@ jobs:
       - name: Push code to Gitee
         run: |
           git remote add gitee https://leyradc:${{ secrets.GITEE_TOKEN }}@gitee.com/leyradc/ai-resource-manager.git
-          git push gitee main --force
+          git push gitee HEAD:main --force
 
       - name: Create Gitee Release
         env:
