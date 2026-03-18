@@ -1,6 +1,6 @@
 {
   "name": "ai-resource-manager",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "description": "AI资源管家 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {
@@ -30,7 +30,7 @@
   "author": "miragecoa",
   "build": {
     "appId": "com.airesourcemanager.app",
-    "productName": "AI资源管家",
+    "productName": "AI Resource Manager",
     "icon": "resources/icon.ico",
     "artifactName": "AI-Resource-Manager-${version}-portable-${os}-${arch}.${ext}",
     "files": [
