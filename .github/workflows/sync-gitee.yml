@@ -63,11 +63,15 @@ jobs:
               print(f'Downloading {name}...')
               subprocess.run(['curl', '-L', '-o', name, url], check=True)
               print(f'Uploading {name} to Gitee release {release_id}...')
+              size_mb = os.path.getsize(name) / 1024 / 1024
+              print(f'File size: {size_mb:.1f} MB')
               result = subprocess.run([
-                  'curl', '-s', '-X', 'POST',
+                  'curl', '-v', '-X', 'POST',
                   f'https://gitee.com/api/v5/repos/leyradc/ai-resource-manager/releases/{release_id}/attach_files',
                   '-F', f'access_token={token}',
                   '-F', f'file=@{name}'
               ], capture_output=True, text=True)
-              print(result.stdout)
+              print('STDOUT:', result.stdout)
+              print('STDERR:', result.stderr[-2000:])
+              print('Return code:', result.returncode)
           "
