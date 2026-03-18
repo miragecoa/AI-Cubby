@@ -26,17 +26,31 @@ jobs:
           RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           RELEASE_ID=$(python3 -c "
-          import json, os, urllib.request
+          import json, os, sys, urllib.request, urllib.error
+          owner = 'leyradc'
+          repo = 'ai-resource-manager'
+          token = os.environ['GITEE_TOKEN']
+          tag = os.environ['RELEASE_TAG']
+          # 先删除已有同名 release（幂等）
+          try:
+              get_req = urllib.request.Request(f'https://gitee.com/api/v5/repos/{owner}/{repo}/releases/tags/{tag}?access_token={token}')
+              with urllib.request.urlopen(get_req) as r:
+                  old = json.loads(r.read())
+              del_req = urllib.request.Request(f'https://gitee.com/api/v5/repos/{owner}/{repo}/releases/{old[\"id\"]}?access_token={token}', method='DELETE')
+              urllib.request.urlopen(del_req)
+          except urllib.error.HTTPError:
+              pass
+          # 创建新 release
           data = json.dumps({
-              'access_token': os.environ['GITEE_TOKEN'],
-              'tag_name': os.environ['RELEASE_TAG'],
+              'access_token': token,
+              'tag_name': tag,
               'name': os.environ['RELEASE_NAME'],
               'body': os.environ.get('RELEASE_BODY', ''),
               'prerelease': False,
               'target_commitish': 'main'
           }).encode()
           req = urllib.request.Request(
-              'https://gitee.com/api/v5/repos/leyradc/ai-resource-manager/releases',
+              f'https://gitee.com/api/v5/repos/{owner}/{repo}/releases',
               data=data,
               headers={'Content-Type': 'application/json'},
               method='POST'
