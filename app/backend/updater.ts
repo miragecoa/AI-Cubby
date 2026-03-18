@@ -10,6 +10,7 @@ import { getSetting, setSetting } from './db/queries'
 const REPO = 'miragecoa/AI-Resource-Manager'
 const ASSET_PATTERN = /^AI-Resource-Manager-.*-portable-win-x64\.zip$/
 const CHECK_INTERVAL = 4 * 60 * 60 * 1000  // 4 hours
+const R2_PUBLIC_URL = 'https://pub-e99883270f2047d9a6151090f7da8a5c.r2.dev'
 
 export interface UpdateInfo {
   hasUpdate: boolean
@@ -40,46 +41,42 @@ function compareVersions(a: string, b: string): number {
 
 // ── Check for updates ────────────────────────────────────
 
+interface LatestJson {
+  version: string
+  tag: string
+  filename: string
+  size: number
+  publishedAt: string
+}
+
 export async function checkForUpdate(): Promise<UpdateInfo> {
   const currentVersion = app.getVersion()
+
+  // Check from R2 (China-accessible, no GitHub API dependency)
   const resp = await net.fetch(
-    `https://api.github.com/repos/${REPO}/releases?per_page=5`,
+    `${R2_PUBLIC_URL}/latest.json`,
     { headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
   )
-  if (!resp.ok) throw new Error(`GitHub API error: ${resp.status}`)
+  if (!resp.ok) throw new Error(`R2 update check failed: ${resp.status}`)
 
-  const releases = await resp.json() as any[]
-  if (!releases.length) return noUpdate(currentVersion)
+  const latest = await resp.json() as LatestJson
+  const isNewVersion = compareVersions(latest.version, currentVersion) > 0
 
-  // Find latest release with a matching portable asset
-  for (const release of releases) {
-    const tag = (release.tag_name || '').replace(/^v/, '')
-    const asset = (release.assets || []).find((a: any) => ASSET_PATTERN.test(a.name))
-    if (!asset) continue
-
-    const isNewVersion = compareVersions(tag, currentVersion) > 0
-
-    if (isNewVersion) {
-      latestUpdateInfo = {
-        hasUpdate: true,
-        currentVersion,
-        remoteVersion: tag,
-        isNewVersion: true,
-        downloadUrl: asset.browser_download_url,
-        assetSize: asset.size,
-        assetUpdatedAt: asset.updated_at
-      }
-      return latestUpdateInfo
-    }
-
-    // Same version — silently sync timestamp (covers manual updates)
-    if (tag === currentVersion) {
-      setSetting('update_lastAssetTimestamp', asset.updated_at)
-      return noUpdate(currentVersion)
-    }
+  if (!isNewVersion) {
+    setSetting('update_lastAssetTimestamp', latest.publishedAt)
+    return noUpdate(currentVersion)
   }
 
-  return noUpdate(currentVersion)
+  latestUpdateInfo = {
+    hasUpdate: true,
+    currentVersion,
+    remoteVersion: latest.version,
+    isNewVersion: true,
+    downloadUrl: `${R2_PUBLIC_URL}/${latest.tag}/${latest.filename}`,
+    assetSize: latest.size,
+    assetUpdatedAt: latest.publishedAt
+  }
+  return latestUpdateInfo
 }
 
 function noUpdate(currentVersion: string): UpdateInfo {
@@ -149,15 +146,13 @@ function followDownload(url: string, totalSize: number): Promise<string> {
 /** 强制拉取最新 Release（无视版本号），下载并应用 */
 export async function forceUpdate(): Promise<void> {
   const resp = await net.fetch(
-    `https://api.github.com/repos/${REPO}/releases?per_page=1`,
+    `${R2_PUBLIC_URL}/latest.json`,
     { headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
   )
-  if (!resp.ok) throw new Error(`GitHub API error: ${resp.status}`)
-  const releases = await resp.json() as any[]
-  if (!releases.length) throw new Error('No releases found')
-  const asset = (releases[0].assets || []).find((a: any) => ASSET_PATTERN.test(a.name))
-  if (!asset) throw new Error('No matching asset in latest release')
-  downloadedZipPath = await followDownload(asset.browser_download_url, asset.size)
+  if (!resp.ok) throw new Error(`R2 fetch failed: ${resp.status}`)
+  const latest = await resp.json() as LatestJson
+  const downloadUrl = `${R2_PUBLIC_URL}/${latest.tag}/${latest.filename}`
+  downloadedZipPath = await followDownload(downloadUrl, latest.size)
   applyAndRestart()
 }
 

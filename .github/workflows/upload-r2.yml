@@ -26,14 +26,38 @@ jobs:
           AWS_DEFAULT_REGION: auto
         run: |
           TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
           ENDPOINT="https://a851dc5e529a04a83d87176e91cfad51.r2.cloudflarestorage.com"
           PUBLIC_BASE="https://pub-e99883270f2047d9a6151090f7da8a5c.r2.dev"
 
-          for f in ./artifacts/*; do
+          # Upload release zip
+          for f in ./artifacts/*.zip; do
+            [ -f "$f" ] || continue
             filename=$(basename "$f")
             echo "Uploading $filename..."
             aws s3 cp "$f" "s3://ai-resource-manager/$TAG/$filename" \
               --endpoint-url "$ENDPOINT" \
               --no-progress
-            echo "Done: $PUBLIC_BASE/$TAG/$filename"
+            echo "URL: $PUBLIC_BASE/$TAG/$filename"
+
+            # Generate latest.json
+            size=$(stat -c%s "$f")
+            published="${{ github.event.release.published_at }}"
+            node -e "
+              const fs = require('fs');
+              fs.writeFileSync('latest.json', JSON.stringify({
+                version: '$VERSION',
+                tag: '$TAG',
+                filename: '$filename',
+                size: $size,
+                publishedAt: '$published'
+              }, null, 2));
+            "
           done
+
+          # Upload latest.json (overwrites previous)
+          aws s3 cp latest.json "s3://ai-resource-manager/latest.json" \
+            --endpoint-url "$ENDPOINT" \
+            --content-type "application/json" \
+            --no-progress
+          echo "latest.json updated -> $PUBLIC_BASE/latest.json"
