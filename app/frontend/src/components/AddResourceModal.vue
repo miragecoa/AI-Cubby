@@ -614,14 +614,17 @@ function onPathChange() {
   const p = form.value.file_path.trim()
   if (p) {
     if (!form.value.title) form.value.title = stemName(p)
-    form.value.type = inferType(p)
+    const inferred = inferType(p)
+    // If in game context and file is a generic exe/app, keep game type
+    form.value.type = (inferred === 'app' && props.defaultType === 'game') ? 'game' : inferred
   }
 }
 
 function applyFile(path: string) {
   form.value.file_path = path
   if (!form.value.title) form.value.title = stemName(path)
-  form.value.type = inferType(path)
+  const inferred = inferType(path)
+  form.value.type = (inferred === 'app' && props.defaultType === 'game') ? 'game' : inferred
   errorMsg.value = ''
 }
 

@@ -139,14 +139,14 @@ export const useSettingsStore = defineStore('settings', () => {
   const monitorEnabled = ref(true)
   const autostartEnabled = ref(false)
   const zoom = ref(1.5)
-  const cardZoom = ref(0.75)
+  const viewModeByType = ref<Record<string, string>>({})
+  const cardZoomByType = ref<Record<string, number>>({})
   const sidebarNav = ref<SidebarNavConfig[]>(DEFAULT_SIDEBAR_NAV.map(x => ({ ...x })))
   const resourceSort = ref<ResourceSortField>('lastUsed')
   const tagSort = ref<TagSortField>('lastUsed')
   const sidebarCollapsed = ref(false)
   const showFileExt = ref(true)
   const autoUpdate = ref(true)
-  const viewMode = ref<'grid' | 'list' | 'heat' | 'masonry'>('grid')
   const listColumns = ref<Record<string, number>>({ name: 300, type: 70, date: 130, count: 70, tags: 200 })
   const appTitle = ref('AI资源管家')
   const offlineMode = ref(false)
@@ -157,18 +157,18 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
-      window.api.settings.get('cardZoom'),
       window.api.settings.get('sidebarNav'),
       window.api.settings.get('resourceSort'),
       window.api.settings.get('tagSort'),
       window.api.settings.get('sidebarCollapsed'),
       window.api.settings.get('showFileExt'),
       window.api.settings.get('autoUpdate'),
-      window.api.settings.get('viewMode'),
+      window.api.settings.get('viewModeByType'),
+      window.api.settings.get('cardZoomByType'),
       window.api.settings.get('listColumns'),
       window.api.settings.get('appTitle'),
       window.api.settings.get('offlineMode'),
@@ -179,7 +179,6 @@ export const useSettingsStore = defineStore('settings', () => {
     monitorEnabled.value = monitorVal !== 'false'
     autostartEnabled.value = autostartVal
     zoom.value = zoomVal ? parseFloat(zoomVal) : 1.5
-    cardZoom.value = cardZoomVal ? parseFloat(cardZoomVal) : 0.75
     window.api.app.setZoom(zoom.value)
 
     if (resSortVal) resourceSort.value = resSortVal as ResourceSortField
@@ -187,7 +186,8 @@ export const useSettingsStore = defineStore('settings', () => {
     if (collapsedVal) sidebarCollapsed.value = collapsedVal === 'true'
     if (fileExtVal !== null && fileExtVal !== undefined) showFileExt.value = fileExtVal !== 'false'
     autoUpdate.value = autoUpdateVal !== 'false'
-    if (viewModeVal === 'list' || viewModeVal === 'heat' || viewModeVal === 'masonry') viewMode.value = viewModeVal
+    if (viewModeByTypeVal) { try { viewModeByType.value = JSON.parse(viewModeByTypeVal) } catch {} }
+    if (cardZoomByTypeVal) { try { cardZoomByType.value = JSON.parse(cardZoomByTypeVal) } catch {} }
     if (listColVal) { try { listColumns.value = { ...listColumns.value, ...JSON.parse(listColVal) } } catch {} }
     if (appTitleVal) appTitle.value = appTitleVal
     if (offlineModeVal === 'true') offlineMode.value = true
@@ -231,9 +231,13 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('zoom', String(factor))
   }
 
-  async function setCardZoom(factor: number) {
-    cardZoom.value = factor
-    await window.api.settings.set('cardZoom', String(factor))
+  async function setCardZoom(type: string, factor: number) {
+    cardZoomByType.value = { ...cardZoomByType.value, [type]: factor }
+    await window.api.settings.set('cardZoomByType', JSON.stringify(cardZoomByType.value))
+  }
+
+  function getCardZoom(type: string): number {
+    return cardZoomByType.value[type] ?? cardZoomByType.value['all'] ?? 0.75
   }
 
   async function setResourceSort(sort: ResourceSortField) {
@@ -266,9 +270,13 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('autoUpdate', String(enabled))
   }
 
-  async function setViewMode(mode: 'grid' | 'list' | 'heat' | 'masonry') {
-    viewMode.value = mode
-    await window.api.settings.set('viewMode', mode)
+  async function setViewMode(type: string, mode: 'grid' | 'list' | 'heat' | 'masonry') {
+    viewModeByType.value = { ...viewModeByType.value, [type]: mode }
+    await window.api.settings.set('viewModeByType', JSON.stringify(viewModeByType.value))
+  }
+
+  function getViewMode(type: string): 'grid' | 'list' | 'heat' | 'masonry' {
+    return (viewModeByType.value[type] ?? viewModeByType.value['all'] ?? 'grid') as 'grid' | 'list' | 'heat' | 'masonry'
   }
 
   async function setListColumns(cols: Record<string, number>) {
@@ -303,5 +311,37 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('theme', JSON.stringify(themeVars.value))
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, viewMode, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, themeVars, load, setMonitor, setAutostart, setZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setTheme }
+  async function resetToDefaults() {
+    zoom.value = 1.0
+    viewModeByType.value = {}
+    cardZoomByType.value = {}
+    themeVars.value = { ...DARK_THEME }
+    hotkeyWake.value = 'Alt+Space'
+    showOnAutoStart.value = false
+    showFileExt.value = true
+    autoUpdate.value = true
+    resourceSort.value = 'lastUsed'
+    tagSort.value = 'lastUsed'
+    offlineMode.value = false
+    sidebarNav.value = DEFAULT_SIDEBAR_NAV.map(x => ({ ...x }))
+    applyThemeToRoot(themeVars.value)
+    window.api.app.setZoom(zoom.value)
+    await window.api.hotkey.set('Alt+Space')
+    await Promise.all([
+      window.api.settings.set('zoom', '1'),
+      window.api.settings.set('viewModeByType', '{}'),
+      window.api.settings.set('cardZoomByType', '{}'),
+      window.api.settings.set('theme', JSON.stringify(DARK_THEME)),
+      window.api.settings.set('hotkeyWake', 'Alt+Space'),
+      window.api.settings.set('showOnAutoStart', 'false'),
+      window.api.settings.set('showFileExt', 'true'),
+      window.api.settings.set('autoUpdate', 'true'),
+      window.api.settings.set('resourceSort', 'lastUsed'),
+      window.api.settings.set('tagSort', 'lastUsed'),
+      window.api.settings.set('offlineMode', 'false'),
+      window.api.settings.set('sidebarNav', JSON.stringify(DEFAULT_SIDEBAR_NAV)),
+    ])
+  }
+
+  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, themeVars, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setTheme, resetToDefaults }
 })

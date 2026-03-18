@@ -268,6 +268,23 @@
             <div class="setting-desc mono">{{ dbPath }}</div>
           </div>
         </div>
+
+        <div class="setting-row reset-row">
+          <div class="setting-info">
+            <div class="setting-label">恢复默认设置</div>
+            <div class="setting-desc">重置外观、视图、缩放、快捷键、排序等偏好项，不影响资源库数据和自启配置</div>
+          </div>
+          <div class="reset-actions">
+            <template v-if="!confirmReset">
+              <button class="profile-btn danger" @click="confirmReset = true">恢复默认</button>
+            </template>
+            <template v-else>
+              <span class="reset-confirm-hint">确认恢复？</span>
+              <button class="profile-btn danger" @click="doResetDefaults">确认</button>
+              <button class="profile-btn" @click="confirmReset = false">取消</button>
+            </template>
+          </div>
+        </div>
       </section>
 
       <!-- 更新日志 -->
@@ -461,6 +478,11 @@ async function resetHotkey() {
 }
 
 const dbPath = ref('')
+const confirmReset = ref(false)
+async function doResetDefaults() {
+  await settingsStore.resetToDefaults()
+  confirmReset.value = false
+}
 const appVersion = ref('0.1.0')
 const lastUpdateTime = ref('')
 const updateCheckStatus = ref<'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready' | 'error'>('idle')
@@ -1195,6 +1217,18 @@ function onColorChange(key: string, e: Event) {
 .profile-btn.danger:hover:not(:disabled) {
   border-color: #ef4444;
   color: #ef4444;
+}
+
+.reset-row .setting-info { flex: 1; }
+.reset-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.reset-confirm-hint {
+  font-size: 12px;
+  color: var(--danger);
 }
 
 .setting-actions {

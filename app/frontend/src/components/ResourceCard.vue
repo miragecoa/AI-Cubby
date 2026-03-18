@@ -1,20 +1,20 @@
 <template>
-  <div class="card" :class="{ 'is-selected': selected }" @dblclick="selectable ? $emit('toggle-select', resource) : $emit('open', resource)" @contextmenu.prevent="!selectable && openMenu($event)" @click="selectable ? $emit('toggle-select', resource) : undefined">
+  <div class="card" :class="[{ 'is-selected': selected }, heatLevel !== undefined ? `heat-lv${heatLevel}` : '']" @dblclick="selectable ? $emit('toggle-select', resource) : $emit('open', resource)" @contextmenu.prevent="!selectable && openMenu($event)" @click="selectable ? $emit('toggle-select', resource) : undefined">
     <div class="cover" :class="{ 'is-app': resource.type === 'app' || resource.type === 'game' || resource.type === 'webpage' || resource.type === 'document' }" @click.stop="selectable ? $emit('toggle-select', resource) : $emit('open', resource)">
       <img v-if="thumbSrc" :src="thumbSrc" :alt="resource.title" />
       <div v-else class="cover-placeholder" style="pointer-events:none">
         <span class="type-icon" v-html="typeIcon" />
       </div>
       <!-- hover 覆盖层：▶ 运行 / ⏹ 结束（批量选择时隐藏，避免拦截点击） -->
-      <div v-if="!selectable" class="cover-action" :class="{ 'is-running': isRunning }"
+      <div v-if="!selectable" class="cover-action" :class="{ 'is-running': isRunning, 'action-compact': compact, 'action-narrow': narrow }"
         @click.stop="isRunning ? showKillConfirm = true : $emit('open', resource)">
-        <div class="action-btn">
+        <div class="action-btn" :class="{ 'action-compact': compact, 'action-narrow': narrow }">
           <span v-html="isRunning ? stopIcon : playIcon" />
         </div>
       </div>
       <!-- 运行中徽章（批量选择时隐藏） -->
-      <div v-if="isRunning && !selectable" class="running-badge">
-        <span class="running-dot" />运行中
+      <div v-if="isRunning && !selectable" class="running-badge" :class="{ 'badge-compact': compact }">
+        <span class="running-dot" /><template v-if="!compact">运行中</template>
       </div>
       <!-- 批量选择 checkbox -->
       <div v-if="selectable" class="select-checkbox" :class="{ checked: selected }" @click.stop="$emit('toggle-select', resource)">
@@ -24,7 +24,7 @@
       <button
         v-if="!selectable"
         class="pin-quick-btn"
-        :class="{ 'is-pinned': resource.pinned }"
+        :class="{ 'is-pinned': resource.pinned, 'btn-compact': compact }"
         @click.stop="togglePin"
         :title="resource.pinned ? '取消置顶' : '置顶'"
       >
@@ -34,6 +34,7 @@
       <button
         v-if="!selectable"
         class="ignore-quick-btn"
+        :class="{ 'btn-compact': compact }"
         @click.stop="handleIgnoreClick"
         title="忽略此文件"
       >
@@ -41,10 +42,10 @@
       </button>
     </div>
 
-    <div class="info">
-      <div class="title" :title="displayTitle">{{ displayTitle }}</div>
-      <!-- 统计信息（始终显示） -->
-      <div class="stats-row">
+    <div v-if="!micro" class="info" :class="{ 'info-narrow': narrow, 'info-compact': compact && !narrow }">
+      <div class="title" :title="displayTitle" :class="{ 'title-single': narrow }">{{ displayTitle }}</div>
+      <!-- 统计信息行 -->
+      <div v-if="!narrow" class="stats-row">
         <span class="stat-item" :title="`共打开 ${resource.open_count} 次，累计 ${fmtDuration(resource.total_run_time)}`">
           <span v-html="clockIcon" />
           <template v-if="isRunning">累计 {{ resource.total_run_time > 0 ? fmtDuration(resource.total_run_time) : '—' }}</template>
@@ -54,7 +55,7 @@
         <span v-if="isRunning" class="stat-session">本次 {{ fmtDuration(currentSessionSecs) }}</span>
         <span v-else-if="resource.last_run_at" class="stat-last">上次 {{ fmtRelDate(resource.last_run_at) }}</span>
       </div>
-      <div class="tags">
+      <div v-if="!narrow" class="tags">
         <template v-if="resource.tags?.length">
           <span v-for="tag in resource.tags" :key="tag.id" class="tag">{{ tag.name }}</span>
         </template>
@@ -139,7 +140,14 @@ const props = withDefaults(defineProps<{
   resource: Resource
   selectable?: boolean
   selected?: boolean
-}>(), { selectable: false, selected: false })
+  cardZoom?: number
+  heatLevel?: number
+}>(), { selectable: false, selected: false, cardZoom: 0.75 })
+
+// Responsive breakpoints based on zoom factor (150px * cardZoom = minCardWidth)
+const compact = computed(() => props.cardZoom <= 0.87) // < ~130px: collapse badge, hide tags
+const narrow  = computed(() => props.cardZoom <= 0.60) // < ~90px:  hide stats row
+const micro   = computed(() => props.cardZoom <= 0.40) // < ~60px:  hide info entirely
 const emit = defineEmits<{
   open:   [resource: Resource]
   select: [resource: Resource]
@@ -383,6 +391,8 @@ function openInExplorer() {
   overflow: visible;
   cursor: pointer;
   transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  container-type: inline-size;
+  container-name: card;
 }
 
 .card:hover {
@@ -785,6 +795,75 @@ function openInExplorer() {
 .stat-last {
   font-size: 11px;
   color: var(--text-3);
+}
+
+/* ── 热力模式：通过 CSS 变量统一作用于 card + cover ── */
+.card.heat-lv0 { --heat-border: rgba(255,255,255,0.08); --heat-bg: rgba(255,255,255,0.02); }
+.card.heat-lv1 { --heat-border: rgba(99,102,241,0.50);  --heat-bg: rgba(99,102,241,0.12); }
+.card.heat-lv2 { --heat-border: rgba(99,102,241,0.70);  --heat-bg: rgba(99,102,241,0.20); }
+.card.heat-lv3 { --heat-border: rgba(99,102,241,0.95);  --heat-bg: rgba(99,102,241,0.28); }
+.card.heat-lv4 { --heat-border: rgba(168,85,247,0.85);  --heat-bg: rgba(168,85,247,0.22); }
+.card.heat-lv5 { --heat-border: rgba(245,158,11,0.70);  --heat-bg: rgba(245,158,11,0.18); }
+.card.heat-lv6 { --heat-border: rgba(245,158,11,0.95);  --heat-bg: rgba(245,158,11,0.26); }
+.card.heat-lv7 { --heat-border: rgba(239,68,68,0.90);   --heat-bg: rgba(239,68,68,0.28); }
+
+.card[class*='heat-lv'] {
+  border-color: var(--heat-border);
+  background: var(--heat-bg);
+}
+.card[class*='heat-lv'] .cover {
+  background: var(--heat-bg);
+}
+
+/* ── 响应式卡片：prop-based 折叠 ── */
+
+/* compact (zoom ≤ 0.87, ~130px): 徽章只保留圆点，pin/ignore 按钮缩小 */
+.running-badge.badge-compact {
+  padding: 4px;
+  gap: 0;
+  border-radius: 50%;
+  width: 13px;
+  height: 13px;
+  min-width: unset;
+}
+.running-badge.badge-compact .running-dot {
+  width: 5px;
+  height: 5px;
+}
+
+.pin-quick-btn.btn-compact,
+.ignore-quick-btn.btn-compact {
+  width: 18px;
+  height: 18px;
+}
+.pin-quick-btn.btn-compact :deep(svg),
+.ignore-quick-btn.btn-compact :deep(svg) {
+  width: 9px;
+  height: 9px;
+}
+
+/* compact 播放/停止按钮缩小 */
+.cover-action.action-compact { padding: 4px; }
+.action-btn.action-compact { width: 28px; height: 28px; }
+.action-btn.action-compact :deep(svg) { width: 12px; height: 12px; }
+.action-btn.action-narrow { width: 22px; height: 22px; }
+.action-btn.action-narrow :deep(svg) { width: 10px; height: 10px; }
+
+/* compact info: 收紧 padding */
+.info.info-compact {
+  padding: 5px 5px 4px;
+}
+.info.info-compact .title {
+  font-size: 12px;
+}
+
+/* narrow info (zoom ≤ 0.60): 进一步收紧，标题单行 */
+.info.info-narrow {
+  padding: 4px 4px 3px;
+}
+.title.title-single {
+  font-size: 11px;
+  -webkit-line-clamp: 1;
 }
 
 /* ── 强制结束确认弹窗 ── */

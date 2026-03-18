@@ -36,18 +36,18 @@
             <input
               type="range"
               class="zoom-slider"
-              :value="settingsStore.cardZoom"
-              min="0.25"
-              max="3"
+              :value="cardZoom"
+              min="0.5"
+              max="2"
               step="0.05"
               @input="onCardZoomChange"
             />
             <input
               type="number"
               class="zoom-number"
-              :value="Math.round(settingsStore.cardZoom * 100)"
-              min="25"
-              max="300"
+              :value="Math.round(cardZoom * 100)"
+              min="50"
+              max="200"
               step="5"
               @change="onCardZoomInput"
             />
@@ -72,13 +72,13 @@
         </button>
         <div class="toolbar-right">
           <div class="view-toggle">
-            <button class="view-toggle-btn" :class="{ active: settingsStore.viewMode === 'grid' }" @click="settingsStore.setViewMode('grid')" title="网格视图">
+            <button class="view-toggle-btn" :class="{ active: viewMode === 'grid' }" @click="settingsStore.setViewMode(store.activeType, 'grid')" title="网格视图">
               <span v-html="gridViewSvg" />
             </button>
-            <button class="view-toggle-btn" :class="{ active: settingsStore.viewMode === 'list' }" @click="settingsStore.setViewMode('list')" title="列表视图">
+            <button class="view-toggle-btn" :class="{ active: viewMode === 'list' }" @click="settingsStore.setViewMode(store.activeType, 'list')" title="列表视图">
               <span v-html="listViewSvg" />
             </button>
-            <button class="view-toggle-btn" :class="{ active: settingsStore.viewMode === 'heat' }" @click="settingsStore.setViewMode('heat')" title="热力图">
+            <button class="view-toggle-btn" :class="{ active: viewMode === 'heat' }" @click="settingsStore.setViewMode(store.activeType, 'heat')" title="热力图">
               <span v-html="heatViewSvg" />
             </button>
           </div>
@@ -247,14 +247,16 @@
           </div>
 
           <div v-else ref="gridScrollRef" class="grid-scroll">
-            <!-- 网格视图 -->
-            <div v-if="settingsStore.viewMode === 'grid'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
+            <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
+            <div v-if="viewMode === 'grid' || viewMode === 'heat'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
               <ResourceCard
                 v-for="item in visibleItems"
                 :key="item.id"
                 :resource="item"
                 :selectable="batchMode"
                 :selected="selectedIds.has(item.id)"
+                :card-zoom="cardZoom"
+                :heat-level="viewMode === 'heat' ? heatLevel(item) : undefined"
                 @toggle-select="toggleSelect(item)"
                 @select="onCardSelect"
                 @open="openResource"
@@ -264,7 +266,7 @@
               <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
             </div>
             <!-- 列表视图 -->
-            <div v-else-if="settingsStore.viewMode === 'list'" class="list-view" :style="{ '--list-zoom': settingsStore.cardZoom }">
+            <div v-else-if="viewMode === 'list'" class="list-view" :style="{ '--list-zoom': cardZoom }">
               <div class="list-header" :style="colStyle">
                 <span class="lh-thumb"></span>
                 <span class="lh-name sortable-col" :class="{ active: listSortCol === 'name' }" @click="onColSort('name')" title="点击排序">
@@ -341,26 +343,6 @@
                 <span class="lr-tags">
                   <span v-for="tag in (item.tags || []).slice(0, 3)" :key="tag.id" class="lr-tag">{{ tag.name }}</span>
                 </span>
-              </div>
-              <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
-            </div>
-            <!-- 热力图视图 -->
-            <div v-else-if="settingsStore.viewMode === 'heat'" class="heat-grid">
-              <div
-                v-for="r in visibleItems" :key="r.id"
-                class="heat-tile" :class="`heat-lv${heatLevel(r)}`"
-                :title="heatTooltip(r)"
-                @click="openResource(r)"
-                @contextmenu.prevent="listMenu.show = true; listMenu.item = r; listMenu.x = $event.clientX; listMenu.y = $event.clientY"
-              >
-                <div class="heat-thumb" :class="{ 'is-icon': r.type === 'app' || r.type === 'game' }">
-                  <img v-if="heatThumbs.get(r.id)" :src="heatThumbs.get(r.id)!" class="heat-thumb-img" :class="{ 'is-icon': r.type === 'app' || r.type === 'game' }" />
-                  <span v-else class="heat-thumb-svg" v-html="navTypeIcon(r.type)" />
-                </div>
-                <div class="heat-tile-bottom">
-                  <span class="heat-tile-title">{{ r.title }}</span>
-                  <span class="heat-tile-count" v-if="r.open_count > 0">{{ r.open_count }}次</span>
-                </div>
               </div>
               <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
             </div>
@@ -993,7 +975,7 @@ const listSortedFiltered = computed(() => {
   }
 
   // 类型 + 后缀 过滤（列表视图专用）
-  if (settingsStore.viewMode === 'list') {
+  if (viewMode === 'list') {
     const typeSet = new Set(typeFilterArr.value)
     const extSet  = new Set(extFilterArr.value)
     if (typeSet.size > 0 || extSet.size > 0) {
@@ -1005,7 +987,7 @@ const listSortedFiltered = computed(() => {
   }
 
   // 是否有任何列表视图专属排序
-  const hasListSort = settingsStore.viewMode === 'list' && (typeSortDir.value || listSortCol.value)
+  const hasListSort = viewMode === 'list' && (typeSortDir.value || listSortCol.value)
   if (!hasListSort) return base
 
   const typeDir = typeSortDir.value === 'asc' ? 1 : typeSortDir.value === 'desc' ? -1 : 0
@@ -1577,17 +1559,21 @@ onUnmounted(() => {
   sentinelObserver?.disconnect()
 })
 
-const cardMinWidth = computed(() => Math.round(150 * settingsStore.cardZoom))
+// Per-type view mode and card zoom (derived from active category)
+const viewMode = computed(() => settingsStore.getViewMode(store.activeType))
+const cardZoom = computed(() => settingsStore.getCardZoom(store.activeType))
+
+const cardMinWidth = computed(() => Math.round(150 * cardZoom.value))
 
 function onCardZoomChange(e: Event) {
   const val = parseFloat((e.target as HTMLInputElement).value)
-  settingsStore.setCardZoom(val)
+  settingsStore.setCardZoom(store.activeType, val)
 }
 
 function onCardZoomInput(e: Event) {
   const raw = parseInt((e.target as HTMLInputElement).value, 10)
-  const clamped = Math.min(300, Math.max(25, isNaN(raw) ? 75 : raw))
-  settingsStore.setCardZoom(clamped / 100)
+  const clamped = Math.min(200, Math.max(50, isNaN(raw) ? 75 : raw))
+  settingsStore.setCardZoom(store.activeType, clamped / 100)
 }
 
 function onSortChange(e: Event) {
@@ -1648,60 +1634,18 @@ function listTypeIcon(type: string) { return LIST_TYPE_ICONS[type] ?? LIST_TYPE_
 const NAV_ICON_MAP: Record<string, string> = Object.fromEntries(NAV_ITEM_DEFS.map(d => [d.type, d.svg]))
 function navTypeIcon(type: string) { return NAV_ICON_MAP[type] ?? NAV_ICON_MAP['other'] }
 
-function heatLevel(r: Resource): 0|1|2|3|4 {
-  const n = r.open_count
-  if (n === 0) return 0
-  if (n <= 5)  return 1
-  if (n <= 20) return 2
-  if (n <= 50) return 3
-  return 4
-}
-function heatTooltip(r: Resource): string {
-  const parts: string[] = [r.title, `打开 ${r.open_count} 次`]
-  if (r.total_run_time > 0) {
-    const h = Math.floor(r.total_run_time / 3600)
-    const m = Math.floor((r.total_run_time % 3600) / 60)
-    parts.push(h > 0 ? `累计 ${h}小时${m}分` : `累计 ${m}分`)
-  }
-  if (r.last_run_at) {
-    const days = Math.floor((Date.now() - r.last_run_at) / 86400000)
-    parts.push(days === 0 ? '上次 今天' : `上次 ${days}天前`)
-  }
-  return parts.join(' · ')
+// 热力图最大打开次数（基于全部筛选结果，滚动时档位不漂移）
+const heatMax = computed(() => {
+  if (store.filtered.length === 0) return 1
+  return Math.max(1, ...store.filtered.map(r => r.open_count))
+})
+
+function heatLevel(r: Resource): 0|1|2|3|4|5|6|7 {
+  if (r.open_count === 0) return 0
+  const ratio = r.open_count / heatMax.value
+  return Math.min(7, Math.ceil(ratio * 7)) as 1|2|3|4|5|6|7
 }
 
-// 热力图缩略图缓存
-const _heatThumbCache = new Map<string, string | null>()
-const heatThumbs = reactive(new Map<string, string | null>())
-
-async function loadHeatThumbs(items: Resource[]) {
-  for (const r of items) {
-    if (heatThumbs.has(r.id)) continue
-    if (_heatThumbCache.has(r.id)) {
-      heatThumbs.set(r.id, _heatThumbCache.get(r.id) ?? null)
-      continue
-    }
-    let src: string | null = null
-    if (r.cover_path) {
-      src = await window.api.files.readImage(r.cover_path)
-    } else if (r.type === 'image') {
-      src = await window.api.files.readImage(r.file_path)
-    } else if (r.type === 'app' || r.type === 'game') {
-      src = await window.api.files.getAppIcon(r.file_path)
-    }
-    _heatThumbCache.set(r.id, src)
-    heatThumbs.set(r.id, src)
-  }
-}
-
-watch(
-  () => settingsStore.viewMode,
-  (mode) => { if (mode === 'heat') loadHeatThumbs(visibleItems.value) }
-)
-watch(
-  visibleItems,
-  (items) => { if (settingsStore.viewMode === 'heat') loadHeatThumbs(items) }
-)
 
 // 列表视图列宽
 const colStyle = computed(() => {
@@ -1742,8 +1686,8 @@ function onColResizeEnd() {
 
 // 列表视图缩略图缓存（通过 IPC 读取图片）
 const listThumbCache = reactive(new Map<string, string>())
-watch([visibleItems, () => settingsStore.viewMode], () => {
-  if (settingsStore.viewMode !== 'list') return
+watch([visibleItems, () => viewMode.value], () => {
+  if (viewMode.value !== 'list') return
   for (const item of visibleItems.value) {
     if (listThumbCache.has(item.id)) continue
     const thumbPath = item.cover_path || ((item.type === 'image' || item.type === 'video') ? item.file_path : null)
@@ -2447,10 +2391,10 @@ async function deleteIgnored(filePath: string) {
   flex-direction: column;
 }
 .grid {
-  padding: 16px;
+  padding: clamp(6px, calc(var(--card-min-width, 225px) * 0.06), 20px);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width, 225px), 1fr));
-  gap: 12px;
+  gap: clamp(3px, calc(var(--card-min-width, 225px) * 0.05), 16px);
   align-content: start;
 }
 
@@ -3675,74 +3619,6 @@ async function deleteIgnored(filePath: string) {
 }
 .kill-confirm:hover { background: #dc2626; }
 
-/* 热力图视图 */
-.heat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 4px;
-  padding: 12px;
-  align-content: start;
-}
-.heat-tile {
-  display: flex;
-  flex-direction: column;
-  border-radius: 6px;
-  cursor: pointer;
-  border: 1px solid rgba(255,255,255,0.06);
-  transition: filter .15s, transform .1s;
-  overflow: hidden;
-}
-.heat-tile:hover { filter: brightness(1.2); transform: scale(1.03); }
-.heat-lv0 { background: rgba(255,255,255,0.04); }
-.heat-lv1 { background: rgba(99,102,241,0.22); }
-.heat-lv2 { background: rgba(99,102,241,0.52); }
-.heat-lv3 { background: rgba(245,158,11,0.48); }
-.heat-lv4 { background: rgba(239,68,68,0.68); }
-
-/* 缩略图区域 */
-.heat-thumb {
-  width: 100%;
-  height: 70px;
-  background: rgba(0,0,0,0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-.heat-thumb-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.heat-thumb-img.is-icon {
-  object-fit: contain;
-  padding: 10px;
-}
-.heat-thumb-svg { line-height: 0; }
-.heat-thumb-svg :deep(svg) { width: 22px; height: 22px; opacity: .55; }
-
-/* 文字区域 */
-.heat-tile-bottom {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
-}
-.heat-tile-title {
-  font-size: 11px;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  color: rgba(255,255,255,0.9);
-}
-.heat-tile-count {
-  font-size: 10px;
-  color: rgba(255,255,255,0.5);
-}
 
 /* 瀑布流按钮（排序栏） */
 .masonry-popup-btn {
