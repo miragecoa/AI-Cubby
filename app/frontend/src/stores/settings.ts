@@ -150,12 +150,13 @@ export const useSettingsStore = defineStore('settings', () => {
   const listColumns = ref<Record<string, number>>({ name: 300, type: 70, date: 130, count: 70, tags: 200 })
   const appTitle = ref('AI资源管家')
   const offlineMode = ref(false)
+  const showOnAutoStart = ref(false)
   const themeVars = ref<Record<string, string>>({ ...DARK_THEME })
   const loaded = ref(false)
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeVal, listColVal, appTitleVal, offlineModeVal, themeVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, cardZoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
@@ -171,6 +172,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.settings.get('appTitle'),
       window.api.settings.get('offlineMode'),
       window.api.settings.get('theme'),
+      window.api.settings.get('showOnAutoStart'),
     ])
     monitorEnabled.value = monitorVal !== 'false'
     autostartEnabled.value = autostartVal
@@ -187,6 +189,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (listColVal) { try { listColumns.value = { ...listColumns.value, ...JSON.parse(listColVal) } } catch {} }
     if (appTitleVal) appTitle.value = appTitleVal
     if (offlineModeVal === 'true') offlineMode.value = true
+    if (showOnAutoStartVal === 'true') showOnAutoStart.value = true
 
     if (themeVal) {
       try { themeVars.value = { ...DARK_THEME, ...JSON.parse(themeVal) } } catch {}
@@ -280,11 +283,16 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('offlineMode', String(enabled))
   }
 
+  async function setShowOnAutoStart(enabled: boolean) {
+    showOnAutoStart.value = enabled
+    await window.api.settings.set('showOnAutoStart', String(enabled))
+  }
+
   async function setTheme(vars: Record<string, string>) {
     themeVars.value = { ...vars }
     applyThemeToRoot(themeVars.value)
     await window.api.settings.set('theme', JSON.stringify(themeVars.value))
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, viewMode, listColumns, appTitle, offlineMode, themeVars, load, setMonitor, setAutostart, setZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setViewMode, setListColumns, setAppTitle, setOfflineMode, setTheme }
+  return { monitorEnabled, autostartEnabled, zoom, cardZoom, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, viewMode, listColumns, appTitle, offlineMode, showOnAutoStart, themeVars, load, setMonitor, setAutostart, setZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setTheme }
 })

@@ -464,7 +464,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('loginItem:get', () => app.getLoginItemSettings().openAtLogin)
   ipcMain.handle('loginItem:set', (_e, enable: boolean) => {
     if (app.isPackaged) {
-      app.setLoginItemSettings({ openAtLogin: enable, path: process.execPath })
+      app.setLoginItemSettings({ openAtLogin: enable, path: process.execPath, args: ['--hidden'] })
     }
     // 记录用户的手动选择，防止自动修正逻辑覆盖
     setSetting('autoStartDisabled', enable ? 'false' : 'true')

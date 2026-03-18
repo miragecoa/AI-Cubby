@@ -38,6 +38,22 @@
             <span class="toggle-thumb" />
           </button>
         </div>
+
+        <div class="setting-row" :class="{ 'row-disabled': !settingsStore.autostartEnabled }">
+          <div class="setting-info">
+            <div class="setting-label">开机后自动显示窗口</div>
+            <div class="setting-desc">默认关闭，开机后静默驻留后台；开启后恢复弹出主窗口</div>
+          </div>
+          <button
+            class="toggle"
+            :class="{ on: settingsStore.showOnAutoStart }"
+            @click="settingsStore.setShowOnAutoStart(!settingsStore.showOnAutoStart)"
+            :aria-label="settingsStore.showOnAutoStart ? '关闭开机弹窗' : '开启开机弹窗'"
+            :disabled="!settingsStore.autostartEnabled"
+          >
+            <span class="toggle-thumb" />
+          </button>
+        </div>
       </section>
 
       <!-- 离线模式 -->
@@ -638,6 +654,10 @@ function onColorChange(key: string, e: Event) {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+.setting-row.row-disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .setting-info {

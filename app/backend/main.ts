@@ -27,6 +27,8 @@ let masonryWindow: BrowserWindow | null = null
 let masonryPaths: Array<{ path: string; title: string }> = []
 let tray: Tray | null = null
 let willQuit = false
+// 开机自启时 Windows 会传入 --hidden，此时不弹窗口
+const launchedHidden = process.argv.includes('--hidden')
 
 // 点击 X 时隐藏到托盘，而非退出
 app.on('before-quit', () => { willQuit = true })
@@ -199,7 +201,10 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
+    const showOnAutoStart = getSetting('showOnAutoStart') === 'true'
+    if (!launchedHidden || showOnAutoStart) {
+      mainWindow?.show()
+    }
   })
 
   // 最大化/还原事件转发给渲染进程（用于更新自定义标题栏按钮图标）
@@ -354,7 +359,7 @@ app.whenReady().then(() => {
       const current = app.getLoginItemSettings()
       if (!getSetting('autoStartInitialized') || !current.openAtLogin) {
         // 未初始化，或被意外关闭（如安全软件清理、文件夹移动等），自动重新注册
-        app.setLoginItemSettings({ openAtLogin: true, path: exePath })
+        app.setLoginItemSettings({ openAtLogin: true, path: exePath, args: ['--hidden'] })
         setSetting('autoStartInitialized', 'true')
         console.log('[AutoStart] Registered/Repaired, exe:', exePath)
       } else {
