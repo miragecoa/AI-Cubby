@@ -461,7 +461,7 @@ export function registerIpcHandlers(): void {
   })
 
   // ── 开机自启 ──────────────────────────────────────────
-  ipcMain.handle('loginItem:get', () => app.getLoginItemSettings().openAtLogin)
+  ipcMain.handle('loginItem:get', () => app.getLoginItemSettings({ args: ['--hidden'] }).openAtLogin)
   ipcMain.handle('loginItem:set', (_e, enable: boolean) => {
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: enable, path: process.execPath, args: ['--hidden'] })
