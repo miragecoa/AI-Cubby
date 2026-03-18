@@ -25,7 +25,7 @@
       align-items: center;
       justify-content: center;
       gap: 5px;
-      cursor: pointer;
+      cursor: grab;
       transition: width 0.18s ease, background 0.15s, box-shadow 0.15s;
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
@@ -33,6 +33,12 @@
 
     .tab:hover {
       width: 44px;
+      background: rgba(99, 102, 241, 0.95);
+    }
+
+    .tab.dragging {
+      cursor: grabbing;
+      transition: none;
       background: rgba(99, 102, 241, 0.95);
     }
 
@@ -69,8 +75,16 @@
 <body>
   <div class="tab" id="tab">
     <span class="icon">
-      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 10h12M4 6h12M4 14h12"/>
+      <!-- 收纳盒图标 -->
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <!-- handle arch -->
+        <path d="M7.5 6C7.5 4.5 12.5 4.5 12.5 6" fill="none"/>
+        <!-- lid -->
+        <rect x="2.5" y="6" width="15" height="3.2" rx="1.1"/>
+        <!-- box body -->
+        <rect x="3.5" y="9.2" width="13" height="7.8" rx="1"/>
+        <!-- center divider -->
+        <line x1="10" y1="9.2" x2="10" y2="17" stroke-width="1.1" opacity="0.55"/>
       </svg>
     </span>
     <span class="label" id="label">松开导入</span>
@@ -79,15 +93,50 @@
   <script>
     const tab = document.getElementById('tab')
 
+    // ── IPC-based drag (preserves file drop events) ──────────────────────
+    let dragStart = null   // { mx, my, wx, wy }
+    let wasDragging = false
+
+    tab.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return
+      dragStart = { mx: e.screenX, my: e.screenY, wx: window.screenX, wy: window.screenY }
+      wasDragging = false
+      e.preventDefault()
+    })
+
+    window.addEventListener('mousemove', (e) => {
+      if (!dragStart) return
+      const dx = e.screenX - dragStart.mx
+      const dy = e.screenY - dragStart.my
+      if (!wasDragging && Math.hypot(dx, dy) < 4) return
+      wasDragging = true
+      tab.classList.add('dragging')
+      window.drawerApi?.move(dragStart.wx + dx, dragStart.wy + dy)
+    })
+
+    window.addEventListener('mouseup', (e) => {
+      if (wasDragging && dragStart) {
+        const dx = e.screenX - dragStart.mx
+        const dy = e.screenY - dragStart.my
+        window.drawerApi?.savePosition(dragStart.wx + dx, dragStart.wy + dy)
+        tab.classList.remove('dragging')
+      }
+      dragStart = null
+    })
+
+    // ── Click: open main window (skip if was a drag) ──────────────────────
     tab.addEventListener('click', () => {
+      if (wasDragging) { wasDragging = false; return }
       window.drawerApi?.openMain()
     })
 
+    // ── Context menu ───────────────────────────────────────────────────────
     tab.addEventListener('contextmenu', (e) => {
       e.preventDefault()
       window.drawerApi?.showContextMenu()
     })
 
+    // ── File drag-drop ─────────────────────────────────────────────────────
     tab.addEventListener('dragover', (e) => {
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'

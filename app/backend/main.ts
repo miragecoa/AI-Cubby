@@ -150,11 +150,15 @@ function createDrawerWindow(): void {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
   const winW = 52
   const winH = 80
+  const savedX = getSetting('drawerX')
+  const savedY = getSetting('drawerY')
+  const startX = savedX !== null ? parseInt(savedX) : width - winW
+  const startY = savedY !== null ? parseInt(savedY) : Math.round((height - winH) / 2)
   drawerWindow = new BrowserWindow({
     width: winW,
     height: winH,
-    x: width - winW,
-    y: Math.round((height - winH) / 2),
+    x: startX,
+    y: startY,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -433,6 +437,13 @@ app.whenReady().then(() => {
     mainWindow?.show()
     mainWindow?.focus()
     mainWindow?.webContents.send('drawer:import', items)
+  })
+  ipcMain.handle('drawer:move', (_e, x: number, y: number) => {
+    drawerWindow?.setPosition(Math.round(x), Math.round(y))
+  })
+  ipcMain.handle('drawer:savePosition', (_e, x: number, y: number) => {
+    setSetting('drawerX', String(Math.round(x)))
+    setSetting('drawerY', String(Math.round(y)))
   })
   ipcMain.handle('drawer:showContextMenu', () => {
     const drawerVisible = getSetting('drawerVisible') !== 'false'
