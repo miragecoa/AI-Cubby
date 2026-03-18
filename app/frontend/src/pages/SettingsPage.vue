@@ -125,12 +125,34 @@
         </div>
 
         <div class="theme-colors-block">
-          <div class="theme-colors-grid">
-            <div v-for="item in themeVarDefs" :key="item.key" class="theme-color-item">
-              <span class="theme-color-label">{{ item.label }}</span>
-              <div class="theme-color-control">
-                <input type="color" class="color-input" :value="settingsStore.themeVars[item.key]" @input="onColorChange(item.key, $event)" />
-                <span class="color-hex">{{ settingsStore.themeVars[item.key] }}</span>
+          <button class="theme-colors-toggle" @click="showColors = !showColors">
+            <svg width="12" height="12" viewBox="0 0 12 12" :style="{ transform: showColors ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }">
+              <path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            自定义颜色
+          </button>
+
+          <div v-if="showColors" class="theme-colors-body">
+            <div class="theme-colors-grid">
+              <div v-for="item in themeVarDefs" :key="item.key" class="theme-color-item">
+                <span class="theme-color-label">{{ item.label }}</span>
+                <div class="theme-color-control">
+                  <input type="color" class="color-input" :value="settingsStore.themeVars[item.key]" @input="onColorChange(item.key, $event)" />
+                  <span class="color-hex">{{ settingsStore.themeVars[item.key] }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="theme-io-row">
+              <div class="theme-io-group">
+                <span class="theme-io-label">导出</span>
+                <input class="theme-io-input" readonly :value="exportCode" @focus="($event.target as HTMLInputElement).select()" />
+                <button class="theme-io-btn" @click="copyExportCode">{{ copied ? '已复制' : '复制' }}</button>
+              </div>
+              <div class="theme-io-group">
+                <span class="theme-io-label">导入</span>
+                <input class="theme-io-input" v-model="importCode" placeholder="粘贴主题代码…" />
+                <button class="theme-io-btn" @click="importTheme" :disabled="!importCode">导入</button>
               </div>
             </div>
           </div>
@@ -505,6 +527,28 @@ function applyZoom() {
 }
 
 // ── 外观主题 ──
+const showColors = ref(false)
+const importCode = ref('')
+const copied = ref(false)
+
+const exportCode = computed(() => btoa(JSON.stringify(settingsStore.themeVars)))
+
+function copyExportCode() {
+  navigator.clipboard.writeText(exportCode.value)
+  copied.value = true
+  setTimeout(() => { copied.value = false }, 2000)
+}
+
+function importTheme() {
+  try {
+    const parsed = JSON.parse(atob(importCode.value.trim()))
+    settingsStore.setTheme({ ...DARK_THEME, ...parsed })
+    importCode.value = ''
+  } catch {
+    alert('无效的主题代码')
+  }
+}
+
 const themeVarDefs = [
   { key: 'bg',        label: '主背景' },
   { key: 'surface',   label: '卡片背景' },
@@ -807,10 +851,32 @@ function onColorChange(key: string, e: Event) {
 }
 
 .theme-colors-block {
-  padding: 12px 14px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
+  overflow: hidden;
+}
+
+.theme-colors-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: color .15s;
+}
+.theme-colors-toggle:hover { color: var(--text); }
+
+.theme-colors-body {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--border);
 }
 
 .theme-colors-grid {
@@ -857,6 +923,59 @@ function onColorChange(key: string, e: Event) {
   color: var(--text-3);
   width: 52px;
 }
+
+.theme-io-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.theme-io-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-io-label {
+  font-size: 12px;
+  color: var(--text-3);
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.theme-io-input {
+  flex: 1;
+  padding: 5px 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 11px;
+  font-family: 'Consolas', monospace;
+  outline: none;
+  min-width: 0;
+}
+.theme-io-input:focus { border-color: var(--accent); }
+.theme-io-input::placeholder { color: var(--text-3); }
+
+.theme-io-btn {
+  padding: 5px 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.theme-io-btn:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.theme-io-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* Profile controls */
 .profile-controls {
