@@ -56,6 +56,32 @@
         </div>
       </section>
 
+      <!-- 快捷键 -->
+      <section class="section">
+        <h2 class="section-title">快捷键</h2>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">唤醒窗口</div>
+            <div class="setting-desc">全局快捷键，显示或隐藏主窗口（默认 Alt+Space）</div>
+          </div>
+          <div class="hotkey-input-wrap">
+            <div
+              class="hotkey-input"
+              :class="{ recording: hotkeyRecording, error: hotkeyError }"
+              tabindex="0"
+              @click="startRecording"
+              @keydown.prevent="onHotkeyKeydown"
+              @blur="cancelRecording"
+            >
+              {{ hotkeyRecording ? (pendingHotkey || '请按下快捷键…') : settingsStore.hotkeyWake }}
+            </div>
+            <button v-if="!hotkeyRecording" class="hotkey-reset" @click="resetHotkey" title="恢复默认">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
       <!-- 离线模式 -->
       <section class="section">
         <h2 class="section-title">AI 功能</h2>
@@ -383,6 +409,57 @@ import { useSettingsStore, DARK_THEME, LIGHT_THEME, THEME_PRESETS } from '../sto
 import type { ThemeId } from '../stores/settings'
 
 const settingsStore = useSettingsStore()
+
+// ── 快捷键录制 ──
+const hotkeyRecording = ref(false)
+const hotkeyError = ref(false)
+const pendingHotkey = ref('')
+
+function electronAccelerator(e: KeyboardEvent): string {
+  const parts: string[] = []
+  if (e.ctrlKey)  parts.push('Ctrl')
+  if (e.altKey)   parts.push('Alt')
+  if (e.shiftKey) parts.push('Shift')
+  if (e.metaKey)  parts.push('Meta')
+  const key = e.key
+  if (!['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
+    parts.push(key.length === 1 ? key.toUpperCase() : key)
+  }
+  return parts.join('+')
+}
+
+function startRecording() {
+  hotkeyRecording.value = true
+  hotkeyError.value = false
+  pendingHotkey.value = ''
+}
+
+function cancelRecording() {
+  hotkeyRecording.value = false
+  pendingHotkey.value = ''
+}
+
+async function onHotkeyKeydown(e: KeyboardEvent) {
+  if (!hotkeyRecording.value) return
+  if (e.key === 'Escape') { cancelRecording(); return }
+  const acc = electronAccelerator(e)
+  pendingHotkey.value = acc
+  // 必须有至少一个修饰键
+  if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) return
+  // 必须有实际按键（不只是修饰键）
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return
+  hotkeyRecording.value = false
+  const ok = await settingsStore.setHotkeyWake(acc)
+  if (!ok) {
+    hotkeyError.value = true
+    setTimeout(() => { hotkeyError.value = false }, 1500)
+  }
+}
+
+async function resetHotkey() {
+  await settingsStore.setHotkeyWake('Alt+Space')
+}
+
 const dbPath = ref('')
 const appVersion = ref('0.1.0')
 const lastUpdateTime = ref('')
@@ -659,6 +736,56 @@ function onColorChange(key: string, e: Event) {
   opacity: 0.4;
   pointer-events: none;
 }
+
+.hotkey-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.hotkey-input {
+  min-width: 130px;
+  padding: 5px 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: monospace;
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+  user-select: none;
+}
+.hotkey-input:hover { border-color: var(--accent); }
+.hotkey-input.recording {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: pulse-border 1s infinite;
+}
+.hotkey-input.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+@keyframes pulse-border {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.hotkey-reset {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0;
+}
+.hotkey-reset:hover { color: var(--text); border-color: var(--accent); }
 
 .setting-info {
   flex: 1;

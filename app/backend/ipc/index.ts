@@ -1,4 +1,4 @@
-import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net } from 'electron'
+import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, globalShortcut } from 'electron'
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
 import { execFile, exec } from 'child_process'
@@ -471,6 +471,22 @@ export function registerIpcHandlers(): void {
     setSetting('autoStartDisabled', enable ? 'false' : 'true')
     setSetting('autoStartInitialized', 'true')
     return true
+  })
+
+  // ── 唤醒快捷键 ──────────────────────────────────────────
+  ipcMain.handle('hotkey:get', () => getSetting('hotkeyWake') || 'Alt+Space')
+  ipcMain.handle('hotkey:set', (_e, accelerator: string) => {
+    globalShortcut.unregisterAll()
+    if (!accelerator) return false
+    try {
+      const ok = globalShortcut.register(accelerator, () => {
+        const win = BrowserWindow.getAllWindows()[0]
+        if (!win) return
+        if (win.isVisible() && win.isFocused()) { win.hide() } else { win.show(); win.focus() }
+      })
+      if (ok) setSetting('hotkeyWake', accelerator)
+      return ok
+    } catch { return false }
   })
 
   // ── 监听控制 ──────────────────────────────────────────

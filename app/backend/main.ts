@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImage, protocol, net } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImage, protocol, net, globalShortcut } from 'electron'
 import { join } from 'path'
 import { deflateSync } from 'zlib'
 import { existsSync, createReadStream, statSync } from 'fs'
@@ -369,6 +369,7 @@ app.whenReady().then(() => {
 
   createTray()
   createWindow()
+  registerWakeShortcut(getSetting('hotkeyWake') || 'Alt+Space')
 
   // 启动 Recent Files 监听
   startMonitor(
@@ -395,3 +396,19 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+function registerWakeShortcut(accelerator: string): void {
+  globalShortcut.unregisterAll()
+  if (!accelerator) return
+  try {
+    globalShortcut.register(accelerator, () => {
+      if (!mainWindow) return
+      if (mainWindow.isVisible() && mainWindow.isFocused()) {
+        mainWindow.hide()
+      } else {
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    })
+  } catch { /* invalid accelerator */ }
+}

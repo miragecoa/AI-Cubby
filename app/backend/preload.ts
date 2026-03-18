@@ -107,6 +107,12 @@ contextBridge.exposeInMainWorld('api', {
     set: (enable: boolean): Promise<void> => ipcRenderer.invoke('loginItem:set', enable)
   },
 
+  // 唤醒快捷键
+  hotkey: {
+    get: (): Promise<string> => ipcRenderer.invoke('hotkey:get'),
+    set: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('hotkey:set', accelerator),
+  },
+
   // 窗口控制（自定义标题栏）
   win: {
     minimize:    (): Promise<void> => ipcRenderer.invoke('window:minimize'),
