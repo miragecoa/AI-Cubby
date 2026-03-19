@@ -513,15 +513,19 @@ export function registerIpcHandlers(): void {
       let finalBuffer: Buffer
       try {
         const nim = nativeImage.createFromDataURL(dataUrl)
-        finalBuffer = nim.isEmpty() ? Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64') : nim.toPNG()
+        finalBuffer = nim.isEmpty() ? Buffer.from(dataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64') : nim.toPNG()
       } catch {
-        finalBuffer = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+        finalBuffer = Buffer.from(dataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64')
       }
 
       // 时间戳后缀保证新路径与旧路径不同，渲染层/主进程缓存自动失效
       const coverPath = join(coversDir, `${resourceId}_${Date.now()}.png`)
       writeFileSync(coverPath, finalBuffer)
       updateResource(resourceId, { cover_path: coverPath })
+      // Evict any previously cached null/stale entries for this resource's covers
+      for (const key of thumbCache.keys()) {
+        if (key.includes(`${resourceId}.`) || key.includes(`${resourceId}_`)) thumbCache.delete(key)
+      }
       return coverPath
     } catch (e: any) {
       console.error('[saveCover] failed:', e?.message)
@@ -670,10 +674,14 @@ export function registerIpcHandlers(): void {
         if (!resp.ok) return null
         const buf = Buffer.from(await resp.arrayBuffer())
         if (buf.length < 64) return null  // blank placeholder
-        const contentType = resp.headers.get('content-type') || 'image/png'
-        // Reject text responses (e.g. HTML error pages)
+        const contentType = resp.headers.get('content-type') || ''
         if (contentType.includes('text/')) return null
-        return `data:${contentType};base64,${buf.toString('base64')}`
+        // Normalize to PNG via nativeImage (handles ICO, WebP, BMP, etc.)
+        // Ensures saveCover always receives a clean data:image/png URL
+        const nim = nativeImage.createFromBuffer(buf)
+        if (!nim.isEmpty()) return nim.toDataURL()
+        // Fallback for formats nativeImage can't decode (rare)
+        return `data:${contentType || 'image/png'};base64,${buf.toString('base64')}`
       } catch { return null }
     }
     try {
