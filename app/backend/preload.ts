@@ -159,6 +159,7 @@ contextBridge.exposeInMainWorld('api', {
   // 自动更新
   updater: {
     check:       (): Promise<any> => ipcRenderer.invoke('updater:check'),
+    getPending:  (): Promise<any> => ipcRenderer.invoke('updater:getPending'),
     download:    (): Promise<any> => ipcRenderer.invoke('updater:download'),
     apply:       (): Promise<void> => ipcRenderer.invoke('updater:apply'),
     skip:        (): Promise<void> => ipcRenderer.invoke('updater:skip'),
@@ -167,20 +168,24 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('updater:changelog'),
   },
   onUpdateAvailable: (callback: (info: any) => void) => {
-    ipcRenderer.on('updater:update-available', (_e, info) => callback(info))
-    return () => ipcRenderer.removeAllListeners('updater:update-available')
+    const handler = (_e: any, info: any) => callback(info)
+    ipcRenderer.on('updater:update-available', handler)
+    return () => ipcRenderer.removeListener('updater:update-available', handler)
   },
   onUpdateProgress: (callback: (percent: number) => void) => {
-    ipcRenderer.on('updater:progress', (_e, percent) => callback(percent))
-    return () => ipcRenderer.removeAllListeners('updater:progress')
+    const handler = (_e: any, percent: number) => callback(percent)
+    ipcRenderer.on('updater:progress', handler)
+    return () => ipcRenderer.removeListener('updater:progress', handler)
   },
   onDownloadDone: (callback: () => void) => {
-    ipcRenderer.on('updater:download-done', () => callback())
-    return () => ipcRenderer.removeAllListeners('updater:download-done')
+    const handler = () => callback()
+    ipcRenderer.on('updater:download-done', handler)
+    return () => ipcRenderer.removeListener('updater:download-done', handler)
   },
   onDownloadError: (callback: (msg: string) => void) => {
-    ipcRenderer.on('updater:download-error', (_e, msg) => callback(msg))
-    return () => ipcRenderer.removeAllListeners('updater:download-error')
+    const handler = (_e: any, msg: string) => callback(msg)
+    ipcRenderer.on('updater:download-error', handler)
+    return () => ipcRenderer.removeListener('updater:download-error', handler)
   },
 
   // 网页资源

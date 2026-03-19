@@ -513,18 +513,21 @@ async function manualCheckUpdate() {
   }
 }
 
+let _unsubDlDone: (() => void) | null = null
+let _unsubDlError: (() => void) | null = null
+
 function settingsDownloadAndApply() {
   updateCheckStatus.value = 'downloading'
   updateDownloadPercent.value = 0
 
-  // Fire-and-forget: download() returns null immediately; done/error arrive as events
-  // Don't call the unsub functions — they call removeAllListeners and would nuke LibraryPage's listeners
-  window.api.onDownloadDone(() => {
+  // Clean up any previous listeners before adding new ones
+  _unsubDlDone?.(); _unsubDlError?.()
+  _unsubDlDone = window.api.onDownloadDone(() => {
     if (updateCheckStatus.value === 'downloading') {
       updateCheckStatus.value = 'ready'
     }
   })
-  window.api.onDownloadError(() => {
+  _unsubDlError = window.api.onDownloadError(() => {
     if (updateCheckStatus.value === 'downloading') {
       updateCheckStatus.value = 'error'
     }
@@ -596,7 +599,7 @@ async function onDeleteProfile() {
 const unsubProgress = window.api.onUpdateProgress((percent) => {
   updateDownloadPercent.value = percent
 })
-onUnmounted(() => { unsubProgress() })
+onUnmounted(() => { unsubProgress(); _unsubDlDone?.(); _unsubDlError?.() })
 
 onMounted(async () => {
   await settingsStore.load()

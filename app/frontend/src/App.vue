@@ -136,6 +136,17 @@ onUnmounted(() => {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 允许选中文件名/路径文本 */
+.lr-name,
+.field-value.selectable,
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 body {

@@ -94,6 +94,15 @@ declare global {
           assetSize: number
           assetUpdatedAt: string
         }>
+        getPending: () => Promise<{
+          hasUpdate: boolean
+          currentVersion: string
+          remoteVersion: string
+          isNewVersion: boolean
+          downloadUrl: string
+          assetSize: number
+          assetUpdatedAt: string
+        } | null>
         download: () => Promise<void>
         apply: () => Promise<void>
         skip: () => Promise<void>

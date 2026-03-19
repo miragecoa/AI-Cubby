@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, WebContents } from 'electron'
 import { net } from 'electron'
 import { dirname, join } from 'path'
 import { existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, writeFileSync } from 'fs'
@@ -94,7 +94,7 @@ function noUpdate(currentVersion: string): UpdateInfo {
 
 // ── Download update ──────────────────────────────────────
 
-function followDownload(url: string, totalSize: number): Promise<string> {
+function followDownload(url: string, totalSize: number, wc: WebContents | null = null): Promise<string> {
   const appDir = app.isPackaged ? dirname(process.execPath) : app.getAppPath()
   const tempDir = join(appDir, '.update-temp')
   if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true })
@@ -106,7 +106,7 @@ function followDownload(url: string, totalSize: number): Promise<string> {
     getter(url, { headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }, (res) => {
       // Follow redirects (GitHub 302 → CDN)
       if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
-        return followDownload(res.headers.location, totalSize).then(resolve, reject)
+        return followDownload(res.headers.location, totalSize, wc).then(resolve, reject)
       }
       if (res.statusCode !== 200) return reject(new Error(`Download failed: ${res.statusCode}`))
 
@@ -122,12 +122,12 @@ function followDownload(url: string, totalSize: number): Promise<string> {
         if (contentLen > 0 && now - lastProgressTime >= 200) {
           lastProgressTime = now
           const percent = Math.round((received / contentLen) * 100)
-          BrowserWindow.getAllWindows()[0]?.webContents.send('updater:progress', percent)
+          if (wc && !wc.isDestroyed()) wc.send('updater:progress', percent)
         }
       })
 
       res.on('end', () => {
-        BrowserWindow.getAllWindows()[0]?.webContents.send('updater:progress', 100)
+        if (wc && !wc.isDestroyed()) wc.send('updater:progress', 100)
         ws.end(() => {
           const dlSize = statSync(zipPath).size
           if (contentLen > 0 && Math.abs(dlSize - contentLen) > 1024) {
@@ -157,10 +157,10 @@ export async function forceUpdate(): Promise<void> {
   await applyAndRestart()
 }
 
-export async function downloadUpdate(_mainWindow: BrowserWindow | null): Promise<string> {
+export async function downloadUpdate(wc: WebContents | null): Promise<string> {
   if (!latestUpdateInfo?.hasUpdate) throw new Error('No update available')
 
-  const zipPath = await followDownload(latestUpdateInfo.downloadUrl, latestUpdateInfo.assetSize)
+  const zipPath = await followDownload(latestUpdateInfo.downloadUrl, latestUpdateInfo.assetSize, wc)
 
   // Save timestamp so we know this version/asset was processed
   setSetting('update_lastAssetTimestamp', latestUpdateInfo.assetUpdatedAt)
@@ -271,9 +271,19 @@ export function skipUpdate(): void {
   setSetting('update_skippedTimestamp', latestUpdateInfo.assetUpdatedAt)
 }
 
+// ── Pending update (for recovering missed IPC notifications) ─────────────────
+
+export function getPendingUpdate(): UpdateInfo | null {
+  if (!latestUpdateInfo?.hasUpdate) return null
+  const skippedVer = getSetting('update_skippedVersion')
+  const skippedTs  = getSetting('update_skippedTimestamp')
+  if (skippedVer === latestUpdateInfo.remoteVersion && skippedTs === latestUpdateInfo.assetUpdatedAt) return null
+  return latestUpdateInfo
+}
+
 // ── Auto-update scheduler ────────────────────────────────
 
-export function initAutoUpdater(_mainWindow: BrowserWindow): void {
+export function initAutoUpdater(mainWindow: BrowserWindow): void {
   const doCheck = async () => {
     try {
       const autoUpdate = getSetting('autoUpdate')
@@ -287,10 +297,9 @@ export function initAutoUpdater(_mainWindow: BrowserWindow): void {
       const skippedTs = getSetting('update_skippedTimestamp')
       if (skippedVer === info.remoteVersion && skippedTs === info.assetUpdatedAt) return
 
-      // Notify renderer about available update — use fresh window reference
-      const win = BrowserWindow.getAllWindows()[0]
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('updater:update-available', info)
+      // Notify renderer about available update
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:update-available', info)
       }
     } catch (e) {
       console.warn('[Updater] Auto-check failed:', e)

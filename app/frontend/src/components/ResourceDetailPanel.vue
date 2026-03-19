@@ -164,7 +164,7 @@
         <!-- 底部操作栏 -->
         <div class="modal-footer">
           <div class="footer-actions">
-            <button class="btn-cancel" @click="$emit('close')">关闭</button>
+            <button class="btn-cancel" :class="{ 'btn-dirty': isDirty }" @click="isDirty ? flushAndClose() : $emit('close')">{{ isDirty ? '保存并关闭' : '关闭' }}</button>
             <button class="btn-open" @click="openFile">
               <span v-html="openSvg" />打开文件
             </button>
@@ -192,11 +192,13 @@ const editNote    = ref(props.resource.note ?? '')
 const editRating  = ref(props.resource.rating)
 const editPath    = ref(props.resource.file_path)
 const newTagInput = ref('')
+const hasEdited   = ref(false)
 
 watch(() => props.resource.id, () => {
   editTitle.value   = props.resource.title
   editNote.value    = props.resource.note ?? ''
   editRating.value  = props.resource.rating
+  hasEdited.value   = false
   editPath.value    = props.resource.file_path
   newTagInput.value = ''
   loadTagSuggestions()
@@ -221,6 +223,7 @@ const filteredSuggestions = computed(() => {
 
 async function addTagFromSuggestion(tag: { id: number; name: string }) {
   if (props.resource.tags?.some(t => t.id === tag.id)) return
+  hasEdited.value = true
   await window.api.tags.addToResource(props.resource.id, tag.id)
   store.addOrUpdate({
     ...props.resource,
@@ -253,6 +256,7 @@ watchEffect(async () => {
 async function pickCover() {
   const imagePath = await window.api.files.pickImage()
   if (!imagePath) return
+  hasEdited.value = true
   const dataUrl = await window.api.files.readImage(imagePath)
   if (!dataUrl) return
   const savedPath = await window.api.files.saveCover(props.resource.id, dataUrl)
@@ -270,9 +274,31 @@ async function saveField(field: string, value: any) {
   if (updated) store.addOrUpdate(updated as Resource)
 }
 
+// ─── Dirty state + flush close ─────────────────────────────────────
+const isDirty = computed(() =>
+  hasEdited.value ||
+  editTitle.value !== props.resource.title ||
+  editNote.value  !== (props.resource.note ?? '') ||
+  editPath.value  !== props.resource.file_path
+)
+async function flushAndClose() {
+  for (const field of Object.keys(saveTimers)) {
+    clearTimeout(saveTimers[field])
+    delete saveTimers[field]
+  }
+  const promises: Promise<any>[] = []
+  if (editTitle.value !== props.resource.title)          promises.push(saveField('title',     editTitle.value))
+  if (editNote.value  !== (props.resource.note ?? ''))   promises.push(saveField('note',      editNote.value))
+  if (editPath.value  !== props.resource.file_path)      promises.push(saveField('file_path', editPath.value))
+  await Promise.all(promises)
+  hasEdited.value = false
+  emit('close')
+}
+
 // ─── Rating ────────────────────────────────────────────────────────
 async function setRating(n: number) {
   editRating.value = n
+  hasEdited.value = true
   const updated = await window.api.resources.update(props.resource.id, { rating: n })
   if (updated) store.addOrUpdate(updated as Resource)
 }
@@ -282,6 +308,7 @@ async function addTag() {
   const name = newTagInput.value.trim()
   if (!name) return
   newTagInput.value = ''
+  hasEdited.value = true
   const allTags = await window.api.tags.getAll()
   let tag = allTags.find(t => t.name.toLowerCase() === name.toLowerCase())
   if (!tag) tag = await window.api.tags.create(name)
@@ -292,6 +319,7 @@ async function addTag() {
 }
 
 async function removeTag(tagId: number) {
+  hasEdited.value = true
   await window.api.tags.removeFromResource(props.resource.id, tagId)
   store.addOrUpdate({ ...props.resource, tags: (props.resource.tags ?? []).filter(t => t.id !== tagId) })
 }
@@ -335,6 +363,7 @@ const typeOptions = [
   { label: '其他', value: 'other' },
 ]
 function onTypeChange(e: Event) {
+  hasEdited.value = true
   saveField('type', (e.target as HTMLSelectElement).value)
 }
 const TYPE_ICONS: Record<string, string> = {
@@ -890,6 +919,8 @@ async function refetchFavicon() {
   transition: border-color 0.1s, color 0.1s;
 }
 .btn-cancel:hover { border-color: var(--text-3); color: var(--text-2); }
+.btn-cancel.btn-dirty { border-color: var(--accent); color: var(--accent-2); }
+.btn-cancel.btn-dirty:hover { background: rgba(99,102,241,0.1); border-color: var(--accent); color: var(--accent-2); }
 
 .btn-open {
   display: flex;

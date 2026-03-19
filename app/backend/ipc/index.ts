@@ -15,7 +15,7 @@ import {
 } from '../db/queries'
 import { scanRecentFolder, scanProcesses, setMonitorPaused, getRunningSessions, killRunningResource, trackRunningProcess } from '../monitor/recent-files'
 import { dbPath, dataDir } from '../db/index'
-import { checkForUpdate, downloadUpdate, applyAndRestart, skipUpdate, forceUpdate, getChangelog } from '../updater'
+import { checkForUpdate, downloadUpdate, applyAndRestart, skipUpdate, forceUpdate, getChangelog, getPendingUpdate } from '../updater'
 import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest } from '../db/profiles'
 
 // 主进程级缓存：进程生命周期内有效，避免重复调用系统 API
@@ -561,12 +561,16 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('updater:check', () => {
     return checkForUpdate()
   })
-  ipcMain.handle('updater:download', () => {
-    // Fire-and-forget: return immediately so IPC doesn't block progress events
-    const win = BrowserWindow.getAllWindows()[0] || null
-    downloadUpdate(win)
-      .then(() => { win?.webContents.send('updater:download-done') })
-      .catch((err: any) => { win?.webContents.send('updater:download-error', err?.message ?? 'Download failed') })
+  ipcMain.handle('updater:getPending', () => {
+    return getPendingUpdate()
+  })
+  ipcMain.handle('updater:download', (e) => {
+    // Use e.sender — the exact webContents that requested the download (always mainWindow)
+    // Do NOT use getAllWindows()[0]: with multiple windows (drawer, etc.) the order is non-deterministic
+    const wc = e.sender
+    downloadUpdate(wc)
+      .then(() => { if (!wc.isDestroyed()) wc.send('updater:download-done') })
+      .catch((err: any) => { if (!wc.isDestroyed()) wc.send('updater:download-error', err?.message ?? 'Download failed') })
     return null
   })
   ipcMain.handle('updater:apply', () => {

@@ -545,6 +545,8 @@ function openInExplorer() {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .card:hover .title {
