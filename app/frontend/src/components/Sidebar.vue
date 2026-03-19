@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar" :class="{ collapsed: settingsStore.sidebarCollapsed }">
+  <aside class="sidebar" :class="{ collapsed: settingsStore.sidebarCollapsed, 'no-transition': isResizing }" :style="settingsStore.sidebarCollapsed ? {} : { width: sidebarWidth + 'px' }">
     <div class="sidebar-content">
       <div class="sidebar-header">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -75,6 +75,8 @@
       </div>
     </div>
 
+    <div v-if="!settingsStore.sidebarCollapsed" class="sidebar-resize-handle" @mousedown.prevent.stop="onResizeStart" />
+
     <button
       class="panel-toggle"
       @click="toggleCollapse"
@@ -87,6 +89,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+
+const sidebarWidth = ref(210)
+const isResizing = ref(false)
 import { useRouter } from 'vue-router'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
@@ -97,7 +102,28 @@ const store = useResourceStore()
 const settingsStore = useSettingsStore()
 const router = useRouter()
 
-onMounted(() => settingsStore.load())
+onMounted(async () => {
+  settingsStore.load()
+  const saved = await window.api.settings.get('sidebar_width')
+  if (saved) sidebarWidth.value = Math.max(120, Math.min(400, parseInt(saved) || 210))
+})
+
+function onResizeStart(e: MouseEvent) {
+  isResizing.value = true
+  const startX = e.screenX
+  const startW = sidebarWidth.value
+  const onMove = (ev: MouseEvent) => {
+    sidebarWidth.value = Math.max(120, Math.min(400, startW + ev.screenX - startX))
+  }
+  const onUp = () => {
+    isResizing.value = false
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    window.api.settings.set('sidebar_width', String(sidebarWidth.value))
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 const editing = ref(false)
 
@@ -183,6 +209,23 @@ const chevronRightSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 
 .sidebar.collapsed .sidebar-content {
   display: none;
+}
+
+/* ── 拖拽调整宽度 ─────────────────────────────────────────── */
+.sidebar-resize-handle {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.sidebar-resize-handle:hover {
+  background: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.sidebar.no-transition {
+  transition: none;
 }
 
 /* ── 折叠切换条 ─────────────────────────────────────────────── */

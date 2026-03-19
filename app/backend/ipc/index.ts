@@ -1,5 +1,5 @@
 import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, globalShortcut, webContents } from 'electron'
-import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync } from 'fs'
+import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync, unlinkSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
 import { execFile, exec } from 'child_process'
 import { join, dirname, extname, basename } from 'path'
@@ -39,30 +39,74 @@ const appIconCache = new Map<string, string | null>()
 const thumbCache = new Map<string, string | null>()
 
 // 在 exe 同目录及父目录中搜索图标文件（.ico 优先，其次常见图标文件名）
+// 也会扫描 assets / resources / icons 等常见子目录
+const ICON_SUBDIRS = ['assets', 'resources', 'icons', 'res']
+const ICON_NAMES = ['icon.png', 'logo.png', 'icon.jpg', 'logo.jpg']
+
+function tryLoadIcon(dir: string): string | null {
+  if (!existsSync(dir)) return null
+  let files: string[]
+  try { files = readdirSync(dir) } catch { return null }
+
+  const ico = files.find(f => f.toLowerCase().endsWith('.ico'))
+  if (ico) {
+    const img = nativeImage.createFromPath(join(dir, ico))
+    if (!img.isEmpty()) return img.toDataURL()
+  }
+  for (const name of ICON_NAMES) {
+    if (files.some(f => f.toLowerCase() === name)) {
+      const img = nativeImage.createFromPath(join(dir, name))
+      if (!img.isEmpty()) return img.toDataURL()
+    }
+  }
+  return null
+}
+
 function findNearbyIcon(exePath: string): string | null {
   if (isUNC(exePath)) return null  // Skip slow network directory scanning
-  const ICON_NAMES = ['icon.png', 'logo.png', 'icon.jpg', 'logo.jpg']
   try {
-    for (const dir of [dirname(exePath), dirname(dirname(exePath))]) {
-      if (!existsSync(dir)) continue
-      let files: string[]
-      try { files = readdirSync(dir) } catch { continue }
-
-      const ico = files.find(f => f.toLowerCase().endsWith('.ico'))
-      if (ico) {
-        const img = nativeImage.createFromPath(join(dir, ico))
-        if (!img.isEmpty()) return img.toDataURL()
-      }
-
-      for (const name of ICON_NAMES) {
-        if (files.some(f => f.toLowerCase() === name)) {
-          const img = nativeImage.createFromPath(join(dir, name))
-          if (!img.isEmpty()) return img.toDataURL()
-        }
-      }
+    const exeDir = dirname(exePath)
+    // 1. exe 同目录
+    const r1 = tryLoadIcon(exeDir)
+    if (r1) return r1
+    // 2. exe 同目录下的常见子目录（assets/resources/icons/res）
+    for (const sub of ICON_SUBDIRS) {
+      const r = tryLoadIcon(join(exeDir, sub))
+      if (r) return r
     }
+    // 3. 父目录
+    const r2 = tryLoadIcon(dirname(exeDir))
+    if (r2) return r2
   } catch { /* 目录不可访问，跳过 */ }
   return null
+}
+
+// 终极兜底：用 PowerShell ExtractAssociatedIcon —— 与 Windows Explorer 完全一致
+// 对 app.getFileIcon 无法获取（图标在外部文件/manifest 指向）的情况有效
+function extractIconViaPowerShell(filePath: string): Promise<string | null> {
+  // 用 UTF-16LE EncodedCommand 避免中文路径转义问题
+  const script = [
+    'Add-Type -AssemblyName System.Drawing',
+    `$p=[System.IO.Path]::GetFullPath('${filePath.replace(/'/g, "''")}')`,
+    'try{',
+    '  $ico=[System.Drawing.Icon]::ExtractAssociatedIcon($p)',
+    '  $bmp=$ico.ToBitmap()',
+    '  $ms=New-Object System.IO.MemoryStream',
+    '  $bmp.Save($ms,[System.Drawing.Imaging.ImageFormat]::Png)',
+    '  Write-Output([Convert]::ToBase64String($ms.ToArray()))',
+    '}catch{Write-Output ""}'
+  ].join(';')
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  return new Promise((resolve) => {
+    execFile('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      { timeout: 8000 },
+      (_err, stdout) => {
+        const b64 = stdout?.trim()
+        resolve(b64 ? `data:image/png;base64,${b64}` : null)
+      }
+    )
+  })
 }
 
 export function resolveDroppedPaths(paths: string[]): Array<{ type: string; title: string; file_path: string; meta?: string }> {
@@ -353,9 +397,12 @@ export function registerIpcHandlers(): void {
   })
 
   // 获取可执行文件的系统图标（用于 .exe / .lnk 资源卡片预览）
-  // 多级策略：large → normal → 近目录 .ico / 常见图标文件
+  // 策略1: app.getFileIcon (SHGetFileInfo) → 策略2: 同目录/子目录扫描 → 策略3: PowerShell ExtractAssociatedIcon
   ipcMain.handle('files:getAppIcon', async (_e, filePath: string) => {
     if (appIconCache.has(filePath)) return appIconCache.get(filePath) ?? null
+
+    const cache = (v: string | null) => { appIconCache.set(filePath, v); return v }
+
     try {
       // .lnk 快捷方式：先解析出真实目标
       let targetPath = filePath
@@ -363,26 +410,21 @@ export function registerIpcHandlers(): void {
         try { targetPath = shell.readShortcutLink(filePath).target || filePath } catch { /* 忽略 */ }
       }
 
-      // 策略1：getFileIcon large
+      // 策略1：Electron getFileIcon (调用 SHGetFileInfo)
       for (const size of ['large', 'normal'] as const) {
         const icon = await app.getFileIcon(targetPath, { size })
-        if (!icon.isEmpty()) {
-          const result = icon.toDataURL()
-          appIconCache.set(filePath, result)
-          return result
-        }
+        if (!icon.isEmpty()) return cache(icon.toDataURL())
       }
 
-      // 策略2：在 exe 同目录及父目录中查找图标文件
-      const fallback = findNearbyIcon(targetPath)
-      if (fallback) {
-        appIconCache.set(filePath, fallback)
-        return fallback
-      }
+      // 策略2：扫描同目录 / 常见子目录(assets/resources/icons/res) / 父目录
+      const nearby = findNearbyIcon(targetPath)
+      if (nearby) return cache(nearby)
 
-      return null
+      // 策略3：PowerShell ExtractAssociatedIcon —— 与 Windows Explorer 完全相同的 API
+      const ps = await extractIconViaPowerShell(targetPath)
+      return cache(ps)
     } catch {
-      return null
+      return cache(null)
     }
   })
 
@@ -449,16 +491,36 @@ export function registerIpcHandlers(): void {
     return results
   })
 
-  // 保存视频封面到本地磁盘，并更新数据库中的 cover_path
+  // 保存封面到本地磁盘，并更新数据库中的 cover_path
+  // 使用时间戳后缀保证路径唯一 → 防止旧路径在主/渲染层缓存命中旧数据
+  // 统一转换为 PNG（解决 .ico / .webp / SVG 等格式被 createThumbnailFromPath 无法解析的问题）
   ipcMain.handle('files:saveCover', async (_e, resourceId: string, dataUrl: string) => {
     try {
-      const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
-      const buffer = Buffer.from(base64, 'base64')
       const coversDir = join(dataDir, 'covers')
       mkdirSync(coversDir, { recursive: true })
-      const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpg'
-      const coverPath = join(coversDir, `${resourceId}.${ext}`)
-      writeFileSync(coverPath, buffer)
+
+      // 删除同一资源的旧封面文件，避免积累
+      try {
+        for (const f of readdirSync(coversDir)) {
+          if (f.startsWith(`${resourceId}.`) || f.startsWith(`${resourceId}_`)) {
+            try { unlinkSync(join(coversDir, f)) } catch { /* ignore */ }
+          }
+        }
+      } catch { /* ignore */ }
+
+      // 统一转为 PNG：nativeImage 支持 ico/png/jpg/webp/gif 等所有常见格式
+      // createThumbnailFromPath 依赖文件扩展名，必须用 .png 才能正确解析
+      let finalBuffer: Buffer
+      try {
+        const nim = nativeImage.createFromDataURL(dataUrl)
+        finalBuffer = nim.isEmpty() ? Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64') : nim.toPNG()
+      } catch {
+        finalBuffer = Buffer.from(dataUrl.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+      }
+
+      // 时间戳后缀保证新路径与旧路径不同，渲染层/主进程缓存自动失效
+      const coverPath = join(coversDir, `${resourceId}_${Date.now()}.png`)
+      writeFileSync(coverPath, finalBuffer)
       updateResource(resourceId, { cover_path: coverPath })
       return coverPath
     } catch (e: any) {

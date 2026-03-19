@@ -436,7 +436,7 @@
       </div>
 
       <!-- 右侧标签过滤面板（始终渲染，可折叠） -->
-      <div class="tag-panel" :class="{ collapsed: tagPanelCollapsed }">
+      <div class="tag-panel" :class="{ collapsed: tagPanelCollapsed, 'no-transition': tagPanelResizing }" :style="tagPanelCollapsed ? {} : { width: tagPanelWidth + 'px' }">
         <!-- 折叠/展开切换条 -->
         <button
           class="panel-toggle"
@@ -445,6 +445,9 @@
         >
           <span v-html="tagPanelCollapsed ? chevronLeftSvg : chevronRightSvg" />
         </button>
+
+        <!-- 调整宽度手柄（收起栏右边） -->
+        <div v-if="!tagPanelCollapsed" class="tag-panel-resize-handle" @mousedown.prevent.stop="onTagPanelResizeStart" />
 
         <!-- 面板内容 -->
         <div class="tag-panel-inner">
@@ -1123,8 +1126,23 @@ async function onDrop(e: DragEvent) {
   clearFallback()
 
   const dt = e.dataTransfer
-  if (!dt?.files?.length) return
-  const paths = Array.from(dt.files).map(f => (f as any).path).filter(Boolean)
+  const paths: string[] = Array.from(dt?.files ?? []).map(f => (f as any).path).filter(Boolean)
+
+  // Fallback: text/uri-list for .lnk shortcuts dragged via Shell IDList (Chromium can't parse them → files[] empty)
+  if (!paths.length && dt) {
+    const uriList = dt.getData('text/uri-list') || ''
+    for (const line of uriList.split(/\r?\n/)) {
+      const uri = line.trim()
+      if (!uri || uri.startsWith('#')) continue
+      try {
+        const url = new URL(uri)
+        if (url.protocol === 'file:') {
+          const p = decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/, '$1').replace(/\//g, '\\')
+          if (p) paths.push(p)
+        }
+      } catch { /* ignore */ }
+    }
+  }
   if (!paths.length) return
 
   const items = await window.api.files.resolveDropped(paths)
@@ -1434,6 +1452,8 @@ async function doBatchDelete() {
 
 // 标签筛选面板
 const tagPanelCollapsed = ref(localStorage.getItem('tagPanelCollapsed') === '1')
+const tagPanelWidth = ref(212)
+const tagPanelResizing = ref(false)
 const dbTags = ref<Array<{ id: number; name: string; count: number }>>([])
 const tagSearch = ref('')
 
@@ -1444,6 +1464,23 @@ watch(tagPanelCollapsed, (val) => {
 async function loadTags() {
   const type = store.activeType === 'all' ? undefined : store.activeType
   dbTags.value = await window.api.tags.getForType(type, settingsStore.tagSort)
+}
+
+function onTagPanelResizeStart(e: MouseEvent) {
+  tagPanelResizing.value = true
+  const startX = e.screenX
+  const startW = tagPanelWidth.value
+  const onMove = (ev: MouseEvent) => {
+    tagPanelWidth.value = Math.max(140, Math.min(500, startW + startX - ev.screenX))
+  }
+  const onUp = () => {
+    tagPanelResizing.value = false
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    window.api.settings.set('tag_panel_width', String(tagPanelWidth.value))
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
 }
 
 function onTagSortChange(e: Event) {
@@ -1580,6 +1617,9 @@ watch([typeFilterArr, extFilterArr, typeSortDir, listSortCol, listSortDesc, quic
 
 let unsubDrawerImport: (() => void) | null = null
 
+// 每次启动只跑一次的标志（LibraryPage 生命周期内）
+let _autoFaviconDone = false
+
 onMounted(async () => {
   settingsStore.load()
   document.addEventListener('keydown', onKeyDown)
@@ -1607,6 +1647,9 @@ onMounted(async () => {
   loadTags()
   ignoredPaths.value = await window.api.ignoredPaths.getAll()
 
+  const savedTagW = await window.api.settings.get('tag_panel_width')
+  if (savedTagW) tagPanelWidth.value = Math.max(140, Math.min(500, parseInt(savedTagW) || 212))
+
   // 首次启动（自动收录模式）：自动扫描 + 导入 Chrome 书签
   const pending = await window.api.settings.get('pending_first_scan')
   if (pending === '1') {
@@ -1618,6 +1661,25 @@ onMounted(async () => {
     importBrowserBookmarks()
     addPresetApps()
   }
+
+  // 启动后延迟 15s，静默补齐所有没有封面的网页图标
+  // 每次启动只跑一次，逐个请求避免并发过多
+  setTimeout(async () => {
+    if (_autoFaviconDone) return
+    _autoFaviconDone = true
+    const missing = store.items.filter(r => r.type === 'webpage' && !r.cover_path)
+    for (const resource of missing) {
+      try {
+        const icon = await window.api.webpage.fetchFavicon(resource.file_path)
+        if (!icon) continue
+        const coverPath = await window.api.files.saveCover(resource.id, icon)
+        if (!coverPath) continue
+        const current = store.items.find(r => r.id === resource.id)
+        store.addOrUpdate({ ...(current || resource), cover_path: coverPath })
+      } catch { /* ignore */ }
+      await new Promise(r => setTimeout(r, 300))
+    }
+  }, 15000)
 })
 
 onUnmounted(() => {
@@ -3000,6 +3062,19 @@ async function deleteIgnored(filePath: string) {
 
 .delete-ignored-btn:hover { background: rgba(239, 68, 68, 0.08); border-color: var(--danger); }
 
+/* ── 标签面板宽度调整手柄 ── */
+.tag-panel-resize-handle {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.tag-panel-resize-handle:hover {
+  background: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
 /* ── 标签过滤面板 ── */
 .tag-panel {
   display: flex;
@@ -3014,6 +3089,10 @@ async function deleteIgnored(filePath: string) {
 
 .tag-panel.collapsed {
   width: 22px;
+}
+
+.tag-panel.no-transition {
+  transition: none;
 }
 
 /* 折叠切换条 */
@@ -3055,7 +3134,8 @@ async function deleteIgnored(filePath: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 11px 12px 9px;
+  padding: 11px 8px 9px;
+  gap: 4px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -3067,12 +3147,16 @@ async function deleteIgnored(filePath: string) {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .tag-header-right {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .tag-sort-select {

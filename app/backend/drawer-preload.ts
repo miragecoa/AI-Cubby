@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('drawerApi', {
   notifyDrop:   (paths: string[]) => ipcRenderer.invoke('drawer:filesDropped', paths),
+  openFilePicker: () => ipcRenderer.invoke('drawer:openFilePicker'),
   openMain:     () => ipcRenderer.invoke('drawer:openMain'),
   toggleMain:   () => ipcRenderer.invoke('drawer:toggleMain'),
   showContextMenu: () => ipcRenderer.invoke('drawer:showContextMenu'),

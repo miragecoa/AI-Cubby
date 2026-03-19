@@ -608,6 +608,18 @@ app.whenReady().then(() => {
     if (!items.length) return
     openDropImportWindow(items)
   })
+  // Fallback: Chromium can't handle Windows Shell IDList drag format for .lnk shortcuts
+  // → files array empty → open native file picker instead
+  ipcMain.handle('drawer:openFilePicker', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'openDirectory', 'multiSelections'],
+      title: '选择要导入的文件'
+    })
+    if (result.canceled || !result.filePaths.length) return
+    const items = resolveDroppedPaths(result.filePaths)
+    if (!items.length) return
+    openDropImportWindow(items)
+  })
   // Drag: use main-process cursor position, converted to logical pixels via display scaleFactor.
   // getCursorScreenPoint() returns physical pixels; getPosition() returns logical pixels.
   // Converting through scaleFactor keeps them in the same coordinate space across multi-monitor DPI.

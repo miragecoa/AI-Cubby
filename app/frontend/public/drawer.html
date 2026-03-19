@@ -349,11 +349,37 @@
     tab.addEventListener('drop', async (e) => {
       e.preventDefault()
       tab.classList.remove('drag-over')
+
+      // Method 1: standard files API
       const paths = Array.from(e.dataTransfer?.files ?? [])
         .map(f => f.path)
         .filter(Boolean)
+
+      // Method 2: text/uri-list — Windows Shell IDList drags (.lnk shortcuts) may
+      // cause Chromium to emit NOTREACHED errors and leave files[] empty, but still
+      // populate the text/uri-list format with file:/// URIs
+      if (!paths.length) {
+        const uriList = e.dataTransfer?.getData('text/uri-list') || ''
+        for (const line of uriList.split(/\r?\n/)) {
+          const uri = line.trim()
+          if (!uri || uri.startsWith('#')) continue
+          try {
+            const url = new URL(uri)
+            if (url.protocol === 'file:') {
+              // file:///C:/... → C:\...
+              const p = decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/, '$1').replace(/\//g, '\\')
+              if (p) paths.push(p)
+            }
+          } catch { /* invalid URI */ }
+        }
+      }
+
       if (paths.length) {
         await window.drawerApi?.notifyDrop(paths)
+      } else {
+        // Method 3: Chromium couldn't parse the drag data at all (e.g. Shell IDList
+        // for certain .lnk shortcuts). Open native file picker as reliable fallback.
+        await window.drawerApi?.openFilePicker()
       }
     })
 
