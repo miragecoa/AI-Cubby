@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<style>
+  :root {
+    --accent:   #6366F1;
+    --accent-2: #818CF8;
+    --bg:       #0C0C18;
+    --surface:  #111122;
+    --surface-2:#191930;
+    --border:   #28284A;
+    --text:     #E2E2F2;
+    --text-2:   #9090B8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    font-family: 'Inter', -apple-system, 'Microsoft YaHei', sans-serif;
+  }
+  .panel {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ─── Header ─── */
+  .header {
+    padding: 10px 12px 10px;
+    flex-shrink: 0;
+    -webkit-app-region: drag;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.2px;
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    -webkit-app-region: no-drag;
+  }
+  .hdr-btn {
+    width: 26px; height: 26px;
+    border: none; background: none;
+    color: var(--text-2);
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.12s, background 0.12s;
+  }
+  .hdr-btn:hover { color: var(--text); background: var(--surface-2); }
+  .hdr-btn.danger:hover { color: #f87171; background: rgba(248,113,113,0.12); }
+
+  /* ─── Filter/Sort selects ─── */
+  .filter-row {
+    display: flex;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+  }
+  .filter-select {
+    flex: 1;
+    height: 26px;
+    padding: 0 22px 0 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-2);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%239090B8' stroke-width='1.5'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 10px 6px;
+    transition: border-color 0.12s, color 0.12s;
+  }
+  .filter-select:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--text); }
+  .filter-select option { background: #191930; color: #E2E2F2; }
+
+  /* ─── Search ─── */
+  .search-wrap {
+    position: relative;
+    -webkit-app-region: no-drag;
+  }
+  .search-icon {
+    position: absolute;
+    left: 10px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-2);
+    pointer-events: none;
+    width: 14px; height: 14px;
+  }
+  .search {
+    width: 100%;
+    height: 32px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 0 10px 0 32px;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .search::placeholder { color: var(--text-2); }
+  .search:focus { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+
+  /* ─── List ─── */
+  .list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .list::-webkit-scrollbar { width: 4px; }
+  .list::-webkit-scrollbar-track { background: transparent; }
+  .list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 120px;
+    color: var(--text-2);
+    font-size: 13px;
+    gap: 8px;
+  }
+  .empty svg { opacity: 0.25; }
+
+  /* ─── Item ─── */
+  .item {
+    padding: 7px 12px 8px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  }
+  .item:last-child { border-bottom: none; }
+  .item:hover { background: var(--surface-2); }
+  .item.focused { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+  /* Top row: source badge + actions + time */
+  .item-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .type-icon {
+    flex-shrink: 0;
+    color: var(--accent-2);
+    opacity: 0.7;
+    display: flex; align-items: center;
+  }
+  .source-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-2);
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .item-actions {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    opacity: 0;
+    transition: opacity 0.12s;
+    flex-shrink: 0;
+  }
+  .item:hover .item-actions { opacity: 1; }
+  .item.focused .item-actions { opacity: 1; }
+  .act-btn {
+    width: 22px; height: 22px;
+    border: none; background: none;
+    color: var(--text-2);
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.12s, background 0.12s;
+  }
+  .act-btn:hover { color: var(--text); background: color-mix(in srgb, var(--border) 80%, transparent); }
+  .act-btn.del:hover { color: #f87171; background: rgba(248,113,113,0.12); }
+  /* Pinned items: pin button always visible with accent color */
+  .item.pinned .act-btn.pin { opacity: 1; color: var(--accent-2); }
+  .item-actions .act-btn.pin { opacity: 1; }
+  .act-btn.pin.is-pinned { color: var(--accent-2) !important; }
+  .item.pinned { border-left: 2px solid color-mix(in srgb, var(--accent) 50%, transparent); padding-left: 10px; }
+  .time-label {
+    font-size: 11px;
+    color: var(--text-2);
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+
+  /* Text / image preview */
+  .item-preview {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-all;
+    padding-left: 20px;
+  }
+  .item-img {
+    display: block;
+    max-width: 100%;
+    max-height: 72px;
+    border-radius: 4px;
+    object-fit: cover;
+    margin-left: 20px;
+    margin-top: 2px;
+  }
+
+  /* ─── Cleanup Modal ─── */
+  .modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    border-radius: 12px;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .modal-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .modal-hint {
+    font-size: 11px;
+    color: var(--accent-2);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .modal-opts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .clean-opt {
+    width: 100%;
+    padding: 7px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .clean-opt:hover { background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); border-color: var(--accent); }
+  .clean-opt.danger:hover { background: rgba(248,113,113,0.12); border-color: #f87171; color: #f87171; }
+  .clean-cancel {
+    width: 100%;
+    padding: 6px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-2);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .clean-cancel:hover { background: var(--surface-2); color: var(--text); }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="header">
+    <div class="title-row">
+      <span class="title">剪贴板</span>
+      <div class="header-actions">
+        <button class="hdr-btn" id="cleanupBtn" title="清理历史">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M3 5h10l-1 8H4L3 5z"/><path d="M1 5h14"/><path d="M6 5V3h4v2"/>
+            <line x1="6" y1="8" x2="6" y2="11"/><line x1="10" y1="8" x2="10" y2="11"/>
+          </svg>
+        </button>
+        <button class="hdr-btn danger" id="closeBtn" title="关闭">
+          <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
+            <line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/>
+      </svg>
+      <input class="search" id="search" placeholder="搜索剪切板..." autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="filter-row">
+      <select class="filter-select" id="typeFilter">
+        <option value="all">全部类型</option>
+        <option value="text">文本</option>
+        <option value="image">图片</option>
+      </select>
+      <select class="filter-select" id="sortSelect">
+        <option value="recent">最新添加</option>
+        <option value="last_used">最近使用</option>
+        <option value="most_used">使用最多</option>
+      </select>
+    </div>
+  </div>
+  <div class="list" id="list"></div>
+  <div class="modal-overlay hidden" id="cleanupOverlay">
+    <div class="modal-card">
+      <div class="modal-title">清理历史记录</div>
+      <div class="modal-hint">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5L8 2l4 3v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5z"/><path d="M6 12V8h4v4"/></svg>
+        已固定的条目不会被清理
+      </div>
+      <div class="modal-opts">
+        <button class="clean-opt" data-ms="3600000">1 小时前的记录</button>
+        <button class="clean-opt" data-ms="86400000">24 小时前的记录</button>
+        <button class="clean-opt" data-ms="604800000">7 天前的记录</button>
+        <button class="clean-opt" data-ms="2592000000">30 天前的记录</button>
+        <button class="clean-opt danger" data-ms="0">全部记录</button>
+      </div>
+      <button class="clean-cancel" id="cleanupCancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const api = window.clipboardApi
+
+// Apply theme from URL params immediately (no async flicker)
+;(function() {
+  const p = new URLSearchParams(location.search)
+  const r = document.documentElement
+  const map = { accent: '--accent', accent2: '--accent-2', bg: '--bg', surface: '--surface', surface2: '--surface-2', border: '--border', text: '--text', text2: '--text-2' }
+  for (const [k, v] of Object.entries(map)) { const val = p.get(k); if (val) r.style.setProperty(v, val) }
+})()
+
+let items = []
+let focusedIdx = -1
+let searchQuery = ''
+let currentSort = 'recent'
+let currentTypeFilter = 'all'
+
+// SVG icons
+const TEXT_ICON = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4h10M3 8h7M3 12h5"/></svg>`
+const IMG_ICON  = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="5.5" cy="5.5" r="1"/><polyline points="2,11 5,8 8,11 11,8 14,12"/></svg>`
+const COPY_ICON = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 009.5 2h-6A1.5 1.5 0 002 3.5v7A1.5 1.5 0 003.5 12H5"/></svg>`
+const SAVE_ICON = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 2v8M5 7l3 3 3-3"/><line x1="3" y1="13" x2="13" y2="13"/></svg>`
+const PIN_ICON  = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 2l5 5-1.5 1.5-2-1L7 11l1 1-1.5 1.5L3 10l1.5-1.5L5 9.5 8.5 6l-1-2L9 2z"/><line x1="3" y1="13" x2="6" y2="10"/></svg>`
+const DEL_ICON  = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>`
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts
+  if (diff < 60000) return '刚刚'
+  if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
+  if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'
+  return Math.floor(diff / 86400000) + '天前'
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+}
+
+async function load(q) {
+  let all = await api.getItems(q || undefined, currentSort)
+  items = currentTypeFilter === 'all' ? all : all.filter(i => i.type === currentTypeFilter)
+  render()
+}
+
+function render() {
+  const list = document.getElementById('list')
+  if (!items.length) {
+    list.innerHTML = `<div class="empty">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+        <rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
+      </svg>
+      <span>${searchQuery ? '没有匹配结果' : '暂无记录'}</span>
+    </div>`
+    return
+  }
+
+  list.innerHTML = items.map((item, i) => `
+    <div class="item ${i === focusedIdx ? 'focused' : ''} ${item.pinned ? 'pinned' : ''}" data-idx="${i}" data-id="${item.id}" data-type="${item.type}" data-pinned="${item.pinned}">
+      <div class="item-top">
+        <span class="type-icon">${item.type === 'image' ? IMG_ICON : TEXT_ICON}</span>
+        <span class="source-label">${item.type === 'image' ? '图片' : '文本'}</span>
+        <div class="item-actions">
+          <button class="act-btn pin ${item.pinned ? 'is-pinned' : ''}" data-pin="${item.id}" data-pinned="${item.pinned}" title="${item.pinned ? '取消固定' : '固定'}">${PIN_ICON}</button>
+          <button class="act-btn copy" data-id="${item.id}" title="复制">${COPY_ICON}</button>
+          ${item.type === 'image' ? `<button class="act-btn save" data-save="${item.id}" title="保存到图片库">${SAVE_ICON}</button>` : ''}
+          <button class="act-btn del" data-del="${item.id}" title="删除">${DEL_ICON}</button>
+        </div>
+        <span class="time-label">${timeAgo(item.created_at)}</span>
+      </div>
+      ${item.type === 'text'
+        ? `<div class="item-preview">${escHtml(item.text || '')}</div>`
+        : `<img class="item-img" data-id="${item.id}" src="" />`
+      }
+    </div>
+  `).join('')
+
+  // lazy-load images
+  list.querySelectorAll('img[data-id]').forEach(async img => {
+    const dataUrl = await api.getImage(parseInt(img.dataset.id))
+    if (dataUrl) img.src = dataUrl
+  })
+
+  // item click → paste
+  list.querySelectorAll('.item').forEach(el => {
+    el.addEventListener('click', async e => {
+      if (e.target.closest('.act-btn')) return
+      await api.paste(parseInt(el.dataset.id))
+      await api.hide()
+    })
+  })
+  // copy button
+  list.querySelectorAll('.act-btn.copy').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation()
+      await api.paste(parseInt(btn.dataset.id))
+      await api.hide()
+    })
+  })
+  // delete button
+  list.querySelectorAll('.act-btn.del').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation()
+      await api.delete(parseInt(btn.dataset.del))
+      items = items.filter(i => i.id !== parseInt(btn.dataset.del))
+      if (focusedIdx >= items.length) focusedIdx = items.length - 1
+      render()
+    })
+  })
+  // pin button
+  list.querySelectorAll('.act-btn.pin').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation()
+      const id = parseInt(btn.dataset.pin)
+      const nowPinned = parseInt(btn.dataset.pinned) ? 0 : 1
+      await api.pin(id, nowPinned)
+      const idx = items.findIndex(it => it.id === id)
+      if (idx !== -1) items[idx].pinned = nowPinned
+      // Re-sort: pinned items first
+      items.sort((a, b) => (b.pinned - a.pinned) || (b.id - a.id))
+      if (focusedIdx !== -1) focusedIdx = items.findIndex(it => it.id === id)
+      render()
+    })
+  })
+  // save image to library
+  list.querySelectorAll('.act-btn.save').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation()
+      btn.disabled = true
+      const res = await api.saveImage(parseInt(btn.dataset.save))
+      btn.innerHTML = res?.ok
+        ? `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#34d399" stroke-width="1.8"><polyline points="2,6 5,9 10,3"/></svg>`
+        : `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#f87171" stroke-width="1.8"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>`
+    })
+  })
+}
+
+function moveFocus(delta) {
+  focusedIdx = Math.max(0, Math.min(items.length - 1, focusedIdx + delta))
+  render()
+  document.querySelector(`.item[data-idx="${focusedIdx}"]`)?.scrollIntoView({ block: 'nearest' })
+}
+
+// Search
+let searchTimer = null
+document.getElementById('search').addEventListener('input', e => {
+  searchQuery = e.target.value
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => { focusedIdx = 0; load(searchQuery) }, 150)
+})
+
+// Filter / Sort selects
+document.getElementById('typeFilter').addEventListener('change', e => {
+  currentTypeFilter = e.target.value
+  focusedIdx = -1
+  load(searchQuery)
+})
+document.getElementById('sortSelect').addEventListener('change', e => {
+  currentSort = e.target.value
+  focusedIdx = -1
+  load(searchQuery)
+})
+
+// Keyboard
+document.addEventListener('keydown', async e => {
+  if (e.key === 'Escape') { api.hide(); return }
+  if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); return }
+  if (e.key === 'ArrowUp')   { e.preventDefault(); moveFocus(-1); return }
+  if (e.key === 'Enter' && focusedIdx >= 0 && items[focusedIdx]) {
+    e.preventDefault()
+    await api.paste(items[focusedIdx].id)
+    await api.hide()
+    return
+  }
+  if ((e.key === 'Delete') && focusedIdx >= 0 && items[focusedIdx] && document.activeElement?.id !== 'search') {
+    e.preventDefault()
+    await api.delete(items[focusedIdx].id)
+    items = items.filter((_, i) => i !== focusedIdx)
+    if (focusedIdx >= items.length) focusedIdx = items.length - 1
+    render()
+  }
+})
+
+document.getElementById('closeBtn').addEventListener('click', () => api.hide())
+
+// Cleanup modal
+const cleanupOverlay = document.getElementById('cleanupOverlay')
+document.getElementById('cleanupBtn').addEventListener('click', () => {
+  cleanupOverlay.classList.remove('hidden')
+})
+document.getElementById('cleanupCancel').addEventListener('click', () => {
+  cleanupOverlay.classList.add('hidden')
+})
+cleanupOverlay.addEventListener('click', e => {
+  if (e.target === cleanupOverlay) cleanupOverlay.classList.add('hidden')
+})
+document.querySelectorAll('.clean-opt').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const ms = parseInt(btn.dataset.ms)
+    await api.cleanup(ms)
+    cleanupOverlay.classList.add('hidden')
+    focusedIdx = -1
+    await load(searchQuery)
+  })
+})
+
+// Theme
+if (api.onThemeChange) {
+  api.onThemeChange(vars => {
+    const r = document.documentElement
+    const m = { accent: '--accent', 'accent-2': '--accent-2', bg: '--bg', surface: '--surface', 'surface-2': '--surface-2', border: '--border', text: '--text', 'text-2': '--text-2' }
+    for (const [k, v] of Object.entries(m)) { if (vars[k]) r.style.setProperty(v, vars[k]) }
+  })
+}
+
+// Real-time refresh
+if (api.onUpdated) {
+  api.onUpdated(() => load(searchQuery))
+}
+
+load()
+document.getElementById('search').focus()
+</script>
+</body>
+</html>

@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImage, protocol, net, globalShortcut, screen, dialog } from 'electron'
-import { join, extname } from 'path'
+import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImage, protocol, net, globalShortcut, screen, dialog, clipboard } from 'electron'
+import { join, extname, basename } from 'path'
+import { createHash } from 'crypto'
 import { deflateSync } from 'zlib'
-import { existsSync, createReadStream, statSync, copyFileSync, unlinkSync, readFileSync } from 'fs'
+import { existsSync, createReadStream, statSync, copyFileSync, unlinkSync, readFileSync, mkdirSync, writeFileSync } from 'fs'
 import { pathToFileURL } from './utils/fs-safe'
 import { execFile } from 'child_process'
 
@@ -14,7 +15,7 @@ if (process.platform === 'win32') {
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
 ])
-import { initDatabase } from './db/index'
+import { initDatabase, clipboardAddItem, clipboardGetItem, clipboardTogglePin, clipboardCleanup, dataDir } from './db/index'
 import { getSetting, setSetting, addManualResource } from './db/queries'
 import { ensureProfiles, getProfileDir, loadManifest } from './db/profiles'
 import { registerIpcHandlers, resolveDroppedPaths } from './ipc/index'
@@ -25,10 +26,20 @@ import { initAutoUpdater } from './updater'
 let mainWindow: BrowserWindow | null = null
 let masonryWindow: BrowserWindow | null = null
 let drawerWindow: BrowserWindow | null = null
-
+let clipboardWindow: BrowserWindow | null = null
 
 let drawerSettingsWindow: BrowserWindow | null = null
 let dropImportWindow: BrowserWindow | null = null
+
+// ── 剪贴板监听状态 ─────────────────────────────────────────────
+let clipboardImgDir = ''
+let _lastClipText = ''
+let _lastClipImgHash = ''   // SHA256 of last seen image PNG buffer
+let _clipboardPollTimer: ReturnType<typeof setInterval> | null = null
+
+// ── 快捷键跟踪（避免 unregisterAll 误杀其他快捷键） ──────────────
+let _wakeAccelerator = ''
+let _clipboardAccelerator = ''
 let dropImportItems: Array<{ type: string; title: string; file_path: string; meta?: string }> = []
 let masonryPaths: Array<{ path: string; title: string }> = []
 let tray: Tray | null = null
@@ -40,6 +51,9 @@ const launchedHidden = process.argv.includes('--hidden')
 app.on('before-quit', () => {
   willQuit = true
   flushRunningSessions()
+  // 显式释放所有全局快捷键，确保 Win+V 等在进程退出后还给系统
+  // （Electron 退出时操作系统会自动释放，但显式调用更保险）
+  globalShortcut.unregisterAll()
 })
 
 /** 用 Node 内置 zlib 生成合法 PNG buffer（无外部依赖） */
@@ -141,10 +155,165 @@ function recallDrawer(): void {
   drawerWindow.show()
 }
 
+function toggleClipboardWindow(): void {
+  if (!clipboardWindow || clipboardWindow.isDestroyed()) {
+    createClipboardWindow()
+    return
+  }
+  if (clipboardWindow.isVisible()) {
+    clipboardWindow.hide()
+  } else {
+    showClipboardWindow()
+  }
+}
+
+function showClipboardWindow(): void {
+  if (!clipboardWindow || clipboardWindow.isDestroyed()) {
+    createClipboardWindow()
+    return
+  }
+  // 恢复上次位置，若无则居中底部
+  const savedX = getSetting('clipboardWinX')
+  const savedY = getSetting('clipboardWinY')
+  if (savedX && savedY) {
+    clipboardWindow.setPosition(parseInt(savedX), parseInt(savedY))
+  } else {
+    const { workArea } = screen.getPrimaryDisplay()
+    const [w, h] = clipboardWindow.getSize()
+    clipboardWindow.setPosition(
+      Math.round(workArea.x + (workArea.width - w) / 2),
+      Math.round(workArea.y + workArea.height - h - 12)
+    )
+  }
+  clipboardWindow.show()
+  clipboardWindow.focus()
+  // Always refresh list when panel is shown (content may have changed while hidden)
+  clipboardWindow.webContents.send('clipboard:updated')
+}
+
+function createClipboardWindow(): void {
+  const savedX = getSetting('clipboardWinX')
+  const savedY = getSetting('clipboardWinY')
+  const w = parseInt(getSetting('clipboardWinW') || '480')
+  const h = parseInt(getSetting('clipboardWinH') || '560')
+  let x: number, y: number
+  if (savedX && savedY) {
+    x = parseInt(savedX); y = parseInt(savedY)
+  } else {
+    const { workArea } = screen.getPrimaryDisplay()
+    x = Math.round(workArea.x + (workArea.width - w) / 2)
+    y = Math.round(workArea.y + workArea.height - h - 12)
+  }
+
+  clipboardWindow = new BrowserWindow({
+    x, y, width: w, height: h,
+    minWidth: 320, minHeight: 400,
+    show: false,
+    frame: false,
+    resizable: true,
+    skipTaskbar: true,
+    alwaysOnTop: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/clipboard.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  })
+
+  // Inject current theme vars via URL params (avoids async flicker on open)
+  let accent = '#6366F1', accent2 = '#818CF8'
+  let bg = '#0C0C18', surface = '#111122', surface2 = '#191930', border = '#28284A', text = '#E2E2F2', text2 = '#9090B8'
+  try {
+    const t = JSON.parse(getSetting('theme') ?? '{}')
+    accent = t['accent'] ?? accent; accent2 = t['accent-2'] ?? accent2
+    bg = t['bg'] ?? bg; surface = t['surface'] ?? surface; surface2 = t['surface-2'] ?? surface2
+    border = t['border'] ?? border; text = t['text'] ?? text; text2 = t['text-2'] ?? text2
+  } catch {}
+  const themeQuery = { accent, accent2, bg, surface, surface2, border, text, text2 }
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    clipboardWindow.loadURL(process.env['ELECTRON_RENDERER_URL'] + '/clipboard.html?' + new URLSearchParams(themeQuery).toString())
+  } else {
+    clipboardWindow.loadFile(join(__dirname, '../renderer/clipboard.html'), { query: themeQuery })
+  }
+
+  // 防抖保存位置/大小
+  let saveTimer: ReturnType<typeof setTimeout> | null = null
+  const saveBounds = () => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      if (!clipboardWindow || clipboardWindow.isDestroyed()) return
+      const [cx, cy] = clipboardWindow.getPosition()
+      const [cw, ch] = clipboardWindow.getSize()
+      setSetting('clipboardWinX', String(cx))
+      setSetting('clipboardWinY', String(cy))
+      setSetting('clipboardWinW', String(cw))
+      setSetting('clipboardWinH', String(ch))
+    }, 500)
+  }
+  clipboardWindow.on('move', saveBounds)
+  clipboardWindow.on('resize', saveBounds)
+
+  clipboardWindow.on('blur', () => {
+    clipboardWindow?.hide()
+  })
+
+  clipboardWindow.once('ready-to-show', () => {
+    clipboardWindow?.show()
+    clipboardWindow?.focus()
+  })
+}
+
+function notifyClipboardUpdated(): void {
+  if (clipboardWindow && !clipboardWindow.isDestroyed() && clipboardWindow.isVisible()) {
+    clipboardWindow.webContents.send('clipboard:updated')
+  }
+}
+
+function startClipboardPolling(): void {
+  if (_clipboardPollTimer) return
+  _clipboardPollTimer = setInterval(() => {
+    try {
+      const formats = clipboard.availableFormats()
+      const hasImage = formats.some(f => f.startsWith('image/') || f === 'image')
+
+      // Text
+      if (!hasImage) {
+        const text = clipboard.readText()
+        if (text && text !== _lastClipText) {
+          _lastClipText = text
+          clipboardAddItem('text', text, null, Buffer.byteLength(text, 'utf8'))
+          notifyClipboardUpdated()
+        }
+      }
+
+      // Image (only when image format is present)
+      if (hasImage) {
+        const img = clipboard.readImage()
+        if (!img.isEmpty()) {
+          const buf = img.toPNG()
+          const hash = createHash('sha256').update(buf).digest('hex')
+          if (hash !== _lastClipImgHash) {
+            _lastClipImgHash = hash
+            _lastClipText = ''  // reset text tracker when image replaces clipboard
+            mkdirSync(clipboardImgDir, { recursive: true })
+            const imgPath = join(clipboardImgDir, `${Date.now()}.png`)
+            writeFileSync(imgPath, buf)
+            clipboardAddItem('image', null, imgPath, buf.length, hash)
+            notifyClipboardUpdated()
+          }
+        }
+      } else {
+        if (_lastClipImgHash) _lastClipImgHash = ''
+      }
+    } catch { /* ignore clipboard access errors */ }
+  }, 300)
+}
+
 function buildTrayMenu(): Electron.Menu {
   const drawerVisible = getSetting('drawerVisible') !== 'false'
   return Menu.buildFromTemplate([
     { label: '显示窗口', click: () => mainWindow?.show() },
+    { label: '剪贴板历史', click: () => showClipboardWindow() },
     {
       label: drawerVisible ? '隐藏悬浮窗' : '显示悬浮窗',
       click: () => {
@@ -557,6 +726,9 @@ app.whenReady().then(() => {
 
   ensureProfiles()
   initDatabase()
+  // 剪贴板图片目录（与 profile DB 同级，dataDir 在 initDatabase() 后已赋值）
+  clipboardImgDir = join(dataDir, 'clipboard')
+  mkdirSync(clipboardImgDir, { recursive: true })
   registerIpcHandlers()
   ipcMain.handle('masonry:open', (_e, items: Array<{ path: string; title: string }>) => { createMasonryWindow(items) })
   ipcMain.handle('masonry:getPaths', () => masonryPaths)
@@ -796,6 +968,41 @@ app.whenReady().then(() => {
   }
 
   registerWakeShortcut(getSetting('hotkeyWake') || 'Alt+Space')
+  registerClipboardShortcut(getSetting('hotkeyClipboard') || 'Alt+V')
+  startClipboardPolling()
+
+  // 剪贴板快捷键 IPC（在 main.ts 注册，可直接调用 registerClipboardShortcut）
+  ipcMain.handle('clipboard:getHotkey', () => getSetting('hotkeyClipboard') || 'Alt+V')
+  ipcMain.handle('clipboard:setHotkey', (_e, accelerator: string) => {
+    registerClipboardShortcut(accelerator)
+    if (_clipboardAccelerator === accelerator) {
+      setSetting('hotkeyClipboard', accelerator)
+      return true
+    }
+    return false
+  })
+
+  ipcMain.handle('clipboard:saveImage', (_e, id: number) => {
+    const item = clipboardGetItem(id)
+    if (!item || item.type !== 'image' || !item.image_path) return { ok: false }
+    const imagesDir = join(dataDir, 'clipboard-imports')
+    mkdirSync(imagesDir, { recursive: true })
+    const dest = join(imagesDir, basename(item.image_path))
+    copyFileSync(item.image_path, dest)
+    const d = new Date(item.created_at)
+    const title = `截图 ${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    const { resource, existed } = addManualResource({ type: 'image', title, file_path: dest })
+    if (!existed) mainWindow?.webContents.send('resource:new', resource)
+    return { ok: true, existed }
+  })
+
+  ipcMain.handle('clipboard:pin', (_e, id: number, pinned: number) => {
+    clipboardTogglePin(id, pinned)
+  })
+
+  ipcMain.handle('clipboard:cleanup', (_e, olderThanMs: number) => {
+    return clipboardCleanup(olderThanMs)
+  })
 
   // 启动 Recent Files 监听
   startMonitor(
@@ -824,10 +1031,11 @@ app.on('window-all-closed', () => {
 })
 
 function registerWakeShortcut(accelerator: string): void {
-  globalShortcut.unregisterAll()
+  if (_wakeAccelerator) { try { globalShortcut.unregister(_wakeAccelerator) } catch { /* */ } }
+  _wakeAccelerator = ''
   if (!accelerator) return
   try {
-    globalShortcut.register(accelerator, () => {
+    const ok = globalShortcut.register(accelerator, () => {
       if (!mainWindow) return
       if (mainWindow.isVisible() && mainWindow.isFocused()) {
         mainWindow.hide()
@@ -836,5 +1044,16 @@ function registerWakeShortcut(accelerator: string): void {
         mainWindow.focus()
       }
     })
+    if (ok) _wakeAccelerator = accelerator
+  } catch { /* invalid accelerator */ }
+}
+
+function registerClipboardShortcut(accelerator: string): void {
+  if (_clipboardAccelerator) { try { globalShortcut.unregister(_clipboardAccelerator) } catch { /* */ } }
+  _clipboardAccelerator = ''
+  if (!accelerator) return
+  try {
+    const ok = globalShortcut.register(accelerator, toggleClipboardWindow)
+    if (ok) _clipboardAccelerator = accelerator
   } catch { /* invalid accelerator */ }
 }

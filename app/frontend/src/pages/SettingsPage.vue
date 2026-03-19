@@ -80,6 +80,27 @@
             </button>
           </div>
         </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">剪贴板历史</div>
+            <div class="setting-desc">呼出剪贴板历史面板（默认 Alt+V）</div>
+          </div>
+          <div class="hotkey-input-wrap">
+            <div
+              class="hotkey-input"
+              :class="{ recording: clipboardHotkeyRecording, error: clipboardHotkeyError }"
+              tabindex="0"
+              @click="startClipboardRecording"
+              @keydown.prevent="onClipboardHotkeyKeydown"
+              @blur="cancelClipboardRecording"
+            >
+              {{ clipboardHotkeyRecording ? (pendingClipboardHotkey || '请按下快捷键…') : settingsStore.hotkeyClipboard }}
+            </div>
+            <button v-if="!clipboardHotkeyRecording" class="hotkey-reset" @click="resetClipboardHotkey" title="恢复默认">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>
+            </button>
+          </div>
+        </div>
       </section>
 
       <!-- 离线模式 -->
@@ -475,6 +496,41 @@ async function onHotkeyKeydown(e: KeyboardEvent) {
 
 async function resetHotkey() {
   await settingsStore.setHotkeyWake('Alt+Space')
+}
+
+// ── 剪贴板快捷键录制 ──
+const clipboardHotkeyRecording = ref(false)
+const clipboardHotkeyError = ref(false)
+const pendingClipboardHotkey = ref('')
+
+function startClipboardRecording() {
+  clipboardHotkeyRecording.value = true
+  clipboardHotkeyError.value = false
+  pendingClipboardHotkey.value = ''
+}
+
+function cancelClipboardRecording() {
+  clipboardHotkeyRecording.value = false
+  pendingClipboardHotkey.value = ''
+}
+
+async function onClipboardHotkeyKeydown(e: KeyboardEvent) {
+  if (!clipboardHotkeyRecording.value) return
+  if (e.key === 'Escape') { cancelClipboardRecording(); return }
+  const acc = electronAccelerator(e)
+  pendingClipboardHotkey.value = acc
+  if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) return
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return
+  clipboardHotkeyRecording.value = false
+  const ok = await settingsStore.setHotkeyClipboard(acc)
+  if (!ok) {
+    clipboardHotkeyError.value = true
+    setTimeout(() => { clipboardHotkeyError.value = false }, 1500)
+  }
+}
+
+async function resetClipboardHotkey() {
+  await settingsStore.setHotkeyClipboard('Alt+V')
 }
 
 const dbPath = ref('')

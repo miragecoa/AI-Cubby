@@ -3,6 +3,7 @@ import { join } from 'path'
 import { mkdirSync } from 'fs'
 import { SCHEMA_SQL } from './schema'
 import { loadManifest, getProfileDir } from './profiles'
+import { pinyin } from 'pinyin-pro'
 
 let db: Database.Database
 export let dbPath = ''
@@ -25,6 +26,18 @@ export function initDatabase(profileId?: string): Database.Database {
   // 建表
   db.exec(SCHEMA_SQL)
 
+  // 剪贴板历史表（独立于资源，跨 profile 也有意义，但放在 profile DB 里简化实现）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS clipboard_items (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      type      TEXT    NOT NULL,
+      text      TEXT,
+      image_path TEXT,
+      size      INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+    )
+  `)
+
   // 迁移：为旧数据库添加新列（若已存在则忽略错误）
   for (const sql of [
     'ALTER TABLE resources ADD COLUMN open_count INTEGER DEFAULT 0',
@@ -33,6 +46,10 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE resources ADD COLUMN pinned INTEGER DEFAULT 0',
     'ALTER TABLE resource_tags ADD COLUMN assigned_at INTEGER DEFAULT 0',
     'ALTER TABLE tags ADD COLUMN last_clicked_at INTEGER DEFAULT 0',
+    'ALTER TABLE clipboard_items ADD COLUMN hash TEXT',
+    'ALTER TABLE clipboard_items ADD COLUMN pinned INTEGER DEFAULT 0',
+    'ALTER TABLE clipboard_items ADD COLUMN use_count INTEGER DEFAULT 0',
+    'ALTER TABLE clipboard_items ADD COLUMN last_used_at INTEGER',
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
   }
@@ -51,4 +68,113 @@ export function closeDatabase(): void {
 export function getDb(): Database.Database {
   if (!db) throw new Error('Database not initialized')
   return db
+}
+
+// ── 剪贴板 DB 操作 ────────────────────────────────────────────────
+
+export interface ClipboardItem {
+  id: number
+  type: 'text' | 'image'
+  text: string | null
+  image_path: string | null
+  size: number
+  created_at: number
+  pinned: number
+  use_count: number
+  last_used_at: number | null
+}
+
+export type ClipboardSort = 'recent' | 'last_used' | 'most_used'
+
+function getPinyinStr(text: string): string {
+  try {
+    const full = pinyin(text, { toneType: 'none', separator: '', nonZh: 'consecutive' }).toLowerCase()
+    const initials = pinyin(text, { pattern: 'initial', toneType: 'none', separator: '', nonZh: 'consecutive' }).toLowerCase()
+    return full + ' ' + initials
+  } catch { return '' }
+}
+
+export function clipboardGetItems(query?: string, sort: ClipboardSort = 'recent'): ClipboardItem[] {
+  if (!db) return []
+  const orderBy = sort === 'last_used'
+    ? 'pinned DESC, COALESCE(last_used_at, 0) DESC, id DESC'
+    : sort === 'most_used'
+    ? 'pinned DESC, use_count DESC, id DESC'
+    : 'pinned DESC, id DESC'
+  const all = db.prepare(`SELECT * FROM clipboard_items ORDER BY ${orderBy} LIMIT 500`).all() as ClipboardItem[]
+  if (!query || !query.trim()) return all.slice(0, 200)
+  const q = query.trim().toLowerCase()
+  return all.filter(item => {
+    if (item.type !== 'text' || !item.text) return false
+    if (item.text.toLowerCase().includes(q)) return true
+    return getPinyinStr(item.text).includes(q)
+  }).slice(0, 200)
+}
+
+export function clipboardRecordUse(id: number): void {
+  if (!db) return
+  db.prepare(`UPDATE clipboard_items SET use_count = use_count + 1, last_used_at = ? WHERE id = ?`).run(Date.now(), id)
+}
+
+export function clipboardAddItem(type: 'text' | 'image', text: string | null, imagePath: string | null, size: number, hash?: string): number {
+  if (!db) return -1
+  if (type === 'text' && text) {
+    // 文本去重：同内容删旧、重新插入置顶
+    db.prepare(`DELETE FROM clipboard_items WHERE type='text' AND text = ?`).run(text)
+  } else if (type === 'image' && hash) {
+    // 图片去重：同 SHA256 哈希删旧图片文件 + 条目，再插入新条目置顶
+    const old = db.prepare(`SELECT image_path FROM clipboard_items WHERE type='image' AND hash = ?`).get(hash) as { image_path: string | null } | undefined
+    if (old?.image_path) {
+      try { require('fs').unlinkSync(old.image_path) } catch { /* already gone */ }
+    }
+    db.prepare(`DELETE FROM clipboard_items WHERE type='image' AND hash = ?`).run(hash)
+  }
+  const result = db.prepare(
+    `INSERT INTO clipboard_items (type, text, image_path, size, hash) VALUES (?, ?, ?, ?, ?)`
+  ).run(type, text, imagePath, size, hash ?? null)
+  return result.lastInsertRowid as number
+}
+
+export function clipboardDeleteItem(id: number): void {
+  if (!db) return
+  const row = db.prepare(`SELECT image_path FROM clipboard_items WHERE id = ?`).get(id) as { image_path: string | null } | undefined
+  db.prepare(`DELETE FROM clipboard_items WHERE id = ?`).run(id)
+  // caller is responsible for deleting the image file if needed
+  if (row?.image_path) {
+    try { require('fs').unlinkSync(row.image_path) } catch { /* already gone */ }
+  }
+}
+
+export function clipboardTogglePin(id: number, pinned: number): void {
+  if (!db) return
+  db.prepare(`UPDATE clipboard_items SET pinned = ? WHERE id = ?`).run(pinned, id)
+}
+
+export function clipboardCleanup(olderThanMs: number): { deleted: number } {
+  if (!db) return { deleted: 0 }
+  const threshold = olderThanMs === 0 ? Date.now() + 1 : Date.now() - olderThanMs
+  const rows = db.prepare(
+    `SELECT id, image_path FROM clipboard_items WHERE pinned = 0 AND created_at < ?`
+  ).all(threshold) as { id: number; image_path: string | null }[]
+  if (!rows.length) return { deleted: 0 }
+  const ids = rows.map(r => r.id)
+  db.prepare(`DELETE FROM clipboard_items WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids)
+  for (const r of rows) {
+    if (r.image_path) try { require('fs').unlinkSync(r.image_path) } catch { /* gone */ }
+  }
+  return { deleted: rows.length }
+}
+
+export function clipboardGetItem(id: number): ClipboardItem | undefined {
+  if (!db) return undefined
+  return db.prepare(`SELECT * FROM clipboard_items WHERE id = ?`).get(id) as ClipboardItem | undefined
+}
+
+export function clipboardClearAll(): void {
+  if (!db) return
+  const rows = db.prepare(`SELECT image_path FROM clipboard_items WHERE image_path IS NOT NULL`).all() as { image_path: string }[]
+  db.prepare(`DELETE FROM clipboard_items`).run()
+  for (const r of rows) {
+    try { require('fs').unlinkSync(r.image_path) } catch { /* already gone */ }
+  }
 }

@@ -1,4 +1,4 @@
-import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, globalShortcut, webContents } from 'electron'
+import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, globalShortcut, webContents, clipboard } from 'electron'
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync, unlinkSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
 import { execFile, exec } from 'child_process'
@@ -14,7 +14,7 @@ import {
   getBlockedDirs, addBlockedDir, removeBlockedDir
 } from '../db/queries'
 import { scanRecentFolder, scanProcesses, setMonitorPaused, getRunningSessions, killRunningResource, trackRunningProcess } from '../monitor/recent-files'
-import { dbPath, dataDir } from '../db/index'
+import { dbPath, dataDir, clipboardGetItems, clipboardDeleteItem, clipboardClearAll, clipboardRecordUse } from '../db/index'
 import { checkForUpdate, downloadUpdate, applyAndRestart, skipUpdate, forceUpdate, getChangelog, getPendingUpdate } from '../updater'
 import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest } from '../db/profiles'
 
@@ -550,14 +550,17 @@ export function registerIpcHandlers(): void {
 
   // ── 唤醒快捷键 ──────────────────────────────────────────
   ipcMain.handle('hotkey:get', () => getSetting('hotkeyWake') || 'Alt+Space')
-  ipcMain.handle('hotkey:set', (_e, accelerator: string) => {
-    globalShortcut.unregisterAll()
+  ipcMain.handle('hotkey:set', (e, accelerator: string) => {
+    // 只注销当前唤醒快捷键，不影响剪贴板快捷键
+    const prev = getSetting('hotkeyWake') || 'Alt+Space'
+    try { globalShortcut.unregister(prev) } catch { /* */ }
     if (!accelerator) return false
+    // 用 e.sender 精确引用发起请求的主窗口，避免 getAllWindows()[0] 非确定性问题
+    const mainWin = BrowserWindow.fromWebContents(e.sender)
     try {
       const ok = globalShortcut.register(accelerator, () => {
-        const win = BrowserWindow.getAllWindows()[0]
-        if (!win) return
-        if (win.isVisible() && win.isFocused()) { win.hide() } else { win.show(); win.focus() }
+        if (!mainWin || mainWin.isDestroyed()) return
+        if (mainWin.isVisible() && mainWin.isFocused()) { mainWin.hide() } else { mainWin.show(); mainWin.focus() }
       })
       if (ok) setSetting('hotkeyWake', accelerator)
       return ok
@@ -718,7 +721,50 @@ export function registerIpcHandlers(): void {
     }
     return merged
   })
+
+  // ── 剪贴板历史 ────────────────────────────────────────────
+  ipcMain.handle('clipboard:getItems', (_e, query?: string, sort?: string) => {
+    return clipboardGetItems(query, sort as any)
+  })
+
+  ipcMain.handle('clipboard:getImage', (_e, id: number) => {
+    const items = clipboardGetItems()
+    const item = items.find(i => i.id === id)
+    if (!item?.image_path || !existsSync(item.image_path)) return null
+    try {
+      const buf = readFileSync(item.image_path)
+      return `data:image/png;base64,${buf.toString('base64')}`
+    } catch { return null }
+  })
+
+  ipcMain.handle('clipboard:paste', (_e, id: number) => {
+    const items = clipboardGetItems()
+    const item = items.find(i => i.id === id)
+    if (!item) return
+    if (item.type === 'text' && item.text) {
+      clipboard.writeText(item.text)
+    } else if (item.type === 'image' && item.image_path && existsSync(item.image_path)) {
+      const img = nativeImage.createFromPath(item.image_path)
+      if (!img.isEmpty()) clipboard.writeImage(img)
+    }
+    clipboardRecordUse(id)
+  })
+
+  ipcMain.handle('clipboard:delete', (_e, id: number) => {
+    clipboardDeleteItem(id)
+  })
+
+  ipcMain.handle('clipboard:clear', () => {
+    clipboardClearAll()
+  })
+
+  ipcMain.handle('clipboard:hide', (_e) => {
+    const win = BrowserWindow.fromWebContents(_e.sender)
+    win?.hide()
+  })
+
 }
+// clipboard:getHotkey 和 clipboard:setHotkey 在 main.ts 中注册（需要调用 registerClipboardShortcut）
 
 function readBrowserBookmarks(baseDir: string): Array<{ name: string; url: string; folder: string }> {
   if (!existsSync(baseDir)) return []

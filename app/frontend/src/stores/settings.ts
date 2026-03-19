@@ -152,12 +152,13 @@ export const useSettingsStore = defineStore('settings', () => {
   const offlineMode = ref(false)
   const showOnAutoStart = ref(false)
   const hotkeyWake = ref('Alt+Space')
+  const hotkeyClipboard = ref('Alt+V')
   const themeVars = ref<Record<string, string>>({ ...DARK_THEME })
   const loaded = ref(false)
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal, hotkeyClipboardVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
@@ -175,6 +176,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.settings.get('theme'),
       window.api.settings.get('showOnAutoStart'),
       window.api.hotkey.get(),
+      window.api.clipboardHotkey.get(),
     ])
     monitorEnabled.value = monitorVal !== 'false'
     autostartEnabled.value = autostartVal
@@ -193,6 +195,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (offlineModeVal === 'true') offlineMode.value = true
     if (showOnAutoStartVal === 'true') showOnAutoStart.value = true
     if (hotkeyWakeVal) hotkeyWake.value = hotkeyWakeVal
+    if (hotkeyClipboardVal) hotkeyClipboard.value = hotkeyClipboardVal
 
     if (themeVal) {
       try { themeVars.value = { ...DARK_THEME, ...JSON.parse(themeVal) } } catch {}
@@ -300,6 +303,12 @@ export const useSettingsStore = defineStore('settings', () => {
     return ok
   }
 
+  async function setHotkeyClipboard(accelerator: string): Promise<boolean> {
+    const ok = await window.api.clipboardHotkey.set(accelerator)
+    if (ok) hotkeyClipboard.value = accelerator
+    return ok
+  }
+
   async function setShowOnAutoStart(enabled: boolean) {
     showOnAutoStart.value = enabled
     await window.api.settings.set('showOnAutoStart', String(enabled))
@@ -343,5 +352,5 @@ export const useSettingsStore = defineStore('settings', () => {
     ])
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, themeVars, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setTheme, resetToDefaults }
+  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, hotkeyClipboard, themeVars, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setHotkeyClipboard, setTheme, resetToDefaults }
 })

@@ -132,6 +132,12 @@ contextBridge.exposeInMainWorld('api', {
     set: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('hotkey:set', accelerator),
   },
 
+  // 剪贴板快捷键
+  clipboardHotkey: {
+    get: (): Promise<string> => ipcRenderer.invoke('clipboard:getHotkey'),
+    set: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('clipboard:setHotkey', accelerator),
+  },
+
   // 窗口控制（自定义标题栏）
   win: {
     minimize:    (): Promise<void> => ipcRenderer.invoke('window:minimize'),
