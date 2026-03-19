@@ -156,6 +156,13 @@
               <div class="empty-hint">右键资源卡片 → 「忽略此文件」后会在这里出现</div>
             </div>
             <div v-else class="ignored-list">
+              <div class="ignored-bulk-bar">
+                <div class="ignored-bulk-btns">
+                  <button class="bulk-unignore-btn" @click="unignoreAll">全部取消忽略</button>
+                  <button class="bulk-delete-btn" @click="deleteAllIgnored">全部删除</button>
+                </div>
+                <span class="ignored-delete-hint">* 删除仅从数据库移除记录，不影响磁盘文件</span>
+              </div>
               <div v-for="p in ignoredFiltered" :key="p" class="ignored-row">
                 <span class="ignored-name" :title="p">{{ getBasename(p) }}</span>
                 <span class="ignored-path" :title="p">{{ p }}</span>
@@ -1662,11 +1669,10 @@ onMounted(async () => {
     addPresetApps()
   }
 
-  // 启动后延迟 15s，静默补齐所有没有封面的网页图标
-  // 每次启动只跑一次，逐个请求避免并发过多
-  setTimeout(async () => {
-    if (_autoFaviconDone) return
-    _autoFaviconDone = true
+  // 启动后静默补齐所有没有封面的网页图标
+  // 第一次 15s 后尝试（网络可能未就绪），第二次 90s 后重试剩余失败项
+  // _autoFaviconDone 防止同一会话内重复整轮
+  async function tryAutoFavicons() {
     const missing = store.items.filter(r => r.type === 'webpage' && !r.cover_path)
     for (const resource of missing) {
       try {
@@ -1679,7 +1685,14 @@ onMounted(async () => {
       } catch { /* ignore */ }
       await new Promise(r => setTimeout(r, 300))
     }
-  }, 15000)
+  }
+  setTimeout(async () => {
+    if (_autoFaviconDone) return
+    _autoFaviconDone = true
+    await tryAutoFavicons()
+    // 第二次：等待 75s 后重试仍然缺失的（应对首次网络未就绪）
+    setTimeout(tryAutoFavicons, 75_000)
+  }, 15_000)
 })
 
 onUnmounted(() => {
@@ -1867,6 +1880,26 @@ async function removeBlockedDir(dir: string) {
 async function unignore(filePath: string) {
   await window.api.ignoredPaths.remove(filePath)
   ignoredPaths.value = ignoredPaths.value.filter(p => p !== filePath)
+  // Restore resource back into the view
+  const isUrl = filePath.startsWith('http://') || filePath.startsWith('https://')
+  const type = isUrl ? 'webpage' : inferType(filePath)
+  const title = isUrl
+    ? filePath.replace(/^https?:\/\//, '').replace(/\/$/, '')
+    : getBasename(filePath).replace(/\.[^/.]+$/, '') || getBasename(filePath)
+  const result = await window.api.resources.add({ type, title, file_path: filePath })
+  if (result?.resource) store.addOrUpdate(result.resource as Resource)
+}
+
+async function unignoreAll() {
+  const paths = [...ignoredFiltered.value]
+  for (const p of paths) await unignore(p)
+}
+
+async function deleteAllIgnored() {
+  const paths = [...ignoredFiltered.value]
+  for (const p of paths) await window.api.ignoredPaths.remove(p)
+  const pathSet = new Set(paths)
+  ignoredPaths.value = ignoredPaths.value.filter(p => !pathSet.has(p))
 }
 
 function onManualAdd(resource: object) {
@@ -3061,6 +3094,48 @@ async function deleteIgnored(filePath: string) {
 }
 
 .delete-ignored-btn:hover { background: rgba(239, 68, 68, 0.08); border-color: var(--danger); }
+
+.ignored-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 2px 10px;
+  flex-shrink: 0;
+}
+
+.ignored-bulk-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.bulk-unignore-btn,
+.bulk-delete-btn {
+  padding: 4px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: none;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.bulk-unignore-btn {
+  color: var(--accent-2);
+}
+.bulk-unignore-btn:hover { background: rgba(99, 102, 241, 0.1); border-color: var(--accent); }
+
+.bulk-delete-btn {
+  color: var(--danger);
+}
+.bulk-delete-btn:hover { background: rgba(239, 68, 68, 0.08); border-color: var(--danger); }
+
+.ignored-delete-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
 
 /* ── 标签面板宽度调整手柄 ── */
 .tag-panel-resize-handle {

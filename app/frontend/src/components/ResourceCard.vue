@@ -364,7 +364,9 @@ watchEffect(async () => {
     thumbSrc.value = thumb
     if (thumb && !r.cover_path && !_savedCovers.has(r.id)) {
       _savedCovers.add(r.id)
-      window.api.files.saveCover(r.id, thumb).catch(() => {})
+      window.api.files.saveCover(r.id, thumb).then(path => {
+        if (path) store.addOrUpdate({ ...r, cover_path: path })
+      }).catch(() => {})
     }
     return
   }
@@ -376,7 +378,9 @@ watchEffect(async () => {
     thumbSrc.value = thumb
     if (thumb && !r.cover_path && !_savedCovers.has(r.id)) {
       _savedCovers.add(r.id)
-      window.api.files.saveCover(r.id, thumb).catch(() => {})
+      window.api.files.saveCover(r.id, thumb).then(path => {
+        if (path) store.addOrUpdate({ ...r, cover_path: path })
+      }).catch(() => {})
     }
     return
   }

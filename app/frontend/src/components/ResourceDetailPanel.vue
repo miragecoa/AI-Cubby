@@ -260,7 +260,10 @@ async function pickCover() {
   const dataUrl = await window.api.files.readImage(imagePath)
   if (!dataUrl) return
   const savedPath = await window.api.files.saveCover(props.resource.id, dataUrl)
-  if (savedPath) store.addOrUpdate({ ...props.resource, cover_path: savedPath })
+  if (savedPath) {
+    store.addOrUpdate({ ...props.resource, cover_path: savedPath })
+    thumbSrc.value = dataUrl
+  }
 }
 
 // ─── Debounced save ────────────────────────────────────────────────

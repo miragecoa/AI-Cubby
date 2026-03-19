@@ -522,10 +522,12 @@ export function registerIpcHandlers(): void {
       const coverPath = join(coversDir, `${resourceId}_${Date.now()}.png`)
       writeFileSync(coverPath, finalBuffer)
       updateResource(resourceId, { cover_path: coverPath })
-      // Evict any previously cached null/stale entries for this resource's covers
+      // Evict stale entries and pre-populate new path — readImage won't need
+      // createThumbnailFromPath on a freshly-written file
       for (const key of thumbCache.keys()) {
         if (key.includes(`${resourceId}.`) || key.includes(`${resourceId}_`)) thumbCache.delete(key)
       }
+      thumbCache.set(coverPath, `data:image/png;base64,${finalBuffer.toString('base64')}`)
       return coverPath
     } catch (e: any) {
       console.error('[saveCover] failed:', e?.message)
