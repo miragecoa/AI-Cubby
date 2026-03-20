@@ -800,32 +800,26 @@ app.whenReady().then(() => {
     if (!items.length) return
     openDropImportWindow(items)
   })
-  // Drag: getCursorScreenPoint() already returns logical pixels in Electron 29,
-  // same coordinate space as getPosition(). No scaleFactor conversion needed.
-  function cursorLogical(): { x: number; y: number } {
-    return screen.getCursorScreenPoint()
-  }
+  // Drag: renderer passes e.screenX/Y (CSS logical pixels) directly — avoids any
+  // getCursorScreenPoint() physical-vs-logical ambiguity across DPI configurations.
   let _dragOffset: { lcx: number; lcy: number; wx: number; wy: number } | null = null
-  ipcMain.handle('drawer:dragStart', () => {
+  ipcMain.handle('drawer:dragStart', (_e, sx: number, sy: number) => {
     if (!drawerWindow) return
-    const lc = cursorLogical()
     const [wx, wy] = drawerWindow.getPosition()
-    _dragOffset = { lcx: lc.x, lcy: lc.y, wx, wy }
+    _dragOffset = { lcx: sx, lcy: sy, wx, wy }
   })
-  ipcMain.handle('drawer:dragMove', () => {
+  ipcMain.handle('drawer:dragMove', (_e, sx: number, sy: number) => {
     if (!drawerWindow || !_dragOffset) return
-    const lc = cursorLogical()
     drawerWindow.setPosition(
-      Math.round(_dragOffset.wx + lc.x - _dragOffset.lcx),
-      Math.round(_dragOffset.wy + lc.y - _dragOffset.lcy)
+      Math.round(_dragOffset.wx + sx - _dragOffset.lcx),
+      Math.round(_dragOffset.wy + sy - _dragOffset.lcy)
     )
   })
   ipcMain.handle('drawer:dragEnd', () => {
     if (!drawerWindow || !_dragOffset) { _dragOffset = null; return }
-    const lc = cursorLogical()
-    let x = Math.round(_dragOffset.wx + lc.x - _dragOffset.lcx)
-    let y = Math.round(_dragOffset.wy + lc.y - _dragOffset.lcy)
     _dragOffset = null
+    // Use the window's current position (already set correctly by dragMove)
+    let [x, y] = drawerWindow.getPosition()
 
     // Clamp position so the peek strip (14px) stays within screen bounds
     const PEEK_PX = 14

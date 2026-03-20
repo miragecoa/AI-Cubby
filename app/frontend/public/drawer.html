@@ -320,9 +320,9 @@
           tab.style.transform = ''
           peekStrip.style.opacity = '0.22'
         }
-        window.drawerApi?.dragStart()
+        window.drawerApi?.dragStart(e.screenX, e.screenY)
       }
-      window.drawerApi?.dragMove()
+      window.drawerApi?.dragMove(e.screenX, e.screenY)
     })
 
     window.addEventListener('mouseup', () => {
