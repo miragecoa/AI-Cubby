@@ -1,11 +1,15 @@
-<p align="center">
-  <img src="app/resources/icon.png" width="120" alt="AI资源管家">
+<p align="right">
+  <a href="README.zh.md">中文</a> | <b>English</b>
 </p>
 
-<h1 align="center">AI 资源管家</h1>
+<p align="center">
+  <img src="app/resources/icon.png" width="120" alt="AI Resource Manager">
+</p>
+
+<h1 align="center">AI Resource Manager</h1>
 
 <p align="center">
-  <b>你用过的每个文件、每个程序，都能找回来。</b>
+  <b>Everything you've ever opened — always findable.</b>
 </p>
 
 <p align="center">
@@ -17,214 +21,208 @@
 ---
 
 <p align="center">
-  <img src="docs/library.png" width="800" alt="主界面截图">
+  <img src="docs/library.png" width="800" alt="Main interface screenshot">
 </p>
 
 ---
 
-## 为什么需要它？
+## Why does this exist?
 
-### 场景 1：桌面屎山
+### Scenario 1: The desktop landfill
 
-你的桌面堆满了文件、截图、安装包……每次找东西都要翻半天，看着就烦。
-想整理？建文件夹分类要花整个下午，整理完不到三天又乱成一坨。
-于是你再次放弃——然后下次找东西还是翻。
+Your desktop is buried under screenshots, installers, and random files. Finding anything takes forever, and the mess itself is exhausting. You tell yourself you'll organize it — spend an afternoon building folders — and three days later it's chaos again. So you give up, and next time you still have to dig.
 
-**用 AI 资源管家的做法：**
-1. 在桌面新建一个文件夹，把满屏杂乱文件全选拖进去——桌面瞬间清空，极度解压
-2. 把这个文件夹拖给资源管家，一键入库
-3. 以后要找某个文件，直接在资源管家里搜，秒出
+**With AI Resource Manager:**
+1. Create one folder on your desktop, drag everything into it — desktop instantly clean
+2. Drag that folder into Resource Manager to import it in one click
+3. Next time you need something, just search — it appears instantly
 
-不需要分类，不需要建文件夹，桌面干净了，东西一个都没少。
+No categories needed. No folder hierarchy. Desktop stays clean, nothing is lost.
 
-### 场景 2：文件失忆
+### Scenario 2: Tool amnesia
 
-好不容易找到一个能修复受损 MP4 的工具，用了一次，问题解决了。半年后同样的事情又来了——这个工具叫什么？装在哪？完全想不起来了。
+You found a great tool that fixed your corrupted MP4. Used it once, problem solved. Six months later the same issue comes up — what was that tool called? Where did you install it? No idea.
 
-说的就是你，[WizTree](https://diskanalyzer.com/)——我 C 盘满了用来定位大文件的神器，名字死活想不起来，每次都得重新搜。
+Sound familiar? AI Resource Manager silently logs every program and file you open during normal computer use. Next time you need it, one search is all it takes.
 
-AI 资源管家在你正常用电脑的过程中，把你打开过的每个程序、每个文件全部静默记录。下次找它，就是搜一下的事。
+### The compound effect
 
-### 养成系：用着用着就顺手了
-
-一开始我也以为手动打标是伪需求——大家太懒，不会动。但实际调研后发现情况很微妙：**大家确实懒得理杂七杂八的文件，但对极少数高频核心文件，非常有打标的意愿。**
-
-所以在 AI 完全接入之前，它现在的核心定位是一个**历史记录器**——属于越用越顺手的养成系。
-
-你这次好不容易翻出了某个特定清理软件，找到后顺手打个标；软件也自动记录了你打开它这件事。下次再找它，就是一秒钟的事。每次找到都是一次沉淀，积累够了，你的"数字记忆"就真正活起来了。
+Usage tracking compounds over time. Every time you open something, the record deepens. A file you struggled to find today becomes a one-second search tomorrow. Over weeks and months, you build a genuine "digital memory" of your computer use.
 
 ---
 
-## 核心能力
+## Core Features
 
-### 1. 自动记录，零配置
+### 1. Automatic recording, zero configuration
 
-后台静默运行，自动记录你使用过的一切：
+Runs silently in the background and logs everything you use:
 
-- **文件监听** — 你打开的图片、视频、文档，自动记录
-- **桌面快捷方式** — 桌面上的游戏和应用，自动识别
-- **进程检测** — 每一个你启动的程序，自动捕获
+- **File monitoring** — images, videos, documents you open are recorded automatically
+- **Desktop shortcuts** — games and apps on your desktop are detected and indexed
+- **Process detection** — every program you launch is captured
 
-**不需要手动导入。正常用电脑，记录自动建好。**
+**No manual imports needed. Just use your computer normally.**
 
-当然，你也可以直接把文件或文件夹拖进窗口，一键导入。
+You can also drag files or folders directly into the window for instant import.
 
-### 2. 使用追踪
+### 2. Usage tracking
 
-不只记录"用过什么"，还记录"怎么用的"：打开次数、累计运行时长、实时计时、上次打开时间。
+Not just *what* you used — but *how*: open count, total runtime, live timer, last opened time.
 
-三个月前玩的那个游戏，上周处理的那批照片——打开资源管家，一目了然。
+That game from three months ago, that batch of photos from last week — open Resource Manager and see it all at a glance.
 
-### 3. AI 功能（即将上线）
+### 3. AI features (coming soon)
 
-**AI 大白话搜索** — 用自然语言描述你的记忆，不用想文件名：
+**Natural language search** — describe what you remember, not the filename:
 
-- "我去年使用过的剪辑软件"
-- "我昨天处理的文件"
-- "上周老板发我的让我填的公司报表"
-- "上周我们公司参展使用的 PPT"
+- "the video editor I used last year"
+- "files I worked on yesterday"
+- "the spreadsheet my boss sent me to fill in"
+- "the presentation we used at the trade show last week"
 
-**AI 智能分类** — 你只管用，AI 帮你整理：
+**AI auto-categorization** — use it, let AI organize it:
 
-- **照片** — 标注一张"加拿大，2018，尼亚加拉大瀑布"，AI 自动给剩下几百张打上对应标签
-- **应用 & 游戏** — 一堆 exe 拖进来，AI 自动识别哪些是游戏、哪些是工具，分好类
+- **Photos** — tag one "Canada, 2018, Niagara Falls" and AI labels the rest of the batch
+- **Apps & Games** — drop in a folder of exe files, AI identifies which are games and which are tools
 
 ---
 
-## 与同类工具的区别
+## How it compares
 
-|  | AI 资源管家 | Everything | Playnite |
+|  | AI Resource Manager | Everything | Playnite |
 |---|:---:|:---:|:---:|
-| 自动记录使用历史 | **自动记录** | 不追踪 | 不追踪 |
-| 零配置 | 装上就用 | 只搜文件名 | 需配置插件 |
-| 运行时长追踪 | **内置** | 无 | 需插件 |
-| 全类型资源 | 游戏/应用/图片/视频/文档 | 仅文件搜索 | 仅游戏 |
-| 数据隐私 | 完全本地 | 完全本地 | 完全本地 |
+| Auto-records usage history | **Yes** | No | No |
+| Zero configuration | Works out of the box | Filename search only | Requires plugin setup |
+| Runtime tracking | **Built-in** | None | Plugin required |
+| All resource types | Games / apps / images / video / docs | Files only | Games only |
+| Data privacy | Fully local | Fully local | Fully local |
 
 ---
 
-## 更多特性
+## More Features
 
-- **搜索 & 找回** — 全文搜索标题和备注，快速找到你用过的任何东西
-- **置顶 & 忽略** — 重要资源置顶，不需要的一键忽略（5秒内可撤销）
-- **标签系统** — 手动标签 + 同类智能推荐
-- **多配置文件** — 工作 / 娱乐分开管理，独立数据库
-- **文件夹管理** — 整个文件夹作为一个资源入库，适合整合包、项目目录等
-- **系统托盘** — 关闭窗口自动最小化，安静后台运行
-- **开机自启** — 设置一次，永远自动运行
-
----
-
-## 未来计划
-
-- **.nfo 元数据读取** — 自动识别 Kodi / Jellyfin 的 .nfo 文件，已有的媒体库直接导入
+- **Search & recall** — full-text search across titles and notes, find anything you've used
+- **Pin & ignore** — pin important resources to the top, ignore unwanted ones (5-second undo)
+- **Tag system** — manual tags with smart suggestions based on resource type
+- **Multiple profiles** — separate work and personal libraries, each with its own database
+- **Folder as resource** — import an entire folder as a single entry, great for mod packs and project directories
+- **System tray** — closing the window minimizes to tray, stays running quietly
+- **Auto-start** — set once, always running
 
 ---
 
-## 截图
+## Roadmap
 
-| 主界面 | 详情面板 | 手动添加 |
+- **.nfo metadata** — read Kodi / Jellyfin `.nfo` files to import existing media libraries automatically
+
+---
+
+## Screenshots
+
+| Library | Detail panel | Manual add |
 |:---:|:---:|:---:|
-| ![主界面](docs/library.png) | ![详情](docs/detail.png) | ![添加](docs/add.png) |
+| ![Library](docs/library.png) | ![Detail](docs/detail.png) | ![Add](docs/add.png) |
 
-| 拖拽导入 | 标签过滤 | 忽略列表 |
+| Drag import | Tag filtering | Ignored list |
 |:---:|:---:|:---:|
-| ![拖拽导入](docs/drag-import.png) | ![标签](docs/tags.png) | ![忽略](docs/ignored.png) |
+| ![Drag import](docs/drag-import.png) | ![Tags](docs/tags.png) | ![Ignored](docs/ignored.png) |
 
 ---
 
-## 下载安装
+## Download
 
-前往 [Releases](../../releases) 页面下载最新版本：
+Go to the [Releases](../../releases) page for the latest version:
 
-- **便携版**（免安装）：`AI-Resource-Manager-x.x.x-portable-win-x64.zip`，解压即用
+- **Portable** (no installer): `AI-Resource-Manager-x.x.x-portable-win-x64.zip` — unzip and run
 
-> 系统要求：Windows 10 及以上
+> Requires Windows 10 or later
 
 ---
 
-## 从源码构建
+## Build from source
 
 ```bash
 git clone https://github.com/miragecoa/AI-Resource-Manager.git
 cd AI-Resource-Manager/app
 
-# 安装依赖
+# Install dependencies
 npm install --ignore-scripts
 
-# 编译原生模块（better-sqlite3）
+# Compile native module (better-sqlite3)
 npm run rebuild
 
-# 开发模式
+# Development mode
 npm run dev
 
-# 生产构建 + 打包
+# Production build + package
 npm run package
 ```
 
-## 技术栈
+## Tech stack
 
 Electron 29 + Vue 3 + TypeScript + SQLite (better-sqlite3) + electron-vite
 
-## 常见问题
+---
+
+## FAQ
 
 <details>
-<summary><b>会不会侵犯隐私？</b></summary>
+<summary><b>Does it compromise my privacy?</b></summary>
 
-不会。所有数据 100% 存储在你本地电脑上，不会上传任何信息到云端。资源管家只记录你主动打开的程序和文件，不会录屏、不会读取文件内容。你可以随时在忽略列表中删除任何记录。
+No. All data is stored 100% locally on your machine — nothing is uploaded to any server. Resource Manager only records programs and files you actively open; it does not capture screenshots or read file contents. You can delete any record at any time from the ignored list.
 
 </details>
 
 <details>
-<summary><b>会被杀毒软件误报吗？</b></summary>
+<summary><b>Will antivirus software flag it?</b></summary>
 
-不会。资源管家使用 Windows 原生的文件系统监听（fs.watch）来检测最近打开的文件，这是标准的系统 API。进程检测通过 WMI 事件订阅实现，不会轮询进程列表。
-
-</details>
-
-<details>
-<summary><b>数据存在哪里？</b></summary>
-
-所有数据存储在本地 SQLite 数据库中，默认路径可在「设置」页查看。封面图片缓存在同目录的 `covers/` 文件夹下。
+No. Resource Manager uses the Windows native filesystem watch API (`fs.watch`) to detect recently opened files — a standard system API. Process detection uses WMI event subscriptions, not process list polling.
 
 </details>
 
 <details>
-<summary><b>支持 macOS / Linux 吗？</b></summary>
+<summary><b>Where is my data stored?</b></summary>
 
-目前优先支持 Windows。macOS / Linux 版本在未来计划中。
-
-</details>
-
-<details>
-<summary><b>能监控所有程序吗？</b></summary>
-
-资源管家会自动过滤系统服务进程（svchost、services 等）和辅助进程（updater、crashpad 等），只记录你主动使用的应用程序和游戏。
+All data is stored in a local SQLite database. The exact path is shown on the Settings page. Cover image thumbnails are cached in a `covers/` folder in the same directory.
 
 </details>
 
 <details>
-<summary><b>耗性能吗？</b></summary>
+<summary><b>Is macOS / Linux supported?</b></summary>
 
-几乎不耗。文件监听是操作系统原生事件推送，进程检测是 WMI 事件订阅，两者都不需要轮询。日常内存占用约 80-120 MB，CPU 使用率接近 0。
+Windows is the current focus. macOS and Linux support is on the roadmap.
+
+</details>
+
+<details>
+<summary><b>Does it track every process?</b></summary>
+
+System service processes (svchost, services, etc.) and helper processes (updater, crashpad, etc.) are automatically filtered out. Only programs you actively use are recorded.
+
+</details>
+
+<details>
+<summary><b>How much CPU / memory does it use?</b></summary>
+
+Almost none. File monitoring uses OS-native event push (no polling). Process detection uses WMI event subscriptions (no polling). Typical memory usage is 80–120 MB; CPU usage is near 0%.
 
 </details>
 
 ---
 
-## 社区
+## Community
 
-如果有开发意愿，欢迎 Fork 本项目并提交 Pull Request！
+Contributions are welcome — feel free to fork and open a pull request.
 
-也欢迎加入社区交流反馈、提建议：
+For feedback, bug reports, and suggestions:
 
-**QQ 群：687623885**
+**Discord:** [discord.gg/BKr8VMQB4R](https://discord.gg/BKr8VMQB4R)
 
-<img src="docs/qq-qrcode.jpg" width="240" alt="QQ群二维码">
+**GitHub Issues:** [Report a bug / request a feature](../../issues)
 
-**Discord：** [discord.gg/BKr8VMQB4R](https://discord.gg/BKr8VMQB4R)
+**QQ Group (Chinese community):** 687623885
 
-**GitHub Issues：** [反馈 Bug / 功能建议](../../issues)
+<img src="docs/qq-qrcode.jpg" width="200" alt="QQ group QR code">
 
 ---
 
@@ -240,12 +238,12 @@ Electron 29 + Vue 3 + TypeScript + SQLite (better-sqlite3) + electron-vite
 
 ---
 
-## 开源协议
+## License
 
-[AGPL-3.0 License](LICENSE) — 代码开源可用，修改后须开源。商业授权请联系作者。
+[AGPL-3.0](LICENSE) — open source, modifications must be released under the same license. For commercial licensing, contact the author.
 
 ---
 
 <p align="center">
-  如果觉得有用，欢迎点个 Star 支持一下
+  If you find this useful, a star goes a long way
 </p>
