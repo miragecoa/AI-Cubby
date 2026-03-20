@@ -1492,7 +1492,11 @@ function onTagSortChange(e: Event) {
   loadTags()
 }
 
-watch(() => store.activeType, loadTags)
+watch(() => store.activeType, () => {
+  store.activeTags.splice(0)
+  store.excludedTags.splice(0)
+  loadTags()
+})
 
 // 实时统计当前展示资源列表（store.filtered）中各标签的数量
 const tagCounts = computed(() => {
@@ -2646,7 +2650,14 @@ async function deleteIgnored(filePath: string) {
   transition: color 0.15s;
 }
 .sortable-col:hover { color: var(--text); }
-.sortable-col.active { color: var(--accent-1); font-weight: 500; }
+.sortable-col.active {
+  color: var(--accent-2);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  text-underline-offset: 4px;
+  text-decoration-thickness: 2px;
+}
 .lh-count.sortable-col { justify-content: center; } /* keep count centered */
 .sort-arrow { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 2px; flex-shrink: 0; }
 .sort-arrow :deep(svg) { width: 14px; height: 14px; stroke: currentColor; }
@@ -2662,7 +2673,7 @@ async function deleteIgnored(filePath: string) {
   position: relative;
 }
 .type-filter-col:hover { color: var(--text); }
-.type-filter-col.filter-active { color: var(--accent-1); font-weight: 500; }
+.type-filter-col.filter-active { color: var(--accent-2); font-weight: 600; }
 .type-filter-badge {
   font-size: 10px;
   background: var(--accent);

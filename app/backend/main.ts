@@ -446,9 +446,10 @@ function openDrawerSettings(): void {
   const db = drawerWindow?.getBounds()
   if (!db) return
   const sw = 248, sh = 350
-  const { width: screenW } = screen.getPrimaryDisplay().workAreaSize
-  const sx = Math.max(0, Math.min(db.x - sw - 8, screenW - sw))
-  const sy = Math.max(0, db.y + Math.round((db.height - sh) / 2))
+  const disp = screen.getDisplayNearestPoint({ x: db.x, y: db.y })
+  const wa = disp.workArea
+  const sx = Math.max(wa.x, Math.min(db.x - sw - 8, wa.x + wa.width - sw))
+  const sy = Math.max(wa.y, Math.min(db.y + Math.round((db.height - sh) / 2), wa.y + wa.height - sh))
   // Inject all theme vars into URL for synchronous application (avoids async flicker)
   let accent = '#6366F1', accent2 = '#818CF8'
   let bg = '#0C0C18', surface = '#111122', border = '#28284A', text = '#E2E2F2', text2 = '#9090B8'
@@ -802,37 +803,43 @@ app.whenReady().then(() => {
   })
   // Drag: renderer passes e.screenX/Y (CSS logical pixels) directly — avoids any
   // getCursorScreenPoint() physical-vs-logical ambiguity across DPI configurations.
-  let _dragOffset: { lcx: number; lcy: number; wx: number; wy: number } | null = null
+  let _dragOffset: { lcx: number; lcy: number; wx: number; wy: number; ww: number; wh: number } | null = null
   ipcMain.handle('drawer:dragStart', (_e, sx: number, sy: number) => {
     if (!drawerWindow) return
     const [wx, wy] = drawerWindow.getPosition()
-    _dragOffset = { lcx: sx, lcy: sy, wx, wy }
+    const [ww, wh] = drawerWindow.getSize()
+    drawerWindow.setResizable(true)
+    _dragOffset = { lcx: sx, lcy: sy, wx, wy, ww, wh }
   })
   ipcMain.handle('drawer:dragMove', (_e, sx: number, sy: number) => {
     if (!drawerWindow || !_dragOffset) return
-    drawerWindow.setPosition(
-      Math.round(_dragOffset.wx + sx - _dragOffset.lcx),
-      Math.round(_dragOffset.wy + sy - _dragOffset.lcy)
-    )
+    // Use setBounds to atomically enforce position + size — prevents WM_DPICHANGED
+    // from resizing the window when dragging across monitors with different DPI
+    drawerWindow.setBounds({
+      x: Math.round(_dragOffset.wx + sx - _dragOffset.lcx),
+      y: Math.round(_dragOffset.wy + sy - _dragOffset.lcy),
+      width: _dragOffset.ww,
+      height: _dragOffset.wh,
+    })
   })
   ipcMain.handle('drawer:dragEnd', () => {
     if (!drawerWindow || !_dragOffset) { _dragOffset = null; return }
+    const { ww, wh } = _dragOffset
     _dragOffset = null
-    // Use the window's current position (already set correctly by dragMove)
     let [x, y] = drawerWindow.getPosition()
 
     // Clamp position so the peek strip (14px) stays within screen bounds
     const PEEK_PX = 14
     const display = screen.getDisplayNearestPoint({ x, y })
     const b = display.bounds
-    const [winW, winH] = drawerWindow.getSize()
     const edge = getSetting('drawerEdge') ?? 'none'
     if (edge === 'right')       x = Math.min(x, b.x + b.width  - PEEK_PX)
-    else if (edge === 'left')   x = Math.max(x, b.x - winW + PEEK_PX)
-    else if (edge === 'top')    y = Math.max(y, b.y - winH + PEEK_PX)
+    else if (edge === 'left')   x = Math.max(x, b.x - ww + PEEK_PX)
+    else if (edge === 'top')    y = Math.max(y, b.y - wh + PEEK_PX)
     else if (edge === 'bottom') y = Math.min(y, b.y + b.height - PEEK_PX)
 
-    drawerWindow.setPosition(x, y)
+    drawerWindow.setBounds({ x, y, width: ww, height: wh })
+    drawerWindow.setResizable(false)
     setSetting('drawerX', String(x))
     setSetting('drawerY', String(y))
   })
