@@ -2009,9 +2009,9 @@ function removeResource(resource: Resource) {
   store.remove(resource.id)
 }
 
-function ignoreResource(resource: Resource) {
+async function ignoreResource(resource: Resource) {
   const snapshot: Resource = JSON.parse(JSON.stringify(resource))
-  store.ignore(resource.file_path, resource.id)
+  await store.ignore(resource.file_path, resource.id)
   ignoredPaths.value = [...ignoredPaths.value, resource.file_path]
   // Show undo toast
   if (toastTimer !== null) { clearTimeout(toastTimer); toastTimer = null }
@@ -2034,9 +2034,9 @@ async function undoIgnore() {
   if (toastTimer !== null) { clearTimeout(toastTimer); toastTimer = null }
   toastResource.value = null
   await window.api.ignoredPaths.remove(res.file_path)
-  const restored = await window.api.resources.restore(res)
-  if (restored) store.addOrUpdate(restored)
   ignoredPaths.value = ignoredPaths.value.filter(p => p !== res.file_path)
+  const result = await window.api.resources.add({ type: res.type, title: res.title, file_path: res.file_path, note: res.note })
+  if (result?.resource) store.addOrUpdate(result.resource as Resource)
 }
 
 async function deleteIgnored(filePath: string) {

@@ -136,15 +136,25 @@ export function removeResource(id: string): void {
 /** 撤销忽略：将完整资源数据（含标签）写回数据库 */
 export function restoreResource(resource: Resource): Resource | null {
   const db = getDb()
-  // 用 INSERT OR IGNORE 而非 INSERT OR REPLACE：REPLACE 会 DELETE+INSERT 触发级联删除 resource_tags，
-  // 若快照因 upsertResource 裸行 bug 而缺少 tags 字段，则标签永久丢失。
-  // 撤销忽略时资源已被 removeResourceByPath 删除，OR IGNORE 在此等价于正常插入，更安全。
-  db.prepare(`
+  // 优先 INSERT OR IGNORE（不触发级联删除）
+  // 若 INSERT 被跳过（监视器在 ignore→undo 窗口内以新 UUID 重新探测到同路径文件），
+  // 则通过 UPDATE 按 file_path 还原快照数据，避免 INSERT OR REPLACE 的级联删除风险。
+  const info = db.prepare(`
     INSERT OR IGNORE INTO resources
       (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, open_count, total_run_time, last_run_at)
     VALUES
       (@id, @type, @title, @file_path, @cover_path, @rating, @note, @meta, @added_at, @updated_at, @open_count, @total_run_time, @last_run_at)
   `).run(resource)
+  if (info.changes === 0) {
+    // 行已存在（监视器抢先插入）：UPDATE 还原快照，保留 resource_tags 不动（避免级联删除）
+    db.prepare(`
+      UPDATE resources SET
+        id=@id, type=@type, title=@title, cover_path=@cover_path, rating=@rating,
+        note=@note, meta=@meta, added_at=@added_at, updated_at=@updated_at,
+        open_count=@open_count, total_run_time=@total_run_time, last_run_at=@last_run_at
+      WHERE file_path=@file_path
+    `).run(resource)
+  }
   if (Array.isArray((resource as any).tags)) {
     for (const tag of (resource as any).tags as Array<{ id: number; name: string; source?: string }>) {
       db.prepare('INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)').run(tag.id, tag.name)
