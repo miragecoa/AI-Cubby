@@ -21,7 +21,6 @@ async function fetchWithTimeout(url: string, opts: RequestInit & { timeout?: num
 }
 
 const REPO = 'miragecoa/AI-Resource-Manager'
-const ASSET_PATTERN = /^AI-Resource-Manager-.*-portable-win-x64\.zip$/
 const CHECK_INTERVAL = 4 * 60 * 60 * 1000  // 4 hours
 const R2_PUBLIC_URL = 'https://pub-e99883270f2047d9a6151090f7da8a5c.r2.dev'
 
@@ -150,14 +149,22 @@ async function followDownload(url: string, totalSize: number, wc: WebContents | 
   if (wc && !wc.isDestroyed()) wc.send('updater:progress', 100)
 
   await new Promise<void>((resolve, reject) => {
-    ws.end(() => {
-      const dlSize = statSync(zipPath).size
-      if (contentLen > 0 && Math.abs(dlSize - contentLen) > 1024) {
-        unlinkSync(zipPath)
-        return reject(new Error(`Size mismatch: expected ${contentLen}, got ${dlSize}`))
+    ws.on('error', reject)
+    ws.on('close', () => {
+      // 必须在 close 事件（文件句柄完全释放）后再 stat，
+      // end() 的回调在 Windows 上文件描述符可能仍持有，会导致 EPERM
+      try {
+        const dlSize = statSync(zipPath).size
+        if (contentLen > 0 && Math.abs(dlSize - contentLen) > 1024) {
+          unlinkSync(zipPath)
+          return reject(new Error(`Size mismatch: expected ${contentLen}, got ${dlSize}`))
+        }
+        resolve()
+      } catch (e) {
+        reject(e)
       }
-      resolve()
     })
+    ws.end()
   })
 
   return zipPath
