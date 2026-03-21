@@ -506,7 +506,7 @@ function openInExplorer() {
   max-width: 60%;
   max-height: 60%;
   object-fit: contain;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .cover-placeholder {

@@ -45,7 +45,7 @@ export function getResourceById(id: string): Resource | null {
 
 export function getResourceByPath(filePath: string): Resource | null {
   const db = getDb()
-  const row = db.prepare('SELECT * FROM resources WHERE file_path = ?').get(filePath) as Resource | undefined
+  const row = db.prepare('SELECT * FROM resources WHERE LOWER(file_path) = LOWER(?)').get(filePath) as Resource | undefined
   return row ? attachTags(row) : null
 }
 

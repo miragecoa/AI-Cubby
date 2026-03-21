@@ -5,7 +5,7 @@ import { isUNC } from '../utils/fs-safe'
 import { spawn, execFile, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { createInterface } from 'readline'
-import { upsertResource, isIgnored, isBlockedDir, recordProcessStart, recordProcessStop, getResourceByPath, upgradeSteamGame, getAllAppResources } from '../db/queries'
+import { upsertResource, updateResource, isIgnored, isBlockedDir, recordProcessStart, recordProcessStop, getResourceByPath, upgradeSteamGame, getAllAppResources } from '../db/queries'
 import type { Resource } from '../db/queries'
 import { detectSteamGame } from './steam-detector'
 
@@ -52,14 +52,14 @@ const EXT_MAP: Record<string, Resource['type']> = {
 const BLOCKED_PATHS = [
   'C:\\Windows\\',
   'C:\\Program Files\\WindowsApps\\',
-  'C:\\ProgramData\\Microsoft\\'
+  'C:\\ProgramData\\Microsoft\\Windows\\'
 ]
 
 // 进程路径黑名单（小写比较，避免 WMI 返回路径大小写不一致）
 const BLOCKED_PROCESS_PATHS = [
   'c:\\windows\\',
   'c:\\program files\\windowsapps\\',
-  'c:\\programdata\\microsoft\\'
+  'c:\\programdata\\microsoft\\windows\\'
 ]
 
 // 进程路径中包含这些片段的视为辅助/后台进程，跳过
@@ -72,6 +72,7 @@ const BLOCKED_PATH_SEGMENTS = [
   '\\miniconda',       // Miniconda / Miniconda3 / MiniForge 等变体（前缀匹配）
   '\\anaconda',        // Anaconda 发行版
   '\\microsoft\\onedrive\\', // OneDrive（路径含版本号，用路径段过滤）
+  '\\temp\\', '\\tmp\\',   // 临时目录（安装包、更新包等临时运行的程序）
 ]
 
 // 已知系统/后台进程名（不含 .exe，小写）
@@ -81,7 +82,7 @@ const BLOCKED_EXE_NAMES = new Set([
   'searchprotocolhost', 'searchfilterhost', 'searchindexer',
   'steamwebhelper', 'gameoverlayui64', 'gameoverlayrenderer64',  // Steam overlay
   'crashpad_handler', 'chrome_crashpad_handler',
-  'git', 'updater',
+  'git', 'updater', 'setup', 'installer', 'uninstall', 'uninstaller',
   'onedrive', 'onedriveupdater', 'filecoauth',  // OneDrive 后台进程
   'conda', 'pip',      // Python 包管理工具（conda/pip 本身不是用户资源）
   'ealocalhostsvc', 'eacefsubprocess', 'eadesktop', 'ealaunchhelper',  // EA App 后台
@@ -167,6 +168,8 @@ function isBlockedProcess(exePath: string): boolean {
   if (BLOCKED_PATH_SEGMENTS.some(s => lower.includes(s))) return true
   const exeName = basename(lower, '.exe')
   if (BLOCKED_EXE_NAMES.has(exeName)) return true
+  // 带 _ → 辅助/后台进程（wetype_service、logioptionsplus_updater、Wacom_UpdateUtil 等）
+  if (exeName.includes('_')) return true
   if (isIgnored(exePath)) return true
   if (isBlockedDir(exePath)) return true
   return false
@@ -330,7 +333,7 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
       }
 
       // 已入库的资源直接走追踪逻辑；新进程需先检查图标（无图标 = 辅助进程，跳过）
-      const existingResource = getResourceByPath(exePath)
+      const existingResource = getResourceByPath(lower)
       if (!existingResource && !await hasAppIcon(exePath)) {
         console.log('[Monitor] Process skipped (no icon):', exePath)
         return
@@ -338,8 +341,16 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
 
       const lnkTitle = exeToLnkName.get(lower)
       const title = lnkTitle ?? basename(exePath, extname(exePath))
+
+      // 已入库但标题还是裸 exe 名 → 有 lnk 映射时升级为友好名称（chrome → Google Chrome）
+      if (existingResource && lnkTitle && existingResource.title.toLowerCase() !== lnkTitle.toLowerCase()) {
+        console.log(`[Monitor] Title upgraded: "${existingResource.title}" → "${lnkTitle}"`)
+        updateResource(existingResource.id, { title: lnkTitle })
+        existingResource.title = lnkTitle
+      }
+
       try {
-        const newResource = existingResource ? null : upsertResource({ type: 'app', title, file_path: exePath, rating: 0 }, !!lnkTitle)
+        const newResource = existingResource ? null : upsertResource({ type: 'app', title, file_path: lower, rating: 0 }, !!lnkTitle)
         if (newResource) {
           const upgraded = trySteamUpgrade(exePath)
           const finalResource = upgraded ?? newResource
@@ -348,14 +359,14 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
         }
         // 无论是新资源还是已有资源，都追踪运行会话
         if (pid && !isNaN(pid)) {
-          const trackResource = newResource ?? existingResource ?? getResourceByPath(exePath)
+          const trackResource = newResource ?? existingResource ?? getResourceByPath(lower)
           if (trackResource) {
             // 同一资源只追踪一个 PID（避免 Chrome/Electron 等多进程应用重复计数）
             const alreadyTracking = [...runningSessions.values()].some(s => s.resourceId === trackResource.id)
             if (!alreadyTracking) {
               console.log('[Monitor] Tracking session:', trackResource.title, `(pid ${pid})`)
               const startTime = Date.now()
-              runningSessions.set(pid, { resourceId: trackResource.id, filePath: exePath, startTime })
+              runningSessions.set(pid, { resourceId: trackResource.id, filePath: lower, startTime })
               startPidCheck()
               try {
                 const updated = recordProcessStart(trackResource.id)
@@ -444,9 +455,13 @@ function preloadLnkNames(folders: string[]): void {
         const shortcut = shell.readShortcutLink(lnkPath)
         if (!shortcut.target) continue
         const lnkName = basename(lnkPath, '.lnk').replace(/\.\d+$/, '')
-        const exeName = basename(shortcut.target, extname(shortcut.target))
-        // 只收录用户自定义命名的快捷方式（名称与 exe 不同，说明是有意义的别名）
-        if (lnkName.toLowerCase() !== exeName.toLowerCase()) {
+        const targetExt = extname(shortcut.target)
+        const exeName = basename(shortcut.target, targetExt)
+        const lnkLower = lnkName.toLowerCase()
+        const exeLower = exeName.toLowerCase()
+        // 只收录用户自定义命名的快捷方式
+        // 排除：lnk 名与 exe 名相同，或 lnk 名只是 exe 名加上扩展名（如 chrome.exe.lnk → "chrome.exe"）
+        if (lnkLower !== exeLower && lnkLower !== exeLower + targetExt.toLowerCase()) {
           exeToLnkName.set(shortcut.target.toLowerCase(), lnkName)
           exeToLnkPath.set(shortcut.target.toLowerCase(), lnkPath)
         }
@@ -519,6 +534,19 @@ export function startMonitor(onNewEntry: (entry: Resource) => void, onRunningCha
   const startMenuUser   = join(appData,     'Microsoft', 'Windows', 'Start Menu', 'Programs')
   const startMenuGlobal = join(programData, 'Microsoft', 'Windows', 'Start Menu', 'Programs')
   preloadLnkNames([desktopPath, recentPath, startMenuUser, startMenuGlobal])
+
+  // 启动时把已入库的 app 标题升级为 lnk 友好名称（chrome → Google Chrome）
+  // 在 renderer 加载之前执行，renderer 初次查询 DB 即得到最新标题，无需 IPC
+  let upgraded = 0
+  for (const resource of getAllAppResources()) {
+    const lower = resource.file_path.toLowerCase()
+    const lnkTitle = exeToLnkName.get(lower)
+    if (lnkTitle && !lnkTitle.toLowerCase().endsWith('.exe') && resource.title.toLowerCase() !== lnkTitle.toLowerCase()) {
+      updateResource(resource.id, { title: lnkTitle })
+      upgraded++
+    }
+  }
+  if (upgraded > 0) console.log(`[Monitor] Upgraded ${upgraded} resource title(s) from lnk mappings`)
 
   recentWatcher = watch(recentPath, { persistent: false }, (_event, filename) => {
     if (!filename?.endsWith('.lnk')) return
@@ -813,8 +841,11 @@ function processLnk(lnkPath: string): Resource | null {
 
   const lnkName = basename(lnkPath, '.lnk').replace(/\.\d+$/, '')
   const exeName = basename(target, ext)
+  const lnkLower = lnkName.toLowerCase()
+  const exeLower = exeName.toLowerCase()
   // 快捷方式名称与 exe 名不同 → 用户自定义命名（如「VK加速器全球版」「Google Chrome」）
-  const isUserNamed = lnkName.toLowerCase() !== exeName.toLowerCase()
+  // 排除：lnk 名只是 exe 名加扩展名（如 Recent 里的 chrome.exe.lnk → "chrome.exe"，不算用户命名）
+  const isUserNamed = lnkLower !== exeLower && lnkLower !== exeLower + ext.toLowerCase()
   // 文件夹类型：用 target 实际名称，去掉 Windows 自动追加的消歧括号（如 "project (4)"）
   const rawTitle = isUserNamed ? lnkName : exeName
   const title = type === 'folder' ? rawTitle.replace(/\s*\(\d+\)$/, '') : rawTitle
