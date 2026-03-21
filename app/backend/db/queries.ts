@@ -73,8 +73,9 @@ export function upsertResource(
   if (info.changes === 0) return null
 
   // 新插入 or 标题被更新：通过 file_path 查出真实记录（冲突时原 id 未写入）
+  // 必须调用 attachTags()，否则 DO UPDATE 路径返回裸行（无 tags），导致前端用无标签快照覆盖 store
   const existing = db.prepare('SELECT * FROM resources WHERE file_path = ?').get(data.file_path) as Resource | undefined
-  return existing ?? getResourceById(id) ?? null
+  return existing ? attachTags(existing) : getResourceById(id) ?? null
 }
 
 export function updateResource(id: string, data: Partial<Resource>): void {
@@ -135,8 +136,11 @@ export function removeResource(id: string): void {
 /** 撤销忽略：将完整资源数据（含标签）写回数据库 */
 export function restoreResource(resource: Resource): Resource | null {
   const db = getDb()
+  // 用 INSERT OR IGNORE 而非 INSERT OR REPLACE：REPLACE 会 DELETE+INSERT 触发级联删除 resource_tags，
+  // 若快照因 upsertResource 裸行 bug 而缺少 tags 字段，则标签永久丢失。
+  // 撤销忽略时资源已被 removeResourceByPath 删除，OR IGNORE 在此等价于正常插入，更安全。
   db.prepare(`
-    INSERT OR REPLACE INTO resources
+    INSERT OR IGNORE INTO resources
       (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, open_count, total_run_time, last_run_at)
     VALUES
       (@id, @type, @title, @file_path, @cover_path, @rating, @note, @meta, @added_at, @updated_at, @open_count, @total_run_time, @last_run_at)
