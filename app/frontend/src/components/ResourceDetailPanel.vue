@@ -43,7 +43,7 @@
             <button class="cover-btn" @click="pickCover">
               <span v-html="imageSvg" />{{ t('detail.pickCover') }}
             </button>
-            <button v-if="resource.type === 'webpage'" class="cover-btn" :class="{ 'cover-btn-fail': faviconFailed }" @click="refetchFavicon" :disabled="faviconLoading">
+            <button v-if="canRefetchIcon" class="cover-btn" :class="{ 'cover-btn-fail': faviconFailed }" @click="refetchIcon" :disabled="faviconLoading">
               <span v-html="faviconLoading ? spinSvg : refreshSvg" />{{ faviconLoading ? t('detail.favicon.loading') : faviconFailed ? t('detail.favicon.failed') : t('detail.favicon.refetch') }}
             </button>
           </div>
@@ -427,15 +427,25 @@ const refreshSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const spinSvg    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="animation:spin .8s linear infinite"><circle cx="12" cy="12" r="10" stroke-opacity=".25"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>`
 const copySvg    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
 
-// ─── Refetch favicon (webpage only) ────────────────────────────────
+// Types that support automatic icon fetching
+const REFETCHABLE_TYPES = new Set(['webpage', 'app', 'game'])
+const canRefetchIcon = computed(() => REFETCHABLE_TYPES.has(props.resource.type))
+
+// ─── Refetch icon (webpage → favicon, app/game → system icon) ──────
 const faviconLoading = ref(false)
 const faviconFailed  = ref(false)
-async function refetchFavicon() {
+async function refetchIcon() {
   if (faviconLoading.value) return
   faviconLoading.value = true
   faviconFailed.value  = false
   try {
-    const icon = await window.api.webpage.fetchFavicon(props.resource.file_path)
+    let icon: string | null = null
+    const type = props.resource.type
+    if (type === 'webpage') {
+      icon = await window.api.webpage.fetchFavicon(props.resource.file_path)
+    } else if (type === 'app' || type === 'game') {
+      icon = await window.api.files.getAppIcon(props.resource.file_path, true)
+    }
     if (!icon) { faviconFailed.value = true; return }
     const savedPath = await window.api.files.saveCover(props.resource.id, icon)
     if (savedPath) {

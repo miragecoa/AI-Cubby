@@ -3,9 +3,22 @@ import { net } from 'electron'
 import { dirname, join } from 'path'
 import { existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, writeFileSync } from 'fs'
 import { spawn } from 'child_process'
-import { get as httpsGet } from 'https'
-import { get as httpGet } from 'http'
 import { getSetting, setSetting } from './db/queries'
+
+// ── Timeout-aware fetch (respects system proxy via Electron net) ─────
+const DEFAULT_TIMEOUT = 15_000  // 15 seconds
+
+async function fetchWithTimeout(url: string, opts: RequestInit & { timeout?: number } = {}): Promise<Response> {
+  const { timeout = DEFAULT_TIMEOUT, ...fetchOpts } = opts
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeout)
+  try {
+    const resp = await net.fetch(url, { ...fetchOpts, signal: controller.signal } as any)
+    return resp
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 const REPO = 'miragecoa/AI-Resource-Manager'
 const ASSET_PATTERN = /^AI-Resource-Manager-.*-portable-win-x64\.zip$/
@@ -54,7 +67,7 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
 
   // Check from R2 (China-accessible, no GitHub API dependency)
   // cache: 'no-store' bypasses Electron/Chromium disk cache; ?_t= busts CDN cache
-  const resp = await net.fetch(
+  const resp = await fetchWithTimeout(
     `${R2_PUBLIC_URL}/latest.json?_t=${Date.now()}`,
     { cache: 'no-store', headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
   )
@@ -94,60 +107,65 @@ function noUpdate(currentVersion: string): UpdateInfo {
 
 // ── Download update ──────────────────────────────────────
 
-function followDownload(url: string, totalSize: number, wc: WebContents | null = null): Promise<string> {
+async function followDownload(url: string, totalSize: number, wc: WebContents | null = null): Promise<string> {
   const appDir = app.isPackaged ? dirname(process.execPath) : app.getAppPath()
   const tempDir = join(appDir, '.update-temp')
   if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true })
   const zipPath = join(tempDir, 'update.zip')
   if (existsSync(zipPath)) unlinkSync(zipPath)
 
-  return new Promise((resolve, reject) => {
-    const getter = url.startsWith('https') ? httpsGet : httpGet
-    getter(url, { headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }, (res) => {
-      // Follow redirects (GitHub 302 → CDN)
-      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
-        res.destroy()
-        return followDownload(res.headers.location, totalSize, wc).then(resolve, reject)
-      }
-      if (res.statusCode !== 200) return reject(new Error(`Download failed: ${res.statusCode}`))
-
-      const contentLen = Number(res.headers['content-length']) || totalSize
-      let received = 0
-      let lastProgressTime = 0
-      const ws = createWriteStream(zipPath)
-
-      res.on('data', (chunk: Buffer) => {
-        ws.write(chunk)
-        received += chunk.length
-        const now = Date.now()
-        if (contentLen > 0 && now - lastProgressTime >= 200) {
-          lastProgressTime = now
-          const percent = Math.round((received / contentLen) * 100)
-          if (wc && !wc.isDestroyed()) wc.send('updater:progress', percent)
-        }
-      })
-
-      res.on('end', () => {
-        if (wc && !wc.isDestroyed()) wc.send('updater:progress', 100)
-        ws.end(() => {
-          const dlSize = statSync(zipPath).size
-          if (contentLen > 0 && Math.abs(dlSize - contentLen) > 1024) {
-            unlinkSync(zipPath)
-            return reject(new Error(`Size mismatch: expected ${contentLen}, got ${dlSize}`))
-          }
-          resolve(zipPath)
-        })
-      })
-
-      res.on('error', reject)
-      ws.on('error', reject)
-    }).on('error', reject)
+  // Use Electron net.fetch which respects system proxy settings (VPN/global proxy)
+  // Timeout: 5 minutes for large downloads
+  const resp = await fetchWithTimeout(url, {
+    headers: { 'User-Agent': 'AI-Resource-Manager-Updater' },
+    timeout: 5 * 60 * 1000,
   })
+  if (!resp.ok) throw new Error(`Download failed: ${resp.status}`)
+
+  const contentLen = Number(resp.headers.get('content-length')) || totalSize
+  const reader = resp.body?.getReader()
+  if (!reader) throw new Error('No response body')
+
+  const ws = createWriteStream(zipPath)
+  let received = 0
+  let lastProgressTime = 0
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      ws.write(Buffer.from(value))
+      received += value.byteLength
+      const now = Date.now()
+      if (contentLen > 0 && now - lastProgressTime >= 200) {
+        lastProgressTime = now
+        const percent = Math.round((received / contentLen) * 100)
+        if (wc && !wc.isDestroyed()) wc.send('updater:progress', percent)
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (wc && !wc.isDestroyed()) wc.send('updater:progress', 100)
+
+  await new Promise<void>((resolve, reject) => {
+    ws.end(() => {
+      const dlSize = statSync(zipPath).size
+      if (contentLen > 0 && Math.abs(dlSize - contentLen) > 1024) {
+        unlinkSync(zipPath)
+        return reject(new Error(`Size mismatch: expected ${contentLen}, got ${dlSize}`))
+      }
+      resolve()
+    })
+  })
+
+  return zipPath
 }
 
 /** 强制拉取最新 Release（无视版本号），下载并应用 */
 export async function forceUpdate(): Promise<void> {
-  const resp = await net.fetch(
+  const resp = await fetchWithTimeout(
     `${R2_PUBLIC_URL}/latest.json?_t=${Date.now()}`,
     { cache: 'no-store', headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
   )
@@ -183,7 +201,7 @@ export async function applyAndRestart(): Promise<void> {
 
   // Fetch updater script from R2. This allows updating the install logic without
   // shipping a new app release. R2 must be reachable — no fallback.
-  const resp = await net.fetch(
+  const resp = await fetchWithTimeout(
     `${R2_PUBLIC_URL}/updater.ps1?_t=${Date.now()}`,
     { cache: 'no-store', headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
   )
@@ -234,19 +252,31 @@ export interface ReleaseNote {
   publishedAt: string
 }
 
-export async function getChangelog(): Promise<ReleaseNote[]> {
-  const resp = await net.fetch(
-    `https://api.github.com/repos/${REPO}/releases?per_page=15`,
-    { headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
-  )
-  if (!resp.ok) throw new Error(`GitHub API error: ${resp.status}`)
-  const releases = await resp.json() as any[]
-  return releases.map((r: any) => ({
-    tag: (r.tag_name || '').replace(/^v/, ''),
-    name: r.name || r.tag_name || '',
-    body: (r.body || '').trim(),
-    publishedAt: r.published_at || '',
-  }))
+export async function getChangelog(retries = 2): Promise<ReleaseNote[]> {
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const resp = await fetchWithTimeout(
+        `https://api.github.com/repos/${REPO}/releases?per_page=15`,
+        { headers: { 'User-Agent': 'AI-Resource-Manager-Updater' }, timeout: 10_000 }
+      )
+      if (!resp.ok) throw new Error(`GitHub API error: ${resp.status}`)
+      const releases = await resp.json() as any[]
+      return releases.map((r: any) => ({
+        tag: (r.tag_name || '').replace(/^v/, ''),
+        name: r.name || r.tag_name || '',
+        body: (r.body || '').trim(),
+        publishedAt: r.published_at || '',
+      }))
+    } catch (e: any) {
+      lastErr = e
+      if (attempt < retries) {
+        console.warn(`[Updater] getChangelog attempt ${attempt + 1} failed, retrying in 2s:`, e.message)
+        await new Promise(r => setTimeout(r, 2000))
+      }
+    }
+  }
+  throw lastErr!
 }
 
 // ── Skip version ─────────────────────────────────────────

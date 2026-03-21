@@ -638,6 +638,10 @@ function createWindow(): void {
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
+  // app.quit() 是异步的，不会阻止后续同步代码执行
+  // 必须用 process.exit() 立即退出，否则 app.whenReady() 会继续执行
+  // 导致 globalShortcut 在 app ready 之前被调用而崩溃
+  process.exit(0)
 } else {
   app.on('second-instance', () => {
     if (mainWindow) {

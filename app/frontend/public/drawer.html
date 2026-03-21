@@ -242,10 +242,10 @@
     // Collapse: slide the container into the chosen edge; strip goes full opacity
     function collapseToEdge() {
       if (currentEdge === 'none') return
-      if (currentEdge === 'right')  tab.style.transform = `translateX(calc(100% - ${PEEK_PX}px))`
-      else if (currentEdge === 'left')   tab.style.transform = `translateX(calc(-100% + ${PEEK_PX}px))`
-      else if (currentEdge === 'top')    tab.style.transform = `translateY(calc(-100% + ${PEEK_PX}px))`
-      else if (currentEdge === 'bottom') tab.style.transform = `translateY(calc(100% - ${PEEK_PX}px))`
+      if (currentEdge === 'right')       tab.style.transform = 'translateX(100%)'
+      else if (currentEdge === 'left')   tab.style.transform = 'translateX(-100%)'
+      else if (currentEdge === 'top')    tab.style.transform = 'translateY(-100%)'
+      else if (currentEdge === 'bottom') tab.style.transform = 'translateY(100%)'
       peekStrip.style.opacity = '0.92'
       
       // CRITICAL: Wait for CSS transition (0.22s) to finish!

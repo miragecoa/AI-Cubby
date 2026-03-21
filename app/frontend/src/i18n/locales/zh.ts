@@ -457,7 +457,7 @@ export default {
     favicon: {
       loading: '获取中…',
       failed: '获取失败，点击重试',
-      refetch: '刷新图标',
+      refetch: '重新自动获取图标',
     },
     types: {
       game: '游戏',

@@ -403,7 +403,8 @@ export function registerIpcHandlers(): void {
 
   // 获取可执行文件的系统图标（用于 .exe / .lnk 资源卡片预览）
   // 策略1: app.getFileIcon (SHGetFileInfo) → 策略2: 同目录/子目录扫描 → 策略3: PowerShell ExtractAssociatedIcon
-  ipcMain.handle('files:getAppIcon', async (_e, filePath: string) => {
+  ipcMain.handle('files:getAppIcon', async (_e, filePath: string, force?: boolean) => {
+    if (force) appIconCache.delete(filePath)
     if (appIconCache.has(filePath)) return appIconCache.get(filePath) ?? null
 
     const cache = (v: string | null) => { appIconCache.set(filePath, v); return v }

@@ -457,7 +457,7 @@ export default {
     favicon: {
       loading: 'Fetching…',
       failed: 'Failed, retry',
-      refetch: 'Refresh icon',
+      refetch: 'Auto-fetch icon',
     },
     types: {
       game: 'Game',
