@@ -1,9 +1,22 @@
 $host.UI.RawUI.WindowTitle = 'AI Resource Manager Updater'
 Write-Host 'Waiting for app to exit...' -ForegroundColor Cyan
 while (Get-Process -Id __PID__ -EA SilentlyContinue) { Start-Sleep 1 }
-Start-Sleep 3
 
-$appDir     = '__APP_DIR__'
+# Also wait for any remaining Electron child processes (GPU, renderer, etc.)
+# that may still hold file locks after the main process exits.
+$appDir  = '__APP_DIR__'
+$timeout = 15
+$waited  = 0
+while ($waited -lt $timeout) {
+    $procs = Get-Process | Where-Object {
+        try { $m = $_.MainModule; $m -and $m.FileName -like "$appDir\*" } catch { $false }
+    }
+    if (-not $procs) { break }
+    Start-Sleep 1
+    $waited++
+}
+Start-Sleep 1
+
 $zipPath    = '__ZIP_PATH__'
 $exePath    = '__EXE_PATH__'
 $oldExeName = [System.IO.Path]::GetFileName($exePath)
@@ -36,6 +49,8 @@ $newExeInSource = Get-ChildItem -Path $sourceDir -Filter '*.exe' -File | Select-
 
 Write-Host 'Installing...' -ForegroundColor Cyan
 $script:failed = 0
+$maxRetry  = 3
+$retryWait = 1  # seconds between retries
 
 Get-ChildItem -Path $sourceDir -Recurse -File | ForEach-Object {
     $rel     = $_.FullName.Substring($sourceDir.Length).TrimStart('\/')
@@ -46,28 +61,41 @@ Get-ChildItem -Path $sourceDir -Recurse -File | ForEach-Object {
         New-Item -ItemType Directory -Path $destDir -Force | Out-Null
     }
 
-    # If a file already exists, rename it to .bak first.
-    # Windows allows renaming memory-mapped / open-handle files — the handle
-    # stays valid on the old name, freeing the target path for the new file.
+    # Rename existing file to .bak with retries.
+    # Windows allows renaming memory-mapped files — the handle stays valid on
+    # the old name, freeing the target path for the new file.
     $bakPath = "$dest.bak"
     if (Test-Path $dest) {
         Remove-Item $bakPath -Force -EA SilentlyContinue
-        try {
-            Rename-Item $dest $bakPath -Force -EA Stop
-        } catch {
-            Write-Host "  Warn: could not rename $rel — $_" -ForegroundColor Yellow
+        $renamed = $false
+        for ($i = 0; $i -lt $maxRetry; $i++) {
+            try {
+                Rename-Item $dest $bakPath -Force -EA Stop
+                $renamed = $true
+                break
+            } catch {
+                if ($i -lt $maxRetry - 1) { Start-Sleep $retryWait } else {
+                    Write-Host "  Warn: could not rename $rel after $maxRetry tries — $_" -ForegroundColor Yellow
+                }
+            }
         }
     }
 
-    try {
-        Copy-Item $_.FullName $dest -Force -EA Stop
-        # Remove backup only after successful copy
-        Remove-Item $bakPath -Force -EA SilentlyContinue
-    } catch {
-        Write-Host "  Error: could not install $rel — $_" -ForegroundColor Red
-        # Restore backup if copy failed
-        if (Test-Path $bakPath) { Rename-Item $bakPath $dest -Force -EA SilentlyContinue }
-        $script:failed++
+    # Copy new file with retries; restore backup on persistent failure.
+    $copied = $false
+    for ($i = 0; $i -lt $maxRetry; $i++) {
+        try {
+            Copy-Item $_.FullName $dest -Force -EA Stop
+            $copied = $true
+            Remove-Item $bakPath -Force -EA SilentlyContinue
+            break
+        } catch {
+            if ($i -lt $maxRetry - 1) { Start-Sleep $retryWait } else {
+                Write-Host "  Error: could not install $rel after $maxRetry tries — $_" -ForegroundColor Red
+                if (Test-Path $bakPath) { Rename-Item $bakPath $dest -Force -EA SilentlyContinue }
+                $script:failed++
+            }
+        }
     }
 }
 
