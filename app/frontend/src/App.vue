@@ -13,6 +13,9 @@
     <div class="titlebar" :class="{ 'is-pinned': isPinned }">
       <div class="titlebar-drag" />
       <div class="titlebar-btns">
+        <button class="tb-btn tb-settings" @click="toggleSettings" :title="isOnSettings ? t('app.settingsClose') : t('app.settings')" :class="{ 'tb-active': isOnSettings }">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
         <button class="tb-btn" @click="winTogglePin" :title="isPinned ? t('app.unpin') : t('app.pin')" :class="{ 'tb-pinned': isPinned }">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
             <path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354m1.58 1.408-.002-.001zm-.002-.001.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447h-.002l-.012.007-.054.03a5 5 0 0 0-.827.58c-.318.278-.585.596-.725.936h7.792c-.14-.34-.407-.658-.725-.936a5 5 0 0 0-.881-.61l-.012-.006h-.002A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .295-.458 1.8 1.8 0 0 0 .351-.271c.08-.08.155-.17.214-.271H5.14q.091.15.214.271a1.8 1.8 0 0 0 .37.282"/>
@@ -43,8 +46,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter, useRoute } from 'vue-router'
 import { useResourceStore } from './stores/resources'
 import { useSettingsStore } from './stores/settings'
 import Sidebar from './components/Sidebar.vue'
@@ -57,11 +61,18 @@ const isMasonryWindow = windowParam === 'masonry'
 const isDropWindow = windowParam === 'drop-import'
 
 const { t } = useI18n()
+const router = useRouter()
+const route = useRoute()
 const store = useResourceStore()
 const settingsStore = useSettingsStore()
 const showConsent = ref(false)
 const isMaximized = ref(false)
 const isPinned = ref(false)
+
+const isOnSettings = computed(() => route.path === '/settings')
+function toggleSettings() {
+  router.push(isOnSettings.value ? '/library' : '/settings')
+}
 
 let unsubscribe: (() => void) | null = null
 let unsubscribeRunning: (() => void) | null = null
@@ -210,6 +221,8 @@ body {
 .tb-close:hover { background: #e81123; color: #fff; }
 .tb-pinned { color: #f59e0b; }
 .tb-pinned:hover { background: var(--surface-2); color: #f59e0b; }
+.tb-active { color: var(--accent-2); }
+.tb-active:hover { background: rgba(99,102,241,0.12); color: var(--accent-2); }
 .titlebar.is-pinned .titlebar-drag { -webkit-app-region: no-drag; }
 
 /* ── 主体 ── */

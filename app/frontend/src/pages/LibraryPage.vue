@@ -78,10 +78,10 @@
             <button class="view-toggle-btn" :class="{ active: viewMode === 'list' }" @click="settingsStore.setViewMode(store.activeType, 'list')" :title="t('library.viewList')">
               <span v-html="listViewSvg" />
             </button>
-            <button class="view-toggle-btn" :class="{ active: viewMode === 'heat' }" @click="settingsStore.setViewMode(store.activeType, 'heat')" :title="t('library.viewHeat')">
-              <span v-html="heatViewSvg" />
-            </button>
           </div>
+          <button class="stats-toggle-btn" :class="{ active: !!statsPanel }" @click="toggleStatsPanel" :title="t('library.viewStats')">
+            <span v-html="statsViewSvg" />
+          </button>
           <button class="scan-sys-toolbar-btn" @click="openScanModal" :title="t('library.scanHistoryTitle')">
             <span class="btn-icon" v-html="scanSysSvg" />
             <span class="btn-text">{{ t('library.scanHistory') }}</span>
@@ -255,7 +255,7 @@
 
           <div v-else ref="gridScrollRef" class="grid-scroll">
             <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
-            <div v-if="viewMode === 'grid' || viewMode === 'heat'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
+            <div v-if="viewMode !== 'list'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
               <ResourceCard
                 v-for="item in visibleItems"
                 :key="item.id"
@@ -264,7 +264,7 @@
                 :selected="selectedIds.has(item.id)"
                 :card-zoom="cardZoom"
                 :show-micro-label="store.activeType === 'folder' || store.activeType === 'document'"
-                :heat-level="viewMode === 'heat' ? heatLevel(item) : undefined"
+                :heat-level="statsPanel === 'heat' ? heatLevel(item) : undefined"
                 @toggle-select="toggleSelect(item)"
                 @select="onCardSelect"
                 @open="openResource"
@@ -442,8 +442,8 @@
         </template>
       </div>
 
-      <!-- 右侧标签过滤面板（始终渲染，可折叠） -->
-      <div class="tag-panel" :class="{ collapsed: tagPanelCollapsed, 'no-transition': tagPanelResizing }" :style="tagPanelCollapsed ? {} : { width: tagPanelWidth + 'px' }">
+      <!-- 右侧标签过滤面板（始终渲染，可折叠；统计面板开启时隐藏） -->
+      <div v-show="!statsPanel" class="tag-panel" :class="{ collapsed: tagPanelCollapsed, 'no-transition': tagPanelResizing }" :style="tagPanelCollapsed ? {} : { width: tagPanelWidth + 'px' }">
         <!-- 折叠/展开切换条 -->
         <button
           class="panel-toggle"
@@ -487,6 +487,93 @@
             </button>
           </div>
           <div v-else class="no-tags">{{ t('library.noTags') }}</div>
+        </div>
+      </div>
+
+      <!-- 统计面板 -->
+      <div v-if="statsPanel" class="stats-panel" :class="{ 'no-transition': statsPanelResizing }" :style="{ width: statsPanelWidth + 'px' }">
+        <div class="stats-panel-resize-handle" @mousedown.prevent.stop="onStatsPanelResizeStart" />
+        <div class="stats-panel-header">
+          <div class="stats-tabs">
+            <button class="stats-tab" :class="{ active: statsPanel === 'heat' }" @click="statsPanel = 'heat'">
+              <span v-html="heatTabSvg" />{{ t('library.statsPanel.heat') }}
+            </button>
+            <button class="stats-tab" :class="{ active: statsPanel === 'timeline' }" @click="statsPanel = 'timeline'">
+              <span v-html="timelineTabSvg" />{{ t('library.statsPanel.timeline') }}
+            </button>
+          </div>
+          <button class="stats-close-btn" @click="closeStatsPanel" :title="t('library.statsPanel.close')">
+            <span v-html="closeSvg" />
+          </button>
+        </div>
+
+        <!-- 热力图 tab -->
+        <div v-if="statsPanel === 'heat'" class="stats-content">
+          <div class="heat-legend">
+            <span class="heat-legend-label">{{ t('library.statsPanel.heatLegend') }}</span>
+            <div class="heat-legend-bar">
+              <span v-for="lv in 8" :key="lv" class="heat-swatch" :class="`heat-${lv - 1}`" />
+            </div>
+            <div class="heat-legend-labels">
+              <span>{{ t('library.statsPanel.heatLow') }}</span>
+              <span>{{ t('library.statsPanel.heatHigh') }}</span>
+            </div>
+          </div>
+          <div class="heat-top-title">{{ t('library.statsPanel.topResources') }}</div>
+          <div class="heat-top-list">
+            <div v-for="item in topHeatResources" :key="item.id" class="heat-top-row" @click="onCardSelect(item)">
+              <div class="heat-top-bar-wrap">
+                <div class="heat-top-bar" :class="`heat-${heatLevel(item)}`" :style="{ width: (item.open_count / heatMax * 100) + '%' }" />
+              </div>
+              <span class="heat-top-name" :title="item.title || item.file_path">{{ item.title || item.file_path.replace(/^.*[\\/]/, '') }}</span>
+              <span class="heat-top-count">{{ item.open_count }}</span>
+            </div>
+            <div v-if="topHeatResources.length === 0" class="stats-empty">{{ t('library.noResources') }}</div>
+          </div>
+        </div>
+
+        <!-- 时间线 tab -->
+        <div v-if="statsPanel === 'timeline'" class="stats-content tl-scroll">
+          <div class="tl-date-range">
+            <div class="tl-date-field">
+              <label class="tl-date-label">从</label>
+              <input type="date" class="tl-date-input" v-model="timelineStart" :max="timelineEnd" />
+            </div>
+            <span class="tl-date-sep">—</span>
+            <div class="tl-date-field">
+              <label class="tl-date-label">到</label>
+              <input type="date" class="tl-date-input" v-model="timelineEnd" :min="timelineStart" :max="isoToday()" />
+            </div>
+          </div>
+          <div v-if="timelineData.length === 0" class="stats-empty">{{ timelineStart }} ~ {{ timelineEnd }} 无使用记录</div>
+          <div v-else class="tl-feed">
+            <template v-for="(day, di) in timelineData" :key="day.isoDate">
+              <!-- 日期分隔线 -->
+              <div class="tl-sep">
+                <span class="tl-sep-line" />
+                <span class="tl-sep-label">{{ day.label }}</span>
+                <span class="tl-sep-line" />
+              </div>
+              <!-- 每个资源 -->
+              <div
+                v-for="(r, ri) in day.resources"
+                :key="r.id"
+                class="tl-entry"
+                :class="{ 'no-line': di === timelineData.length - 1 && ri === day.resources.length - 1 }"
+                @click="onCardSelect(r)"
+                :title="r.title || r.file_path"
+              >
+                <div class="tl-spine">
+                  <div class="tl-dot" />
+                  <div class="tl-line" />
+                </div>
+                <div class="tl-body">
+                  <span class="tl-name">{{ r.title || r.file_path.replace(/^.*[\\/]/, '') }}</span>
+                  <span class="tl-time">{{ formatTime(r.last_run_at) }}</span>
+                </div>
+              </div>
+            </template>
+          </div>
         </div>
       </div>
     </div>
@@ -1454,6 +1541,93 @@ async function doBatchDelete() {
   loadTags()
 }
 
+// 统计面板
+const statsPanel = ref<'' | 'heat' | 'timeline'>(
+  (localStorage.getItem('statsPanel') || '') as '' | 'heat' | 'timeline'
+)
+const statsPanelWidth = ref(parseInt(localStorage.getItem('statsPanelWidth') || '280'))
+const statsPanelResizing = ref(false)
+// 从 localStorage 初始化：即使启动时统计面板已打开，也能在关闭时正确恢复标签状态
+let savedTagCollapsed = localStorage.getItem('tagPanelCollapsed') === '1'
+
+watch(statsPanel, (val) => {
+  localStorage.setItem('statsPanel', val)
+})
+
+function onStatsPanelResizeStart(e: MouseEvent) {
+  statsPanelResizing.value = true
+  const startX = e.screenX
+  const startW = statsPanelWidth.value
+  const onMove = (ev: MouseEvent) => {
+    statsPanelWidth.value = Math.max(220, Math.min(520, startW + startX - ev.screenX))
+  }
+  const onUp = () => {
+    statsPanelResizing.value = false
+    localStorage.setItem('statsPanelWidth', String(statsPanelWidth.value))
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+
+function closeStatsPanel() {
+  statsPanel.value = ''
+  tagPanelCollapsed.value = savedTagCollapsed
+}
+
+function toggleStatsPanel() {
+  if (statsPanel.value) {
+    closeStatsPanel()
+  } else {
+    savedTagCollapsed = tagPanelCollapsed.value
+    statsPanel.value = 'heat'
+    tagPanelCollapsed.value = true
+  }
+}
+
+// 时间线日期范围筛选
+function isoToday() {
+  return new Date().toISOString().slice(0, 10)
+}
+function isoDateBefore(days: number) {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+const timelineStart = ref(isoDateBefore(30))
+const timelineEnd   = ref(isoToday())
+
+const topHeatResources = computed(() =>
+  [...store.filtered].sort((a, b) => b.open_count - a.open_count).slice(0, 15)
+)
+
+const timelineData = computed(() => {
+  const dayMap = new Map<string, Resource[]>()
+  const cutoff  = timelineStart.value ? new Date(timelineStart.value + 'T00:00:00').getTime() : 0
+  const ceiling = timelineEnd.value   ? new Date(timelineEnd.value   + 'T23:59:59').getTime() : Infinity
+  for (const r of store.filtered) {
+    if (!r.last_run_at) continue
+    if (cutoff  && r.last_run_at < cutoff)  continue
+    if (ceiling && r.last_run_at > ceiling) continue
+    const key = new Date(r.last_run_at).toISOString().slice(0, 10)
+    if (!dayMap.has(key)) dayMap.set(key, [])
+    dayMap.get(key)!.push(r)
+  }
+  return [...dayMap.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([isoDate, resources]) => ({
+      isoDate,
+      label: new Date(isoDate + 'T12:00:00').toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' }),
+      resources: resources.sort((a, b) => (b.last_run_at ?? 0) - (a.last_run_at ?? 0))
+    }))
+})
+
+function formatTime(ts: number | null): string {
+  if (!ts) return ''
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
 // 标签筛选面板
 const tagPanelCollapsed = ref(localStorage.getItem('tagPanelCollapsed') === '1')
 const tagPanelWidth = ref(212)
@@ -1462,7 +1636,11 @@ const dbTags = ref<Array<{ id: number; name: string; count: number }>>([])
 const tagSearch = ref('')
 
 watch(tagPanelCollapsed, (val) => {
-  localStorage.setItem('tagPanelCollapsed', val ? '1' : '0')
+  // 统计面板打开时强制折叠标签，此时不保存，避免污染用户设置
+  if (!statsPanel.value) {
+    localStorage.setItem('tagPanelCollapsed', val ? '1' : '0')
+  }
+  if (!val) statsPanel.value = ''  // 展开标签面板时关闭统计面板
 })
 
 async function loadTags() {
@@ -1916,6 +2094,9 @@ const scanSysSvg      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const gridViewSvg     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`
 const listViewSvg     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`
 const heatViewSvg     = `<svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="1" width="3.5" height="3.5" rx=".6"/><rect x="6.25" y="1" width="3.5" height="3.5" rx=".6"/><rect x="11.5" y="1" width="3.5" height="3.5" rx=".6"/><rect x="1" y="6.25" width="3.5" height="3.5" rx=".6"/><rect x="6.25" y="6.25" width="3.5" height="3.5" rx=".6"/><rect x="11.5" y="6.25" width="3.5" height="3.5" rx=".6"/><rect x="1" y="11.5" width="3.5" height="3.5" rx=".6"/><rect x="6.25" y="11.5" width="3.5" height="3.5" rx=".6"/><rect x="11.5" y="11.5" width="3.5" height="3.5" rx=".6"/></svg>`
+const statsViewSvg    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><rect x="2" y="12" width="4" height="9" rx="1"/><rect x="9" y="7" width="4" height="14" rx="1"/><rect x="16" y="3" width="4" height="18" rx="1"/></svg>`
+const heatTabSvg      = `<svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14"><rect x="1" y="1" width="3.5" height="3.5" rx=".6" opacity=".3"/><rect x="6.25" y="1" width="3.5" height="3.5" rx=".6" opacity=".6"/><rect x="11.5" y="1" width="3.5" height="3.5" rx=".6"/><rect x="1" y="6.25" width="3.5" height="3.5" rx=".6" opacity=".5"/><rect x="6.25" y="6.25" width="3.5" height="3.5" rx=".6" opacity=".8"/><rect x="11.5" y="6.25" width="3.5" height="3.5" rx=".6"/><rect x="1" y="11.5" width="3.5" height="3.5" rx=".6" opacity=".2"/><rect x="6.25" y="11.5" width="3.5" height="3.5" rx=".6" opacity=".5"/><rect x="11.5" y="11.5" width="3.5" height="3.5" rx=".6" opacity=".9"/></svg>`
+const timelineTabSvg  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="2" fill="currentColor" stroke="none"/></svg>`
 const masonryViewSvg  = `<svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="1" width="5" height="9" rx=".6"/><rect x="8" y="1" width="5" height="5" rx=".6"/><rect x="1" y="12" width="5" height="3" rx=".6"/><rect x="8" y="8" width="5" height="7" rx=".6"/></svg>`
 const checkSvg        = `<svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`
 const updateSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
@@ -3353,6 +3534,340 @@ async function deleteIgnored(filePath: string) {
   text-align: center;
   font-size: 13px;
   color: var(--text-3);
+}
+
+/* ── stats-toggle-btn ── */
+.stats-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-3);
+  cursor: pointer;
+  margin-left: 4px;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.stats-toggle-btn:hover { background: var(--surface-2); color: var(--text-2); }
+.stats-toggle-btn.active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── 统计面板 ── */
+.stats-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: relative;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+.stats-panel.no-transition { transition: none; }
+.stats-panel-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 10;
+}
+.stats-panel-resize-handle:hover,
+.stats-panel.no-transition .stats-panel-resize-handle {
+  background: rgba(99, 102, 241, 0.35);
+}
+
+.stats-panel-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px 0;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.stats-tabs {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+}
+
+.stats-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.stats-tab:hover { background: var(--surface-2); color: var(--text-2); }
+.stats-tab.active {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: var(--accent);
+  color: var(--accent-2);
+}
+.stats-tab :deep(svg) { flex-shrink: 0; }
+
+.stats-close-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.stats-close-btn:hover { background: var(--surface-2); color: var(--text); }
+.stats-close-btn :deep(svg) { width: 14px; height: 14px; }
+
+.stats-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.stats-empty {
+  padding: 32px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ── 热力图 tab ── */
+.heat-legend {
+  margin-bottom: 16px;
+}
+.heat-legend-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.heat-legend-bar {
+  display: flex;
+  gap: 3px;
+  height: 12px;
+  margin-bottom: 4px;
+}
+.heat-swatch {
+  flex: 1;
+  border-radius: 2px;
+}
+.heat-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.heat-top-title {
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.heat-top-list { display: flex; flex-direction: column; gap: 6px; }
+
+.heat-top-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 3px 4px;
+  border-radius: 5px;
+  transition: background 0.1s;
+}
+.heat-top-row:hover { background: var(--surface-2); }
+
+.heat-top-bar-wrap {
+  width: 40px;
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.heat-top-bar {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 4px;
+}
+
+/* heat color palette (shared between swatch + bar) */
+.heat-0 { background: rgba(255,255,255,0.10); }
+.heat-1 { background: rgba(99,102,241,0.50); }
+.heat-2 { background: rgba(99,102,241,0.65); }
+.heat-3 { background: rgba(99,102,241,0.85); }
+.heat-4 { background: rgba(168,85,247,0.75); }
+.heat-5 { background: rgba(245,158,11,0.65); }
+.heat-6 { background: rgba(245,158,11,0.85); }
+.heat-7 { background: rgba(239,68,68,0.80); }
+.heat-top-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heat-top-count {
+  font-size: 11px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+/* ── 时间线 tab ── */
+.tl-scroll { padding: 4px 12px 12px; }
+
+.tl-date-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: 7px;
+}
+.tl-date-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+.tl-date-label {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.tl-date-sep {
+  font-size: 11px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.tl-date-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 4px;
+  cursor: pointer;
+  outline: none;
+  color-scheme: dark;
+}
+.tl-date-input:focus { border-color: rgba(99,102,241,0.5); }
+
+.tl-feed { display: flex; flex-direction: column; }
+
+/* 日期分隔线 */
+.tl-sep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 2px;
+}
+.tl-sep:first-child { margin-top: 2px; }
+.tl-sep-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.tl-sep-label {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+}
+
+/* 每条时间线记录 */
+.tl-entry {
+  display: flex;
+  gap: 10px;
+  cursor: pointer;
+}
+.tl-entry:hover .tl-body { color: var(--text); }
+.tl-entry:hover .tl-name { color: var(--text); }
+.tl-entry:hover .tl-dot { background: var(--accent-2, #818cf8); }
+
+/* 左侧竖轴：圆点 + 连接线 */
+.tl-spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 10px;
+  padding-top: 11px; /* align dot with first line of text */
+}
+.tl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px var(--surface);
+  transition: background 0.12s;
+}
+.tl-line {
+  flex: 1;
+  width: 2px;
+  min-height: 10px;
+  margin-top: 4px;
+  background: linear-gradient(to bottom,
+    rgba(99,102,241,0.5) 0%,
+    rgba(99,102,241,0.12) 100%
+  );
+}
+.tl-entry.no-line .tl-line { display: none; }
+
+/* 右侧内容 */
+.tl-body {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 6px 10px 0;
+  border-radius: 5px;
+  min-width: 0;
+  transition: background 0.1s;
+}
+.tl-entry:hover .tl-body { background: var(--surface-2); padding-left: 6px; margin-left: -6px; }
+.tl-name {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.1s;
+}
+.tl-time {
+  font-size: 11px;
+  color: var(--text-3);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── 撤销 Toast ── */

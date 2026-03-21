@@ -67,12 +67,6 @@
         </div>
       </div>
 
-      <div class="sidebar-footer">
-        <RouterLink to="/settings" class="nav-item">
-          <span class="nav-icon" v-html="settingsIcon" />
-          <span class="nav-label">{{ t('nav.settings') }}</span>
-        </RouterLink>
-      </div>
     </div>
 
     <div v-if="!settingsStore.sidebarCollapsed" class="sidebar-resize-handle" @mousedown.prevent.stop="onResizeStart" />
@@ -383,10 +377,30 @@ const chevronRightSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
   color: var(--accent-2);
 }
 
-/* ── 页脚 ─────────────────────────────────────────────────────── */
-.sidebar-footer {
-  border-top: 1px solid var(--border);
-  padding: 6px 0;
+.hdr-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: background 0.1s, color 0.1s;
+}
+
+.hdr-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.hdr-btn :deep(svg) {
+  width: 15px;
+  height: 15px;
 }
 
 .edit-btn {
