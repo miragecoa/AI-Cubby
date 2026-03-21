@@ -226,7 +226,13 @@ const displayTitle = computed(() => {
   if (dot > sep && dot > 0) {
     const ext = r.file_path.slice(dot)
     // title 已含扩展名或无扩展名类型（文件夹）则跳过
-    if (!r.title.toLowerCase().endsWith(ext.toLowerCase())) return r.title + ext
+    if (!r.title.toLowerCase().endsWith(ext.toLowerCase())) {
+      // app/game 且 title 是 lnk 友好名（≠ exe 基名），不追加扩展名
+      // 例：title="Google Chrome"，exe="chrome" → 不追加；title="chrome" → 追加 .exe
+      const exeBase = r.file_path.slice(sep + 1, dot)
+      if ((r.type === 'app' || r.type === 'game') && r.title.toLowerCase() !== exeBase.toLowerCase()) return r.title
+      return r.title + ext
+    }
   }
   return r.title
 })

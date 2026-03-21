@@ -172,6 +172,8 @@ function isBlockedProcess(exePath: string): boolean {
   if (BLOCKED_EXE_NAMES.has(exeName)) return true
   // 带 _ → 辅助/后台进程（wetype_service、logioptionsplus_updater、Wacom_UpdateUtil 等）
   if (exeName.includes('_')) return true
+  // 含 update → 更新程序（googlechromeupdate、autoupdate 等无下划线变体）
+  if (exeName.includes('update')) return true
   if (isIgnored(exePath)) return true
   if (isBlockedDir(exePath)) return true
   return false
@@ -348,7 +350,7 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
       // 只升级自动生成的标题，用户手动改过的跳过
       if (existingResource && lnkTitle && !lnkTitle.toLowerCase().endsWith('.exe')) {
         const exeBase = basename(lower, '.exe')
-        const isAutoTitle = existingResource.title.toLowerCase() === exeBase || existingResource.title.toLowerCase() === exeBase + '.exe'
+        const isAutoTitle = existingResource.title.toLowerCase() === exeBase || existingResource.title.toLowerCase().endsWith('.exe')
         if (isAutoTitle) {
           console.log(`[Monitor] Title upgraded: "${existingResource.title}" → "${lnkTitle}"`)
           updateResource(existingResource.id, { title: lnkTitle })
@@ -479,6 +481,77 @@ function preloadLnkNames(folders: string[]): void {
 }
 
 /**
+ * PowerShell WScript.Shell 补充扫描开始菜单 .lnk。
+ * Electron 的 shell.readShortcutLink 对某些格式（如 VS Code 安装的快捷方式）会失败，
+ * WScript.Shell.CreateShortcut 兼容性更好，异步运行不阻塞启动。
+ * 扫描完成后把新发现的映射写入 exeToLnkName 并再次执行标题升级。
+ */
+async function supplementLnkNamesFromPS(startMenuFolders: string[]): Promise<void> {
+  try {
+    const foldersArg = startMenuFolders.map(f => `'${f.replace(/'/g, "''")}'`).join(',')
+    const script = [
+      '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+      `$p = @(${foldersArg})`,
+      '$sh = New-Object -ComObject WScript.Shell',
+      'Get-ChildItem -Path $p -Recurse -Filter *.lnk -EA SilentlyContinue | ForEach-Object {',
+      '  try {',
+      '    $t = $sh.CreateShortcut($_.FullName).TargetPath',
+      '    if ($t) { Write-Output "$($_.FullName)|$t" }',
+      '  } catch {}',
+      '}',
+    ].join('\n')
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    const { stdout } = await execFileAsync('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      { timeout: 15000, windowsHide: true, encoding: 'utf8' }
+    )
+
+    let added = 0
+    for (const line of stdout.split(/\r?\n/)) {
+      const idx = line.indexOf('|')
+      if (idx < 0) continue
+      const lnkPath = line.slice(0, idx).trim()
+      const target  = line.slice(idx + 1).trim()
+      if (!target.toLowerCase().endsWith('.exe')) continue
+
+      const lnkName   = basename(lnkPath, '.lnk').replace(/\.\d+$/, '')
+      const targetExt = extname(target)
+      const exeName   = basename(target, targetExt)
+      const lnkLower  = lnkName.toLowerCase()
+      const exeLower  = exeName.toLowerCase()
+      const targetLow = target.toLowerCase()
+
+      if (lnkLower !== exeLower && lnkLower !== exeLower + targetExt.toLowerCase() && !exeToLnkName.has(targetLow)) {
+        exeToLnkName.set(targetLow, lnkName)
+        exeToLnkPath.set(targetLow, lnkPath)
+        added++
+      }
+    }
+
+    if (added === 0) return
+    console.log(`[Monitor] PS supplemental lnk scan: +${added} new mapping(s)`)
+
+    // 再次执行标题升级，处理第一轮升级时还未收录的映射（如 VS Code）
+    let upgraded = 0
+    for (const resource of getAllAppResources()) {
+      const lower    = resource.file_path.toLowerCase()
+      const lnkTitle = exeToLnkName.get(lower)
+      if (!lnkTitle || lnkTitle.toLowerCase().endsWith('.exe')) continue
+      if (resource.title.toLowerCase() === lnkTitle.toLowerCase()) continue
+      const exeBase     = basename(lower, '.exe')
+      const isAutoTitle = resource.title.toLowerCase() === exeBase || resource.title.toLowerCase().endsWith('.exe')
+      if (!isAutoTitle) continue
+      updateResource(resource.id, { title: lnkTitle })
+      console.log(`[Monitor] PS title upgraded: "${resource.title}" → "${lnkTitle}"`)
+      upgraded++
+    }
+    if (upgraded > 0) console.log(`[Monitor] PS upgraded ${upgraded} resource title(s)`)
+  } catch (e) {
+    console.warn('[Monitor] supplementLnkNamesFromPS failed:', e)
+  }
+}
+
+/**
  * 启动时检查当前已运行的进程，对已入库资源标记运行状态。
  * WMI 只能捕获新启动的进程，此函数补充检测 App 启动前已在运行的程序。
  * 异步执行（约 3-5 秒），不阻塞主流程。
@@ -552,12 +625,15 @@ export function startMonitor(onNewEntry: (entry: Resource) => void, onRunningCha
     if (resource.title.toLowerCase() === lnkTitle.toLowerCase()) continue
     // 只升级自动生成的标题（等于 exe 名），用户手动改过的跳过
     const exeBase = basename(lower, '.exe')
-    const isAutoTitle = resource.title.toLowerCase() === exeBase || resource.title.toLowerCase() === exeBase + '.exe'
+    const isAutoTitle = resource.title.toLowerCase() === exeBase || resource.title.toLowerCase().endsWith('.exe')
     if (!isAutoTitle) continue
     updateResource(resource.id, { title: lnkTitle })
     upgraded++
   }
   if (upgraded > 0) console.log(`[Monitor] Upgraded ${upgraded} resource title(s) from lnk mappings`)
+
+  // 异步 PS 补充扫描：处理 readShortcutLink 失败的 lnk（VS Code 等）
+  supplementLnkNamesFromPS([startMenuUser, startMenuGlobal])
 
   recentWatcher = watch(recentPath, { persistent: false }, (_event, filename) => {
     if (!filename?.endsWith('.lnk')) return
