@@ -230,9 +230,20 @@ export async function applyAndRestart(): Promise<void> {
   // exit — including the newly launched Electron app — causing startup logs to leak
   // into the update window. Conhost.exe uses classic behavior and closes on script exit.
   const batPath = join(dirname(downloadedZipPath), 'update.cmd')
-  // No -NonInteractive: the window is intentionally interactive (shows progress, pauses on error)
-  // `if errorlevel 1 pause` keeps the window open so the user can read any error output
-  writeFileSync(batPath, `@powershell.exe -EncodedCommand ${encoded}\r\n@if errorlevel 1 pause\r\n`)
+  // Auto-elevate to Administrator if the app directory requires elevated write access.
+  // %~f0 expands to the full path of this .cmd file (handles spaces correctly).
+  // Non-admin instance launches an elevated copy via UAC and exits immediately.
+  // `if errorlevel 1 pause` keeps the window open so the user can read any error output.
+  writeFileSync(batPath, [
+    '@echo off',
+    'net session >nul 2>&1',
+    'if %ERRORLEVEL% equ 0 goto :run',
+    `powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"`,
+    'exit /b 0',
+    ':run',
+    `powershell.exe -EncodedCommand ${encoded}`,
+    'if errorlevel 1 pause',
+  ].join('\r\n') + '\r\n')
 
   try {
     spawn('conhost.exe', ['cmd.exe', '/c', batPath], {
