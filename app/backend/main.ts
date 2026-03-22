@@ -602,11 +602,14 @@ function createWindow(): void {
     }
   })
 
-  // 最小化 → 隐藏主窗口 + 显示抽屉 + 从任务栏移除
+  // 最小化 → 保留任务栏图标，不隐藏窗口
   mainWindow.on('minimize', () => {
-    mainWindow?.setSkipTaskbar(true)
-    mainWindow?.hide()
     drawerWindow?.show()
+  })
+
+  // 从最小化还原 → 隐藏抽屉
+  mainWindow.on('restore', () => {
+    drawerWindow?.hide()
   })
 
   // 最大化/还原事件转发给渲染进程（用于更新自定义标题栏按钮图标）
