@@ -51,10 +51,11 @@
     }
 
     .row-label {
-      width: 36px;
+      width: 44px;
       font-size: 12px;
       color: var(--text-2);
       flex-shrink: 0;
+      white-space: nowrap;
     }
 
     input[type=range] {
@@ -115,7 +116,7 @@
     .btn.accent { color: var(--accent-2); }
     .btn.accent:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 
-    .btn.danger { color: rgba(252,165,165,0.82); }
+.btn.danger { color: rgba(252,165,165,0.82); }
     .btn.danger:hover { background: rgba(239,68,68,0.12); color: rgba(252,165,165,1); }
 
     .edge-btns {
@@ -174,7 +175,7 @@
     </div>
 
     <div class="row">
-      <span class="row-label" id="ds-edge">贴边</span>
+      <span class="row-label" id="ds-edge">收起方向</span>
       <div class="edge-btns">
         <button class="edge-btn active" data-dir="none" id="ds-edge-off">关</button>
         <button class="edge-btn" data-dir="left" id="ds-edge-left">左</button>
@@ -182,6 +183,10 @@
         <button class="edge-btn" data-dir="top" id="ds-edge-top">上</button>
         <button class="edge-btn" data-dir="bottom" id="ds-edge-bottom">下</button>
       </div>
+    </div>
+    <div class="row" id="pinToEdgeRow">
+      <span class="row-label" id="ds-pin">固定到边缘</span>
+      <button class="edge-btn" id="pinToEdgeBtn" style="flex:none;padding:3px 10px">关</button>
     </div>
 
     <div class="row">
@@ -213,16 +218,18 @@
     // ── i18n ─────────────────────────────────────────────────────────────
     const _DS_I18N = {
       zh: {
-        title: '悬浮窗设置', opacity: '透明度', size: '大小', edge: '贴边',
+        title: '悬浮窗设置', opacity: '透明度', size: '大小', edge: '收起方向',
         edgeOff: '关', edgeLeft: '左', edgeRight: '右', edgeTop: '上', edgeBottom: '下',
+        pin: '固定到边缘', pinOn: '开', pinOff: '关',
         stripLen: '条长', stripWid: '条宽',
         pickIcon: '自定义图标', clearIcon: '恢复默认图标',
         showMain: '显示主窗口', hideDrawer: '隐藏悬浮窗',
         hint: '将文件拖入悬浮图标可快速导入',
       },
       en: {
-        title: 'Drawer Settings', opacity: 'Opacity', size: 'Size', edge: 'Edge',
+        title: 'Drawer Settings', opacity: 'Opacity', size: 'Size', edge: 'Collapse',
         edgeOff: 'Off', edgeLeft: 'L', edgeRight: 'R', edgeTop: 'T', edgeBottom: 'B',
+        pin: 'Pin to edge', pinOn: 'On', pinOff: 'Off',
         stripLen: 'Length', stripWid: 'Width',
         pickIcon: 'Custom icon', clearIcon: 'Reset icon',
         showMain: 'Show window', hideDrawer: 'Hide drawer',
@@ -243,6 +250,8 @@
       document.getElementById('ds-edge-right').textContent = T.edgeRight
       document.getElementById('ds-edge-top').textContent = T.edgeTop
       document.getElementById('ds-edge-bottom').textContent = T.edgeBottom
+      document.getElementById('ds-pin').textContent = T.pin
+      document.getElementById('pinToEdgeBtn').textContent = _pinned ? T.pinOn : T.pinOff
       document.getElementById('ds-striplen').textContent = T.stripLen
       document.getElementById('ds-stripwid').textContent = T.stripWid
       document.getElementById('pickIconBtn').textContent = T.pickIcon
@@ -286,6 +295,16 @@
       if (v) document.documentElement.style.setProperty(k, v)
     }
 
+    const pinToEdgeRow = document.getElementById('pinToEdgeRow')
+    const pinToEdgeBtn = document.getElementById('pinToEdgeBtn')
+    let _pinned = false
+    function setPinState(v) {
+      _pinned = v
+      pinToEdgeBtn.classList.toggle('active', v)
+      const T = _DS_I18N[_dsLang] || _DS_I18N.zh
+      pinToEdgeBtn.textContent = v ? T.pinOn : T.pinOff
+    }
+
     const edgeBtns = document.querySelectorAll('.edge-btn')
     edgeBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -293,6 +312,11 @@
         btn.classList.add('active')
         window.settingsApi.setEdge(btn.dataset.dir)
       })
+    })
+
+    pinToEdgeBtn.addEventListener('click', () => {
+      setPinState(!_pinned)
+      window.settingsApi.setPinToEdge(_pinned)
     })
 
     function fireStripSize() {
@@ -312,7 +336,7 @@
       fireStripSize()
     })
 
-    window.settingsApi.getSettings().then(({ opacity, size, hasCustomIcon, edge, stripLen, stripWid }) => {
+    window.settingsApi.getSettings().then(({ opacity, size, hasCustomIcon, edge, pinToEdge, stripLen, stripWid }) => {
       const pct = Math.round(opacity * 100)
       opacitySlider.value    = pct
       opacityVal.textContent = pct + '%'
@@ -327,6 +351,7 @@
         edgeBtns.forEach(b => b.classList.remove('active'))
         activeEdgeBtn.classList.add('active')
       }
+      setPinState(!!pinToEdge)
 
       stripLenSlider.value    = stripLen ?? 50
       stripLenVal.textContent = (stripLen ?? 50) + '%'

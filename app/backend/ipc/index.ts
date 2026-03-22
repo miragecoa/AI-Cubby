@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSy
 import { readFile, readdir } from 'fs/promises'
 import { execFile, exec } from 'child_process'
 import { join, dirname, extname, basename } from 'path'
+import { domainToASCII } from 'url'
 import { isUNC } from '../utils/fs-safe'
 import {
   getAllResources, getResourceById, updateResource, removeResource,
@@ -700,15 +701,18 @@ export function registerIpcHandlers(): void {
       } catch { return null }
     }
     try {
-      const { hostname, origin } = new URL(url)
+      const { hostname, origin, protocol } = new URL(url)
+      // Convert IDN (e.g. 百度.com) to punycode (xn--fiq228c.com) for HTTP headers
+      const asciiHost = domainToASCII(hostname) || hostname
+      const safeOrigin = asciiHost !== hostname ? `${protocol}//${asciiHost}` : origin
       // 1. DuckDuckGo favicon (works in China, no auth required)
-      const ddg = await tryFetch(`https://icons.duckduckgo.com/ip3/${hostname}.ico`)
+      const ddg = await tryFetch(`https://icons.duckduckgo.com/ip3/${asciiHost}.ico`)
       if (ddg) return ddg
       // 2. Direct /favicon.ico from the site
-      const direct = await tryFetch(`${origin}/favicon.ico`)
+      const direct = await tryFetch(`${safeOrigin}/favicon.ico`)
       if (direct) return direct
       // 3. Google S2 fallback
-      const google = await tryFetch(`https://www.google.com/s2/favicons?domain=${hostname}&sz=128`)
+      const google = await tryFetch(`https://www.google.com/s2/favicons?domain=${asciiHost}&sz=128`)
       if (google) return google
       return null
     } catch { return null }

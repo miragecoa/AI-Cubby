@@ -274,7 +274,7 @@ function buildWmiWatcherScript(): string {
     // 用户层进程（explorer、tray app、终端等）启动的则允许
     '$sysSpawners = @("svchost","services","lsass","wininit","winlogon","smss","csrss","system","registry","taskeng","taskschd")',
     '$w = New-Object System.Management.ManagementEventWatcher(',
-    '  "SELECT * FROM __InstanceCreationEvent WITHIN 2 WHERE TargetInstance ISA \'Win32_Process\'"',
+    '  "SELECT * FROM __InstanceCreationEvent WITHIN 5 WHERE TargetInstance ISA \'Win32_Process\'"',
     ')',
     'while ($true) {',
     '  try {',

@@ -309,7 +309,7 @@ function startClipboardPolling(): void {
         if (_lastClipImgHash) _lastClipImgHash = ''
       }
     } catch { /* ignore clipboard access errors */ }
-  }, 300)
+  }, 1000)
 }
 
 function buildTrayMenu(): Electron.Menu {
@@ -838,7 +838,7 @@ app.whenReady().then(() => {
               clearInterval(_drawerHoverTimer!); _drawerHoverTimer = null
               drawerWindow.webContents.send('drawer:forceLeave')
             }
-          }, 100)
+          }, 200)
         }
       } else {
         // COLLAPSED: poll to detect cursor returning to peek strip area
@@ -888,7 +888,7 @@ app.whenReady().then(() => {
               clearInterval(_drawerReenterTimer!); _drawerReenterTimer = null
               drawerWindow.webContents.send('drawer:forceEnter')
             }
-          }, 80)
+          }, 200)
         }
       }
     }
@@ -937,10 +937,19 @@ app.whenReady().then(() => {
     const display = screen.getDisplayNearestPoint({ x, y })
     const b = display.bounds
     const edge = getSetting('drawerEdge') ?? 'none'
-    if (edge === 'right')       x = Math.min(x, b.x + b.width  - PEEK_PX)
-    else if (edge === 'left')   x = Math.max(x, b.x - ww + PEEK_PX)
-    else if (edge === 'top')    y = Math.max(y, b.y - wh + PEEK_PX)
-    else if (edge === 'bottom') y = Math.min(y, b.y + b.height - PEEK_PX)
+    const pinToEdge = getSetting('drawerPinToEdge') === 'true'
+    if (pinToEdge && edge !== 'none') {
+      // Fixed to edge: snap to exact screen edge position
+      if (edge === 'right')       x = b.x + b.width  - ww
+      else if (edge === 'left')   x = b.x
+      else if (edge === 'top')    y = b.y
+      else if (edge === 'bottom') y = b.y + b.height - wh
+    } else {
+      if (edge === 'right')       x = Math.min(x, b.x + b.width  - PEEK_PX)
+      else if (edge === 'left')   x = Math.max(x, b.x - ww + PEEK_PX)
+      else if (edge === 'top')    y = Math.max(y, b.y - wh + PEEK_PX)
+      else if (edge === 'bottom') y = Math.min(y, b.y + b.height - PEEK_PX)
+    }
 
     drawerWindow.setBounds({ x, y, width: ww, height: wh })
     drawerWindow.setResizable(false)
@@ -962,9 +971,10 @@ app.whenReady().then(() => {
       opacity: parseFloat(getSetting('drawerOpacity') ?? '1'),
       size:    getDrawerSizeValue(),
       hasCustomIcon: !!(customIconPath && existsSync(customIconPath)),
-      edge:      getSetting('drawerEdge') ?? 'none',
-      stripLen:  parseInt(getSetting('drawerStripLen') ?? '50'),
-      stripWid:  parseInt(getSetting('drawerStripWid') ?? '14'),
+      edge:       getSetting('drawerEdge') ?? 'none',
+      pinToEdge:  getSetting('drawerPinToEdge') === 'true',
+      stripLen:   parseInt(getSetting('drawerStripLen') ?? '50'),
+      stripWid:   parseInt(getSetting('drawerStripWid') ?? '14'),
       accent, accent2,
     }
   })
@@ -978,6 +988,24 @@ app.whenReady().then(() => {
     // No position snapping — window stays wherever the user placed it;
     // the renderer applies a CSS transform to hide in the chosen direction.
     drawerWindow?.webContents.send('drawer:setEdge', dir)
+  })
+  ipcMain.handle('drawerSettings:setPinToEdge', (_e, pin: boolean) => {
+    setSetting('drawerPinToEdge', pin ? 'true' : 'false')
+    if (!pin || !drawerWindow) return
+    const edge = getSetting('drawerEdge') ?? 'none'
+    if (edge === 'none') return
+    const [ww, wh] = drawerWindow.getSize()
+    const [cx, cy] = drawerWindow.getPosition()
+    const display = screen.getDisplayNearestPoint({ x: cx, y: cy })
+    const b = display.bounds
+    let x = cx, y = cy
+    if (edge === 'right')       x = b.x + b.width  - ww
+    else if (edge === 'left')   x = b.x
+    else if (edge === 'top')    y = b.y
+    else if (edge === 'bottom') y = b.y + b.height - wh
+    drawerWindow.setPosition(x, y)
+    setSetting('drawerX', String(x))
+    setSetting('drawerY', String(y))
   })
   ipcMain.handle('drawer:getCustomIcon', () => {
     return iconToDataUrl(getSetting('drawerCustomIcon') ?? '')

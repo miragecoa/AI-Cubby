@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('settingsApi', {
   clearCustomIcon: () => ipcRenderer.invoke('drawerSettings:clearCustomIcon'),
   openMain:        () => ipcRenderer.invoke('drawerSettings:openMain'),
   setEdge:         (dir: string) => ipcRenderer.invoke('drawerSettings:setEdge', dir),
+  setPinToEdge:    (v: boolean) => ipcRenderer.invoke('drawerSettings:setPinToEdge', v),
   setStripSize:    (len: number, wid: number) => ipcRenderer.invoke('drawerSettings:setStripSize', len, wid),
   recallDrawer:    () => ipcRenderer.invoke('drawerSettings:recallDrawer'),
   hideDrawer:      () => ipcRenderer.invoke('drawerSettings:hideDrawer'),
