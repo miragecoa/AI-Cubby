@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar" :class="{ collapsed: settingsStore.sidebarCollapsed, 'no-transition': isResizing }" :style="settingsStore.sidebarCollapsed ? {} : { width: sidebarWidth + 'px' }">
+  <aside class="sidebar" :class="{ collapsed: settingsStore.sidebarCollapsed, 'no-transition': isResizing, narrow: isNarrow, 'lang-en': settingsStore.language === 'en' }" :style="settingsStore.sidebarCollapsed ? {} : { width: sidebarWidth + 'px' }">
     <div class="sidebar-content">
       <!-- 普通导航 -->
       <nav v-if="!editing" class="nav-section">
@@ -46,6 +46,7 @@
     <div v-if="!settingsStore.sidebarCollapsed" class="sidebar-resize-handle" @mousedown.prevent.stop="onResizeStart" />
 
     <button
+      v-if="!isNarrow"
       class="panel-toggle"
       @click="toggleCollapse"
       :title="settingsStore.sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
@@ -56,11 +57,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const sidebarWidth = ref(210)
 const isResizing = ref(false)
+const isNarrow = computed(() => !settingsStore.sidebarCollapsed && sidebarWidth.value < 80)
 import { useRouter } from 'vue-router'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
@@ -75,7 +77,7 @@ const router = useRouter()
 onMounted(async () => {
   settingsStore.load()
   const saved = await window.api.settings.get('sidebar_width')
-  if (saved) sidebarWidth.value = Math.max(120, Math.min(400, parseInt(saved) || 210))
+  if (saved) sidebarWidth.value = Math.max(44, Math.min(400, parseInt(saved) || 210))
 })
 
 function onResizeStart(e: MouseEvent) {
@@ -83,7 +85,7 @@ function onResizeStart(e: MouseEvent) {
   const startX = e.screenX
   const startW = sidebarWidth.value
   const onMove = (ev: MouseEvent) => {
-    sidebarWidth.value = Math.max(120, Math.min(400, startW + ev.screenX - startX))
+    sidebarWidth.value = Math.max(44, Math.min(400, startW + ev.screenX - startX))
   }
   const onUp = () => {
     isResizing.value = false
@@ -97,6 +99,7 @@ function onResizeStart(e: MouseEvent) {
 
 const props = defineProps<{ editing: boolean }>()
 const emit = defineEmits<{ 'update:editing': [value: boolean] }>()
+watch(isNarrow, (narrow) => { if (narrow && props.editing) emit('update:editing', false) })
 const editing = computed(() => props.editing)
 
 const visibleNavItems = computed(() =>
@@ -434,5 +437,41 @@ const chevronRightSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 .vis-btn :deep(svg) {
   width: 13px;
   height: 13px;
+}
+
+/* ── 窄模式：图标 + 竖排文字 ─────────────────────────────────── */
+.sidebar.narrow .nav-section {
+  padding: 4px 0;
+}
+
+.sidebar.narrow .nav-item {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 0 8px;
+  gap: 5px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.sidebar.narrow .nav-icon {
+  flex-shrink: 0;
+}
+
+.sidebar.narrow .nav-label {
+  writing-mode: vertical-rl;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+  flex: none;
+}
+
+.sidebar.narrow.lang-en .nav-label {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+}
+
+.sidebar.narrow .nav-count {
+  display: none;
 }
 </style>

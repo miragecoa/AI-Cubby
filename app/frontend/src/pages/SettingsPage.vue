@@ -478,6 +478,12 @@ const hotkeyRecording = ref(false)
 const hotkeyError = ref(false)
 const pendingHotkey = ref('')
 
+const MODIFIER_KEYS = ['Control', 'Alt', 'Shift', 'Meta']
+const KEY_MAP: Record<string, string> = {
+  ' ': 'Space', 'Spacebar': 'Space',
+  'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right',
+}
+
 function electronAccelerator(e: KeyboardEvent): string {
   const parts: string[] = []
   if (e.ctrlKey)  parts.push('Ctrl')
@@ -485,10 +491,17 @@ function electronAccelerator(e: KeyboardEvent): string {
   if (e.shiftKey) parts.push('Shift')
   if (e.metaKey)  parts.push('Meta')
   const key = e.key
-  if (!['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
-    parts.push(key.length === 1 ? key.toUpperCase() : key)
+  if (!MODIFIER_KEYS.includes(key)) {
+    parts.push(KEY_MAP[key] ?? (key.length === 1 ? key.toUpperCase() : key))
   }
   return parts.join('+')
+}
+
+function isComplete(e: KeyboardEvent): boolean {
+  if (MODIFIER_KEYS.includes(e.key)) return false
+  const hasModifier = e.ctrlKey || e.altKey || e.shiftKey || e.metaKey
+  const isFKey = /^F\d{1,2}$/.test(e.key)
+  return hasModifier || isFKey
 }
 
 function startRecording() {
@@ -507,10 +520,7 @@ async function onHotkeyKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') { cancelRecording(); return }
   const acc = electronAccelerator(e)
   pendingHotkey.value = acc
-  // 必须有至少一个修饰键
-  if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) return
-  // 必须有实际按键（不只是修饰键）
-  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return
+  if (!isComplete(e)) return
   hotkeyRecording.value = false
   const ok = await settingsStore.setHotkeyWake(acc)
   if (!ok) {
@@ -548,8 +558,7 @@ async function onClipboardHotkeyKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') { cancelClipboardRecording(); return }
   const acc = electronAccelerator(e)
   pendingClipboardHotkey.value = acc
-  if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) return
-  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return
+  if (!isComplete(e)) return
   clipboardHotkeyRecording.value = false
   const ok = await settingsStore.setHotkeyClipboard(acc)
   if (!ok) {
