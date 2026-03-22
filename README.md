@@ -21,7 +21,7 @@
 ---
 
 <p align="center">
-  <img src="docs/library.png" width="800" alt="Main interface screenshot">
+  <img src="docs/en/Library.png" width="800" alt="Main interface screenshot">
 </p>
 
 ---
@@ -121,11 +121,11 @@ That game from three months ago, that batch of photos from last week — open AI
 
 | Library | Detail panel | Manual add |
 |:---:|:---:|:---:|
-| ![Library](docs/library.png) | ![Detail](docs/detail.png) | ![Add](docs/add.png) |
+| ![Library](docs/en/Library.png) | ![Detail](docs/en/Detail.png) | ![Add](docs/en/add.png) |
 
 | Drag import | Tag filtering | Ignored list |
 |:---:|:---:|:---:|
-| ![Drag import](docs/drag-import.png) | ![Tags](docs/tags.png) | ![Ignored](docs/ignored.png) |
+| ![Drag import](docs/en/drag-import.png) | ![Tags](docs/en/Tag%20filtering.png) | ![Ignored](docs/en/Ignored%20list.png) |
 
 ---
 
