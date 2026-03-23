@@ -521,7 +521,7 @@
           </div>
           <div class="heat-top-title">{{ t('library.statsPanel.topResources') }}</div>
           <div class="heat-top-list">
-            <div v-for="item in topHeatResources" :key="item.id" class="heat-top-row" @click="onCardSelect(item)">
+            <div v-for="item in topHeatResources" :key="item.id" class="heat-top-row" @click="openResource(item)" @contextmenu.prevent="openHeatMenu($event, item)">
               <div class="heat-top-bar-wrap">
                 <div class="heat-top-bar" :class="`heat-${heatLevel(item)}`" :style="{ width: (item.open_count / heatMax * 100) + '%' }" />
               </div>
@@ -530,6 +530,28 @@
             </div>
             <div v-if="topHeatResources.length === 0" class="stats-empty">{{ t('library.noResources') }}</div>
           </div>
+          <!-- 热力图右键菜单 -->
+          <Teleport to="body">
+            <div v-if="heatMenu.show" class="ctx-backdrop" @mousedown="heatMenu.show = false" />
+            <div v-if="heatMenu.show" ref="heatMenuRef" class="context-menu" :style="{ left: heatMenu.x + 'px', top: heatMenu.y + 'px' }">
+              <button @click="onCardSelect(heatMenu.item!); heatMenu.show = false">
+                <span v-html="ctxIcons.detail" />{{ t('resource.detail') }}
+              </button>
+              <button @click="openResource(heatMenu.item!); heatMenu.show = false">
+                <span v-html="ctxIcons.open" />{{ t('resource.open') }}
+              </button>
+              <button v-if="isExeFile(heatMenu.item!)" @click="heatMenuAdminRun">
+                <span v-html="ctxIcons.shield" />{{ t('resource.admin') }}
+              </button>
+              <button v-if="heatMenu.item!.type !== 'webpage'" @click="heatMenuShowInFolder">
+                <span v-html="ctxIcons.folder" />{{ t('resource.showInFolder') }}
+              </button>
+              <hr />
+              <button @click="ignoreResource(heatMenu.item!); heatMenu.show = false" class="danger">
+                <span v-html="ctxIcons.ignore" />{{ t('resource.ignore') }}
+              </button>
+            </div>
+          </Teleport>
         </div>
 
         <!-- 时间线 tab -->
@@ -1294,6 +1316,10 @@ const listMenu = reactive({ show: false, x: 0, y: 0, item: null as Resource | nu
 const listMenuRef = ref<HTMLElement | null>(null)
 const listMenuKillTarget = ref<Resource | null>(null)
 
+// 热力图右键菜单
+const heatMenu = reactive({ show: false, x: 0, y: 0, item: null as Resource | null })
+const heatMenuRef = ref<HTMLElement | null>(null)
+
 // ── 列表行悬浮提示 ─────────────────────────────────────────────────
 const listTooltip = reactive({ show: false, x: 0, y: 0, item: null as Resource | null })
 function onListRowEnter(e: MouseEvent, item: Resource) {
@@ -1365,6 +1391,32 @@ async function doListKill() {
   if (!listMenuKillTarget.value) return
   await window.api.monitor.kill(listMenuKillTarget.value.id)
   listMenuKillTarget.value = null
+}
+
+function openHeatMenu(e: MouseEvent, item: Resource) {
+  heatMenu.item = item
+  heatMenu.x = e.clientX
+  heatMenu.y = e.clientY
+  heatMenu.show = true
+  nextTick(() => {
+    if (!heatMenuRef.value) return
+    const rect = heatMenuRef.value.getBoundingClientRect()
+    if (heatMenu.x + rect.width > window.innerWidth) heatMenu.x = e.clientX - rect.width
+    if (heatMenu.y + rect.height > window.innerHeight) heatMenu.y = e.clientY - rect.height
+  })
+}
+
+async function heatMenuAdminRun() {
+  if (!heatMenu.item) return
+  heatMenu.show = false
+  const updated = await window.api.files.openAsAdmin(heatMenu.item.file_path)
+  if (updated) store.addOrUpdate(updated)
+}
+
+function heatMenuShowInFolder() {
+  if (!heatMenu.item) return
+  window.api.files.openInExplorer(heatMenu.item.file_path)
+  heatMenu.show = false
 }
 
 function onKeyDown(e: KeyboardEvent) {

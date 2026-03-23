@@ -584,8 +584,14 @@ async function checkInitialRunning(): Promise<void> {
 
       trackedResources.add(resource.id)
       const startTime = Date.now()
-      runningSessions.set(pid, { resourceId: resource.id, filePath: exePath, startTime })
-      onRunningChangeCb?.({ resourceId: resource.id, running: true, startTime })
+      runningSessions.set(pid, { resourceId: resource.id, filePath: lower, startTime })
+      try {
+        const updated = recordProcessStart(resource.id)
+        onRunningChangeCb?.({ resourceId: resource.id, running: true, startTime, resource: updated ?? undefined })
+      } catch (e) {
+        console.error('[Monitor] recordProcessStart failed (initial):', e)
+        onRunningChangeCb?.({ resourceId: resource.id, running: true, startTime })
+      }
       console.log('[Monitor] Already running:', resource.title, `(pid ${pid})`)
     }
 
