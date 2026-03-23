@@ -33,6 +33,9 @@ export default {
     hide: '隐藏',
     expand: '展开侧边栏',
     collapse: '收起侧边栏',
+    addCategory: '添加分类',
+    categoryPlaceholder: '分类名称…',
+    deleteCategory: '删除此分类',
   },
   consent: {
     langLabel: '语言 / Language',

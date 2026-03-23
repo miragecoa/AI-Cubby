@@ -1446,7 +1446,7 @@ const batchTagSuggestions = computed(() => {
   const available = batchTagAllSuggestions.value.filter(bt => !addedIds.has(bt.id))
   return q ? available.filter(bt => bt.name.toLowerCase().includes(q)) : available
 })
-const batchTargetType = ref<ResourceType | ''>('')
+const batchTargetType = ref<string>('')
 const pathMode = ref<'drive' | 'prefix'>('drive')
 const driveFrom = ref('')
 const driveTo = ref('')
@@ -1459,7 +1459,7 @@ const canConfirmPath = computed(() => {
   return batchOldPath.value.trim() && batchNewPath.value.trim()
 })
 
-const typeOptions = computed<Array<{ label: string; value: ResourceType }>>(() => [
+const typeOptions = computed<Array<{ label: string; value: string }>>(() => [
   { label: t('resource.types.game'),     value: 'game' },
   { label: t('resource.types.app'),      value: 'app' },
   { label: t('resource.types.image'),    value: 'image' },
@@ -1470,6 +1470,7 @@ const typeOptions = computed<Array<{ label: string; value: ResourceType }>>(() =
   { label: t('resource.types.document'), value: 'document' },
   { label: t('resource.types.folder'),   value: 'folder' },
   { label: t('resource.types.other'),    value: 'other' },
+  ...settingsStore.customCategories.map(c => ({ label: c.name, value: c.id })),
 ])
 
 function enterBatchMode() {
@@ -1506,7 +1507,7 @@ function toggleSelectAll() {
 
 async function doBatchType() {
   if (!batchTargetType.value || selectedIds.size === 0) return
-  await store.batchUpdate([...selectedIds], { type: batchTargetType.value })
+  await store.batchUpdate([...selectedIds], { type: batchTargetType.value as any })
   showBatchType.value = false
   batchTargetType.value = ''
   exitBatchMode()

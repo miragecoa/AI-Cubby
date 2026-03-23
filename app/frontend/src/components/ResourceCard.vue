@@ -1,6 +1,6 @@
 <template>
   <div ref="cardRef" class="card" :class="[{ 'is-selected': selected }, heatLevel !== undefined ? `heat-lv${heatLevel}` : '']" :style="{ '--zoom': cardZoom }" @dblclick="selectable ? $emit('toggle-select', resource) : $emit('open', resource)" @contextmenu.prevent="!selectable && openMenu($event)" @click="selectable ? $emit('toggle-select', resource) : undefined" @mouseenter="onMicroEnter" @mouseleave="onMicroLeave">
-    <div class="cover" :class="{ 'is-app': resource.type === 'app' || resource.type === 'game' || resource.type === 'webpage' || resource.type === 'document', 'cover-solo': micro, 'cover-solo-labeled': micro && showMicroLabel }" @click.stop="selectable ? $emit('toggle-select', resource) : $emit('open', resource)">
+    <div class="cover" :class="{ 'is-app': resource.type === 'app' || resource.type === 'game' || resource.type === 'webpage' || resource.type === 'document' || resource.type.startsWith('cat_'), 'cover-solo': micro, 'cover-solo-labeled': micro && showMicroLabel }" @click.stop="selectable ? $emit('toggle-select', resource) : $emit('open', resource)">
       <img v-if="thumbSrc" :src="thumbSrc" :alt="resource.title" />
       <div v-else class="cover-placeholder" style="pointer-events:none">
         <span class="type-icon" v-html="typeIcon" />
@@ -384,9 +384,27 @@ watchEffect(async () => {
     return
   }
   if (r.type === 'document') {
+    // 纯文本类文件不生成有意义的缩略图，直接用系统图标
+    const ext = r.file_path.split('.').pop()?.toLowerCase() ?? ''
+    const skipThumb = ['txt', 'csv', 'log', 'md', 'json', 'xml', 'ini', 'cfg', 'bat', 'sh', 'yaml', 'yml', 'toml', 'sql'].includes(ext)
     // 优先尝试 OS Shell 缩略图（PDF、已预览过的 Office 文件有效）
-    let thumb = await getCachedImage(r.file_path)
+    let thumb = skipThumb ? null : await getCachedImage(r.file_path)
     // fallback：获取系统文件图标（Word/Excel/PPT 等应用图标）
+    if (!thumb) thumb = await getCachedIcon(r.file_path)
+    thumbSrc.value = thumb
+    if (thumb && !r.cover_path && !_savedCovers.has(r.id)) {
+      _savedCovers.add(r.id)
+      window.api.files.saveCover(r.id, thumb).then(path => {
+        if (path) store.addOrUpdate({ ...r, cover_path: path })
+      }).catch(() => {})
+    }
+    return
+  }
+  // 自定义分类：尝试获取系统图标
+  if (r.type.startsWith('cat_')) {
+    const ext = r.file_path.split('.').pop()?.toLowerCase() ?? ''
+    const skipThumb = ['txt', 'csv', 'log', 'md', 'json', 'xml', 'ini', 'cfg', 'bat', 'sh', 'yaml', 'yml', 'toml', 'sql'].includes(ext)
+    let thumb = skipThumb ? null : await getCachedImage(r.file_path)
     if (!thumb) thumb = await getCachedIcon(r.file_path)
     thumbSrc.value = thumb
     if (thumb && !r.cover_path && !_savedCovers.has(r.id)) {

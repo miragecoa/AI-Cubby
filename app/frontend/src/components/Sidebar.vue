@@ -11,9 +11,9 @@
           @click="select(item.type)"
         >
           <span class="nav-icon" v-html="item.svg" />
-          <span class="nav-label">{{ t('nav.' + item.type) }}</span>
-          <span v-if="store.counts[item.type]" class="nav-count">
-            {{ store.counts[item.type] }}
+          <span class="nav-label">{{ item.type.startsWith('cat_') ? item.label : t('nav.' + item.type) }}</span>
+          <span v-if="getNavCount(item.type)" class="nav-count">
+            {{ getNavCount(item.type) }}
           </span>
         </button>
       </nav>
@@ -33,10 +33,44 @@
           @dragend="onDragEnd"
         >
           <span class="drag-handle" v-html="dragHandleIcon" />
-          <span class="edit-icon" v-html="getNavDef(cfg.type)?.svg" />
-          <span class="edit-label">{{ t('nav.' + cfg.type) }}</span>
-          <button class="vis-btn" @click="toggleVisible(idx)" :title="cfg.visible ? t('sidebar.hide') : t('sidebar.show')">
+          <span class="edit-icon" v-html="cfg.type.startsWith('cat_') ? customCatSvg : getNavDef(cfg.type)?.svg" />
+          <!-- built-in: static label -->
+          <span v-if="!cfg.type.startsWith('cat_')" class="edit-label">{{ t('nav.' + cfg.type) }}</span>
+          <!-- custom: inline rename input -->
+          <input
+            v-else
+            class="edit-cat-input"
+            :value="getCatName(cfg.type)"
+            :placeholder="t('sidebar.categoryPlaceholder')"
+            @blur="renameCat(cfg.type, ($event.target as HTMLInputElement).value)"
+            @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+          />
+          <!-- built-in: visibility toggle -->
+          <button v-if="!cfg.type.startsWith('cat_')" class="vis-btn" @click="toggleVisible(idx)" :title="cfg.visible ? t('sidebar.hide') : t('sidebar.show')">
             <span v-html="cfg.visible ? eyeIcon : eyeOffIcon" />
+          </button>
+          <!-- custom: delete button -->
+          <button v-else class="del-btn" @click="deleteCat(cfg.type)" :title="t('sidebar.deleteCategory')">
+            <span v-html="trashIcon" />
+          </button>
+        </div>
+
+        <!-- 添加分类 -->
+        <div class="add-cat-area">
+          <div v-if="addingCategory" class="add-cat-row">
+            <input
+              ref="addCatInputRef"
+              v-model="newCatName"
+              class="add-cat-input"
+              :placeholder="t('sidebar.categoryPlaceholder')"
+              @keydown.enter.prevent="confirmAddCategory"
+              @keydown.escape="addingCategory = false; newCatName = ''"
+            />
+            <button class="add-cat-ok" @click="confirmAddCategory" :disabled="!newCatName.trim()">✓</button>
+            <button class="add-cat-cancel-btn" @click="addingCategory = false; newCatName = ''">✕</button>
+          </div>
+          <button v-else class="add-cat-btn" @click="startAddCategory">
+            <span v-html="plusIcon" />{{ t('sidebar.addCategory') }}
           </button>
         </div>
       </div>
@@ -68,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 
@@ -79,7 +113,7 @@ import { useRouter } from 'vue-router'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
 import { NAV_ITEM_DEFS } from '../config/navItems'
-import type { ResourceType } from '../stores/resources'
+import type { NavItemDef } from '../config/navItems'
 
 const { t } = useI18n()
 const store = useResourceStore()
@@ -120,15 +154,40 @@ const emit = defineEmits<{ 'update:editing': [value: boolean] }>()
 watch(isNarrow, (narrow) => { if (narrow && props.editing) emit('update:editing', false) })
 const editing = computed(() => props.editing)
 
-const visibleNavItems = computed(() =>
-  settingsStore.sidebarNav
-    .filter(cfg => cfg.visible)
-    .map(cfg => NAV_ITEM_DEFS.find(d => d.type === cfg.type))
-    .filter((d): d is typeof NAV_ITEM_DEFS[0] => d !== undefined)
-)
+// Custom category icon
+const customCatSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1" fill="currentColor" stroke="none"/></svg>`
+
+// Counts for custom categories
+const customCatCounts = computed(() => {
+  const r: Record<string, number> = {}
+  for (const cat of settingsStore.customCategories) {
+    r[cat.id] = store.items.filter(i => i.type === cat.id).length
+  }
+  return r
+})
+
+function getNavCount(type: string): number {
+  if (type.startsWith('cat_')) return customCatCounts.value[type] ?? 0
+  return (store.counts as Record<string, number>)[type] ?? 0
+}
+
+const visibleNavItems = computed((): NavItemDef[] => {
+  const result: NavItemDef[] = []
+  for (const cfg of settingsStore.sidebarNav) {
+    if (!cfg.visible) continue
+    if (cfg.type.startsWith('cat_')) {
+      const cat = settingsStore.customCategories.find(c => c.id === cfg.type)
+      if (cat) result.push({ type: cfg.type, label: cat.name, svg: customCatSvg })
+    } else {
+      const def = NAV_ITEM_DEFS.find(d => d.type === cfg.type)
+      if (def) result.push(def)
+    }
+  }
+  return result
+})
 
 function select(type: string) {
-  store.activeType = type as ResourceType | 'all'
+  store.activeType = type
   router.push('/library')
 }
 
@@ -165,6 +224,39 @@ function toggleVisible(idx: number) {
   settingsStore.setSidebarNav(arr)
 }
 
+// ── 自定义分类：增删改 ────────────────────────────────────────────
+function getCatName(type: string): string {
+  return settingsStore.customCategories.find(c => c.id === type)?.name ?? ''
+}
+
+function renameCat(id: string, newName: string) {
+  const trimmed = newName.trim()
+  if (!trimmed) return
+  settingsStore.renameCustomCategory(id, trimmed)
+}
+
+function deleteCat(id: string) {
+  settingsStore.removeCustomCategory(id)
+}
+
+const addingCategory = ref(false)
+const newCatName = ref('')
+const addCatInputRef = ref<HTMLInputElement | null>(null)
+
+function startAddCategory() {
+  addingCategory.value = true
+  newCatName.value = ''
+  nextTick(() => addCatInputRef.value?.focus())
+}
+
+async function confirmAddCategory() {
+  const name = newCatName.value.trim()
+  if (!name) return
+  await settingsStore.addCustomCategory(name)
+  addingCategory.value = false
+  newCatName.value = ''
+}
+
 // ── Icons ────────────────────────────────────────────────────────
 
 const settingsIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`
@@ -173,6 +265,8 @@ const eyeIcon       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const eyeOffIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
 const chevronLeftSvg  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>`
 const chevronRightSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>`
+const trashIcon       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`
+const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
 </script>
 
 <style scoped>
@@ -432,6 +526,20 @@ const chevronRightSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
   color: var(--text-2);
 }
 
+.edit-cat-input {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  padding: 2px 6px;
+  min-width: 0;
+}
+.edit-cat-input:focus { border-color: var(--accent); }
+
 .vis-btn {
   width: 24px;
   height: 24px;
@@ -457,6 +565,90 @@ const chevronRightSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
   width: 13px;
   height: 13px;
 }
+
+.del-btn {
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.1s, background 0.1s;
+  flex-shrink: 0;
+  padding: 0;
+}
+.del-btn:hover { color: var(--danger); background: rgba(239, 68, 68, 0.1); }
+.del-btn :deep(svg) { width: 13px; height: 13px; }
+
+/* ── 添加分类区域 ─────────────────────────────────────────────── */
+.add-cat-area {
+  padding: 4px 8px 6px;
+}
+
+.add-cat-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.add-cat-input {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  padding: 4px 8px;
+  min-width: 0;
+}
+.add-cat-input:focus { border-color: var(--accent); }
+.add-cat-input::placeholder { color: var(--text-3); }
+
+.add-cat-ok,
+.add-cat-cancel-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+.add-cat-ok { color: var(--accent-2); }
+.add-cat-ok:hover { background: rgba(99, 102, 241, 0.15); border-color: var(--accent); }
+.add-cat-ok:disabled { opacity: 0.4; cursor: not-allowed; }
+.add-cat-cancel-btn { color: var(--text-3); }
+.add-cat-cancel-btn:hover { background: var(--surface-2); }
+
+.add-cat-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 5px 8px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.add-cat-btn:hover { border-color: var(--accent); color: var(--accent-2); }
+.add-cat-btn :deep(svg) { width: 12px; height: 12px; }
 
 /* ── 窄模式：图标 + 竖排文字 ─────────────────────────────────── */
 .sidebar.narrow .nav-section {

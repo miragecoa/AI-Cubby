@@ -25,7 +25,7 @@ export interface Resource {
 
 export const useResourceStore = defineStore('resources', () => {
   const items = ref<Resource[]>([])
-  const activeType = ref<ResourceType | 'all'>('all')
+  const activeType = ref<string>('all')
   const searchQuery = ref('')
   const activeTags = ref<number[]>([])
   const excludedTags = ref<number[]>([])

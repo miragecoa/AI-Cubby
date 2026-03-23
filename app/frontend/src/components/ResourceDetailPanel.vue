@@ -188,6 +188,7 @@ import { ref, computed, watch, watchEffect, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
+import { useSettingsStore } from '../stores/settings'
 
 const { t } = useI18n()
 
@@ -195,6 +196,7 @@ const props = defineProps<{ resource: Resource }>()
 const emit = defineEmits<{ close: [] }>()
 
 const store = useResourceStore()
+const settingsStore = useSettingsStore()
 
 // ─── Local editable state ──────────────────────────────────────────
 const editTitle   = ref(props.resource.title)
@@ -383,6 +385,7 @@ const typeOptions = computed(() => [
   { label: t('detail.types.webpage'),  value: 'webpage' },
   { label: t('detail.types.folder'),   value: 'folder' },
   { label: t('detail.types.other'),    value: 'other' },
+  ...settingsStore.customCategories.map(c => ({ label: c.name, value: c.id })),
 ])
 
 function onTypeChange(e: Event) {

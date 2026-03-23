@@ -185,7 +185,7 @@
       </div>
     </div>
     <div class="row" id="pinToEdgeRow">
-      <span class="row-label" id="ds-pin">固定到边缘</span>
+      <span class="row-label" id="ds-pin" style="width:64px">固定到边缘</span>
       <button class="edge-btn" id="pinToEdgeBtn" style="flex:none;padding:3px 10px">关</button>
     </div>
 
@@ -239,6 +239,18 @@
     const _dsp = new URLSearchParams(window.location.search)
     let _dsLang = _dsp.get('lang') === 'en' ? 'en' : 'zh'
     function _tDs(key) { return (_DS_I18N[_dsLang] || _DS_I18N.zh)[key] || key }
+
+    // ── _pinned 必须在 _applyDsLang() 调用之前声明 ──
+    const pinToEdgeRow = document.getElementById('pinToEdgeRow')
+    const pinToEdgeBtn = document.getElementById('pinToEdgeBtn')
+    let _pinned = false
+    function setPinState(v) {
+      _pinned = v
+      pinToEdgeBtn.classList.toggle('active', v)
+      const T = _DS_I18N[_dsLang] || _DS_I18N.zh
+      pinToEdgeBtn.textContent = v ? T.pinOn : T.pinOff
+    }
+
     function _applyDsLang() {
       const T = _DS_I18N[_dsLang] || _DS_I18N.zh
       document.getElementById('ds-title').textContent = T.title
@@ -293,16 +305,6 @@
     }
     for (const [k, v] of Object.entries(_themeVars)) {
       if (v) document.documentElement.style.setProperty(k, v)
-    }
-
-    const pinToEdgeRow = document.getElementById('pinToEdgeRow')
-    const pinToEdgeBtn = document.getElementById('pinToEdgeBtn')
-    let _pinned = false
-    function setPinState(v) {
-      _pinned = v
-      pinToEdgeBtn.classList.toggle('active', v)
-      const T = _DS_I18N[_dsLang] || _DS_I18N.zh
-      pinToEdgeBtn.textContent = v ? T.pinOn : T.pinOff
     }
 
     const edgeBtns = document.querySelectorAll('.edge-btn')
@@ -377,7 +379,20 @@
       window.settingsApi.setSize(v)
     })
 
+    // ── blur 延迟关闭：防止对话框弹出前窗口被意外关闭 ──
+    let _blurCloseTimer = null
+    function scheduleBlurClose() {
+      if (_blurCloseTimer) clearTimeout(_blurCloseTimer)
+      _blurCloseTimer = setTimeout(() => {
+        window.settingsApi.close()
+      }, 150)
+    }
+    function cancelBlurClose() {
+      if (_blurCloseTimer) { clearTimeout(_blurCloseTimer); _blurCloseTimer = null }
+    }
+
     document.getElementById('pickIconBtn').addEventListener('click', () => {
+      cancelBlurClose()
       window.settingsApi.pickCustomIcon()
     })
 
@@ -395,7 +410,11 @@
     })
 
     window.addEventListener('blur', () => {
-      window.settingsApi.close()
+      scheduleBlurClose()
+    })
+
+    window.addEventListener('focus', () => {
+      cancelBlurClose()
     })
   </script>
 </body>

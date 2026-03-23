@@ -33,6 +33,9 @@ export default {
     hide: 'Hide',
     expand: 'Expand sidebar',
     collapse: 'Collapse sidebar',
+    addCategory: 'Add Category',
+    categoryPlaceholder: 'Category name…',
+    deleteCategory: 'Delete category',
   },
   consent: {
     langLabel: '语言 / Language',

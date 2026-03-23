@@ -6,6 +6,15 @@ import type { Locale } from '../i18n'
 
 export type ThemeId = 'dark' | 'light' | 'midnight' | 'aurora' | 'sand' | 'mint'
 
+export interface CustomCategory {
+  id: string
+  name: string
+}
+
+function genCatId() {
+  return 'cat_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+}
+
 export interface ThemePreset {
   id: ThemeId
   name: string
@@ -157,11 +166,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const hotkeyClipboard = ref('Alt+V')
   const themeVars = ref<Record<string, string>>({ ...DARK_THEME })
   const language = ref<Locale>('zh')
+  const customCategories = ref<CustomCategory[]>([])
   const loaded = ref(false)
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal, hotkeyClipboardVal, langVal, consentVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal, hotkeyClipboardVal, langVal, consentVal, customCatVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
@@ -182,6 +192,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.clipboardHotkey.get(),
       window.api.settings.get('language'),
       window.api.settings.get('consent_given'),
+      window.api.settings.get('customCategories'),
     ])
     monitorEnabled.value = monitorVal !== 'false'
     autostartEnabled.value = autostartVal
@@ -220,6 +231,10 @@ export const useSettingsStore = defineStore('settings', () => {
       await window.api.settings.set('language', 'zh')
     }
     i18n.global.locale.value = language.value
+
+    if (customCatVal) {
+      try { customCategories.value = JSON.parse(customCatVal) } catch {}
+    }
 
     if (navVal) {
       try {
@@ -345,6 +360,32 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('language', lang)
   }
 
+  async function addCustomCategory(name: string) {
+    const id = genCatId()
+    customCategories.value.push({ id, name })
+    sidebarNav.value.push({ type: id, visible: true })
+    await Promise.all([
+      window.api.settings.set('customCategories', JSON.stringify(customCategories.value)),
+      window.api.settings.set('sidebarNav', JSON.stringify(sidebarNav.value)),
+    ])
+  }
+
+  async function renameCustomCategory(id: string, newName: string) {
+    const cat = customCategories.value.find(c => c.id === id)
+    if (!cat) return
+    cat.name = newName
+    await window.api.settings.set('customCategories', JSON.stringify(customCategories.value))
+  }
+
+  async function removeCustomCategory(id: string) {
+    customCategories.value = customCategories.value.filter(c => c.id !== id)
+    sidebarNav.value = sidebarNav.value.filter(n => n.type !== id)
+    await Promise.all([
+      window.api.settings.set('customCategories', JSON.stringify(customCategories.value)),
+      window.api.settings.set('sidebarNav', JSON.stringify(sidebarNav.value)),
+    ])
+  }
+
   async function resetToDefaults() {
     zoom.value = 1.0
     viewModeByType.value = {}
@@ -377,5 +418,5 @@ export const useSettingsStore = defineStore('settings', () => {
     ])
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, hotkeyClipboard, themeVars, language, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setHotkeyClipboard, setTheme, setLanguage, resetToDefaults }
+  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, hotkeyClipboard, themeVars, language, customCategories, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setHotkeyClipboard, setTheme, setLanguage, addCustomCategory, renameCustomCategory, removeCustomCategory, resetToDefaults }
 })
