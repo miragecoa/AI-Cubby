@@ -281,6 +281,19 @@ export interface ReleaseNote {
 }
 
 export async function getChangelog(retries = 2): Promise<ReleaseNote[]> {
+  // Try R2 first: accessible in China without VPN, avoids GitHub API proxy issues.
+  // changelog.json is generated and uploaded to R2 by the release workflow.
+  try {
+    const resp = await fetchWithTimeout(
+      `${R2_PUBLIC_URL}/changelog.json?_t=${Date.now()}`,
+      { cache: 'no-store', headers: { 'User-Agent': 'AI-Resource-Manager-Updater' }, timeout: 10_000 }
+    )
+    if (resp.ok) return await resp.json() as ReleaseNote[]
+  } catch (e: any) {
+    console.warn('[Updater] R2 changelog fetch failed, falling back to GitHub API:', e.message)
+  }
+
+  // Fallback: GitHub API (requires working connection to github.com)
   let lastErr: Error | null = null
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {

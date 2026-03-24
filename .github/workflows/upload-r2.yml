@@ -70,3 +70,15 @@ jobs:
             --cache-control "no-store" \
             --no-progress
           echo "latest.json updated -> $PUBLIC_BASE/latest.json"
+
+          # Generate and upload changelog.json from GitHub releases API.
+          # Hosted on R2 so clients in China can fetch it without VPN.
+          gh api "repos/${{ github.repository }}/releases?per_page=15" \
+            --jq '[.[] | {tag: (.tag_name | ltrimstr("v")), name, body, publishedAt: .published_at}]' \
+            > changelog.json
+          aws s3 cp changelog.json "s3://ai-resource-manager/changelog.json" \
+            --endpoint-url "$ENDPOINT" \
+            --content-type "application/json" \
+            --cache-control "no-store" \
+            --no-progress
+          echo "changelog.json updated -> $PUBLIC_BASE/changelog.json"
