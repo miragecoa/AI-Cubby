@@ -221,28 +221,38 @@ export async function applyAndRestart(): Promise<void> {
     .replace(/__EXE_PATH__/g, exePath)
     .replace(/__PID__/g, String(pid))
 
-  // Encode as UTF-16LE Base64 → avoids encoding issues with Chinese paths
-  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  // Write PS1 to disk with UTF-8 BOM (required for PowerShell 5.1 with non-ASCII paths).
+  // Previously this was Base64-encoded into a single -EncodedCommand line inside the .cmd,
+  // which can silently fail on Win11 when the encoded string exceeds cmd.exe's 8191-char limit.
+  const tempDir = dirname(downloadedZipPath)
+  const psPath = join(tempDir, 'update.ps1')
+  writeFileSync(psPath, '\uFEFF' + script, 'utf8')
 
-  // Write a .cmd launcher so users can see the extraction progress window.
-  // We host it under conhost.exe explicitly: on Win11, the default terminal is
-  // Windows Terminal (wt.exe) which keeps the session alive until all child processes
-  // exit — including the newly launched Electron app — causing startup logs to leak
-  // into the update window. Conhost.exe uses classic behavior and closes on script exit.
-  const batPath = join(dirname(downloadedZipPath), 'update.cmd')
-  // Auto-elevate to Administrator if the app directory requires elevated write access.
-  // %~f0 expands to the full path of this .cmd file (handles spaces correctly).
-  // Non-admin instance launches an elevated copy via UAC and exits immediately.
-  // `if errorlevel 1 pause` keeps the window open so the user can read any error output.
+  const logPath = join(tempDir, 'update.log')
+  const batPath = join(tempDir, 'update.cmd')
+
+  // Escape single-quotes in paths for use inside PowerShell string literals
+  const psPathEsc = psPath.replace(/'/g, "''")
+
+  // When not admin: launch powershell.exe elevated directly (not the .cmd itself).
+  // This avoids the unreliable "re-launch %~f0 via RunAs" pattern that silently fails
+  // on Windows 11 when the path contains non-ASCII characters or the conhost window
+  // has already been closed by the exiting non-admin instance.
+  const elevateArgs = `@('-NoProfile','-ExecutionPolicy','Bypass','-File','${psPathEsc}')`
+  const elevateCmd = `Start-Process -FilePath powershell.exe -ArgumentList ${elevateArgs} -Verb RunAs`
   writeFileSync(batPath, [
     '@echo off',
+    `echo [%date% %time%] Updater started > "${logPath}"`,
     'net session >nul 2>&1',
     'if %ERRORLEVEL% equ 0 goto :run',
-    `powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"`,
+    `echo [%date% %time%] Not admin, requesting elevation >> "${logPath}"`,
+    `powershell -NoProfile -Command "${elevateCmd}"`,
     'exit /b 0',
     ':run',
-    `powershell.exe -EncodedCommand ${encoded}`,
-    'if errorlevel 1 pause',
+    `echo [%date% %time%] Running as admin, starting extraction >> "${logPath}"`,
+    `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${psPath}" >> "${logPath}" 2>&1`,
+    `echo [%date% %time%] PowerShell exited with code %ERRORLEVEL% >> "${logPath}"`,
+    'if %ERRORLEVEL% neq 0 pause',
   ].join('\r\n') + '\r\n')
 
   try {

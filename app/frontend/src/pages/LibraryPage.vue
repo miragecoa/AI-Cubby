@@ -1926,6 +1926,23 @@ onMounted(async () => {
     // 第二次：等待 75s 后重试仍然缺失的（应对首次网络未就绪）
     setTimeout(tryAutoFavicons, 75_000)
   }, 15_000)
+
+  // 启动后静默补齐所有没有封面的应用/游戏图标（user_modified=0 表示自动生成，可安全重取）
+  // 5s 后开始，每项间隔 200ms，避免阻塞启动
+  setTimeout(async () => {
+    const missing = store.items.filter(r => (r.type === 'app' || r.type === 'game') && !r.cover_path && !r.user_modified)
+    for (const resource of missing) {
+      try {
+        const icon = await window.api.files.getAppIcon(resource.file_path)
+        if (!icon) continue
+        const coverPath = await window.api.files.saveCover(resource.id, icon)
+        if (!coverPath) continue
+        const current = store.items.find(r => r.id === resource.id)
+        store.addOrUpdate({ ...(current || resource), cover_path: coverPath })
+      } catch { /* ignore */ }
+      await new Promise(r => setTimeout(r, 200))
+    }
+  }, 5_000)
 })
 
 onUnmounted(() => {
