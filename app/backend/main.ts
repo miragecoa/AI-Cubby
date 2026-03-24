@@ -597,7 +597,7 @@ function createWindow(): void {
 
   // 最小化 → 保留任务栏图标，不隐藏窗口
   mainWindow.on('minimize', () => {
-    drawerWindow?.show()
+    if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
   })
 
   // 从最小化还原 → 隐藏抽屉
@@ -628,7 +628,7 @@ function createWindow(): void {
       event.preventDefault()
       mainWindow?.setSkipTaskbar(true)
       mainWindow?.hide()
-      drawerWindow?.show()
+      if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
     }
   })
 
@@ -793,7 +793,7 @@ app.whenReady().then(() => {
       // 隐藏主窗口 → 抽屉模式
       mainWindow.setSkipTaskbar(true)
       mainWindow.hide()
-      drawerWindow?.show()
+      if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
     } else {
       // 显示主窗口 → 任务栏可见，隐藏抽屉
       mainWindow?.setSkipTaskbar(false)
@@ -1183,7 +1183,7 @@ function registerWakeShortcut(accelerator: string): void {
       if (mainWindow.isVisible() && mainWindow.isFocused()) {
         mainWindow.setSkipTaskbar(true)
         mainWindow.hide()
-        drawerWindow?.show()
+        if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
       } else {
         mainWindow.setSkipTaskbar(false)
         mainWindow.show()
