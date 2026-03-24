@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { join } from 'path'
-import { mkdirSync } from 'fs'
+import { mkdirSync, unlinkSync } from 'fs'
 import { SCHEMA_SQL } from './schema'
 import { loadManifest, getProfileDir } from './profiles'
 import { pinyin } from 'pinyin-pro'
@@ -50,8 +50,28 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE clipboard_items ADD COLUMN pinned INTEGER DEFAULT 0',
     'ALTER TABLE clipboard_items ADD COLUMN use_count INTEGER DEFAULT 0',
     'ALTER TABLE clipboard_items ADD COLUMN last_used_at INTEGER',
+    'ALTER TABLE resources ADD COLUMN user_modified INTEGER DEFAULT 0',
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
+  }
+
+  // 一次性迁移：为从旧版本升级的用户重置 app/game 的自动生成封面
+  // 目的：旧版本用 app.getFileIcon (低质量) 生成封面，新版本改用 IShellItemImageFactory
+  // user_modified=0 表示封面是自动生成的，可以安全重置；=1 表示用户手动设置，保留
+  const iconRefreshDone = (db.prepare(`SELECT value FROM settings WHERE key = 'icon_refresh_v2'`).get() as any)?.value
+  if (iconRefreshDone !== '1') {
+    const stale = db.prepare(
+      `SELECT id, cover_path FROM resources WHERE type IN ('app','game') AND user_modified = 0 AND cover_path IS NOT NULL`
+    ).all() as Array<{ id: string; cover_path: string }>
+    if (stale.length) {
+      for (const r of stale) {
+        try { unlinkSync(r.cover_path) } catch { /* already gone */ }
+      }
+      const placeholders = stale.map(() => '?').join(',')
+      db.prepare(`UPDATE resources SET cover_path = NULL WHERE id IN (${placeholders})`).run(...stale.map(r => r.id))
+    }
+    db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('icon_refresh_v2', '1')`).run()
+    console.log(`[migration] icon_refresh_v2: reset ${stale.length} stale app/game covers`)
   }
 
   console.log('Database initialized at:', dbPath)

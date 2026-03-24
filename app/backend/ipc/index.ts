@@ -39,72 +39,104 @@ const SCAN_EXT_TYPES: Record<string, string> = {
 const appIconCache = new Map<string, string | null>()
 const thumbCache = new Map<string, string | null>()
 
-// 在 exe 同目录及父目录中搜索图标文件（.ico 优先，其次常见图标文件名）
-// 也会扫描 assets / resources / icons 等常见子目录
-const ICON_SUBDIRS = ['assets', 'resources', 'icons', 'res']
-const ICON_NAMES = ['icon.png', 'logo.png', 'icon.jpg', 'logo.jpg']
 
-function tryLoadIcon(dir: string): string | null {
-  if (!existsSync(dir)) return null
-  let files: string[]
-  try { files = readdirSync(dir) } catch { return null }
+// IShellItemImageFactory —— 与 Windows 资源管理器完全相同的图标 API
+// 用 UTF-16LE EncodedCommand 保证中文路径正确传递
+// 用 GetObject 查真实 HBITMAP 尺寸（小图标可能只有 32px），GetDIBits 保留 alpha，裁剪透明边框
+function getIconViaShellItemFactory(filePath: string): Promise<string | null> {
+  const csCode = [
+    'using System;',
+    'using System.Drawing;',
+    'using System.Drawing.Imaging;',
+    'using System.IO;',
+    'using System.Runtime.InteropServices;',
+    '[ComImport,Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
+    'public interface IShellItemImageFactory{[PreserveSig]int GetImage(SIZE s,int f,out IntPtr h);}',
+    '[StructLayout(LayoutKind.Sequential)]public struct SIZE{public int cx,cy;}',
+    '[StructLayout(LayoutKind.Sequential)]struct BITMAPIH{public int biSize,biWidth,biHeight;public short biPlanes,biBitCount;public int biCompression,biSizeImage,biXPPM,biYPPM,biClrUsed,biClrImp;}',
+    '[StructLayout(LayoutKind.Sequential)]struct BMPOBJ{public int bmType,bmWidth,bmHeight,bmWidthBytes;public short bmPlanes,bmBitsPixel;public IntPtr bmBits;}',
+    'public static class WinIcon{',
+    '  [DllImport("shell32.dll",CharSet=CharSet.Unicode)]',
+    '  static extern int SHCreateItemFromParsingName(string p,IntPtr b,ref Guid g,out IShellItemImageFactory f);',
+    '  [DllImport("gdi32.dll")]static extern bool DeleteObject(IntPtr h);',
+    '  [DllImport("gdi32.dll")]static extern IntPtr CreateCompatibleDC(IntPtr hdc);',
+    '  [DllImport("gdi32.dll")]static extern bool DeleteDC(IntPtr hdc);',
+    '  [DllImport("gdi32.dll")]static extern int GetDIBits(IntPtr hdc,IntPtr hbm,uint s,uint l,IntPtr bits,ref BITMAPIH bi,uint usage);',
+    '  [DllImport("gdi32.dll")]static extern int GetObject(IntPtr h,int cb,ref BMPOBJ o);',
+    '  static readonly Guid IID=new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b");',
+    '  public static string Extract(string path){',
+    '    try{',
+    '      IShellItemImageFactory fac;Guid iid=IID;',
+    '      if(SHCreateItemFromParsingName(path,IntPtr.Zero,ref iid,out fac)!=0||fac==null)return "";',
+    '      IntPtr hbm=IntPtr.Zero;',
+    '      if(fac.GetImage(new SIZE{cx=256,cy=256},4,out hbm)!=0||hbm==IntPtr.Zero)return "";',
+    '      try{',
+    // 查询真实 HBITMAP 尺寸（有些 exe 只有 32px 图标资源，返回的 HBITMAP 也是 32px）
+    '        var bo=new BMPOBJ();GetObject(hbm,Marshal.SizeOf(typeof(BMPOBJ)),ref bo);',
+    '        int W=bo.bmWidth>0?bo.bmWidth:256;',
+    '        int H=Math.Abs(bo.bmHeight)>0?Math.Abs(bo.bmHeight):256;',
+    '        var bi=new BITMAPIH{biSize=Marshal.SizeOf(typeof(BITMAPIH)),biWidth=W,biHeight=-H,biPlanes=1,biBitCount=32,biCompression=0};',
+    '        using(var bmp=new Bitmap(W,H,PixelFormat.Format32bppArgb)){',
+    '          var d=bmp.LockBits(new Rectangle(0,0,W,H),ImageLockMode.WriteOnly,PixelFormat.Format32bppArgb);',
+    '          IntPtr hdc=CreateCompatibleDC(IntPtr.Zero);',
+    '          GetDIBits(hdc,hbm,0,(uint)H,d.Scan0,ref bi,0);',
+    '          DeleteDC(hdc);bmp.UnlockBits(d);',
+    // 外围环形检测：扫描外围1/4宽度的环形区域，若90%以上像素为透明或白色则认为是缩略图框
+    // 是框 → 只在内部区域做alpha边界检测；否则 → 全图alpha边界检测
+    '          var bd=bmp.LockBits(new Rectangle(0,0,W,H),ImageLockMode.ReadOnly,PixelFormat.Format32bppArgb);',
+    '          int ringDepth=W/4,ringTotal=0,ringBg=0;',
+    '          for(int y=0;y<H;y++)for(int x=0;x<W;x++){',
+    '            if(x>=ringDepth&&x<W-ringDepth&&y>=ringDepth&&y<H-ringDepth)continue;',
+    '            ringTotal++;',
+    '            int px2=Marshal.ReadInt32(bd.Scan0,y*bd.Stride+x*4);',
+    '            int a2=(px2>>24)&0xff;',
+    '            if(a2<=64){ringBg++;continue;}',
+    '            int r2=(px2>>16)&0xff,g2=(px2>>8)&0xff,b3=px2&0xff;',
+    '            if(r2>200&&g2>200&&b3>200)ringBg++;',
+    '          }',
+    '          bool hasFrame=ringTotal>0&&ringBg*100/ringTotal>=90;',
+    '          int sx=hasFrame?ringDepth:0,sy=hasFrame?ringDepth:0,ex2=hasFrame?W-ringDepth:W,ey=hasFrame?H-ringDepth:H;',
+    '          int lx=W,ly=H,rx=-1,ry=-1;',
+    '          for(int y=sy;y<ey;y++)for(int x=sx;x<ex2;x++){',
+    '            if(((Marshal.ReadInt32(bd.Scan0,y*bd.Stride+x*4)>>24)&0xff)>64)',
+    '              {if(x<lx)lx=x;if(x>rx)rx=x;if(y<ly)ly=y;if(y>ry)ry=y;}',
+    '          }',
+    '          bmp.UnlockBits(bd);',
+    '          Bitmap fin=bmp;int fw=W,fh=H;',
+    '          if(rx>=lx&&ry>=ly){',
+    '            int p=Math.Max(4,Math.Max(rx-lx+1,ry-ly+1)/10);',
+    '            int cx=Math.Max(0,lx-p),cy2=Math.Max(0,ly-p);',
+    '            int cw=Math.Min(W,rx+p+1)-cx,ch=Math.Min(H,ry+p+1)-cy2;',
+    '            if(cw>0&&ch>0){fin=bmp.Clone(new Rectangle(cx,cy2,cw,ch),PixelFormat.Format32bppArgb);fw=cw;fh=ch;}',
+    '          }',
+    '          using(var ms=new MemoryStream()){fin.Save(ms,ImageFormat.Png);',
+    '            return String.Format("DBG:hbm={0}x{1},ring={2}%({3}/{4}),frame={5},bounds={6},{7},{8},{9},fin={10}x{11}\\n{12}",W,H,ringTotal>0?ringBg*100/ringTotal:0,ringBg,ringTotal,hasFrame,lx,ly,rx,ry,fw,fh,Convert.ToBase64String(ms.ToArray()));}',
+    '        }',
+    '      }finally{DeleteObject(hbm);}',
+    '    }catch{return "";}',
+    '  }',
+    '}'
+  ].join('\n')
 
-  const ico = files.find(f => f.toLowerCase().endsWith('.ico'))
-  if (ico) {
-    const img = nativeImage.createFromPath(join(dir, ico))
-    if (!img.isEmpty()) return img.toDataURL()
-  }
-  for (const name of ICON_NAMES) {
-    if (files.some(f => f.toLowerCase() === name)) {
-      const img = nativeImage.createFromPath(join(dir, name))
-      if (!img.isEmpty()) return img.toDataURL()
-    }
-  }
-  return null
-}
-
-function findNearbyIcon(exePath: string): string | null {
-  if (isUNC(exePath)) return null  // Skip slow network directory scanning
-  try {
-    const exeDir = dirname(exePath)
-    // 1. exe 同目录
-    const r1 = tryLoadIcon(exeDir)
-    if (r1) return r1
-    // 2. exe 同目录下的常见子目录（assets/resources/icons/res）
-    for (const sub of ICON_SUBDIRS) {
-      const r = tryLoadIcon(join(exeDir, sub))
-      if (r) return r
-    }
-    // 3. 父目录
-    const r2 = tryLoadIcon(dirname(exeDir))
-    if (r2) return r2
-  } catch { /* 目录不可访问，跳过 */ }
-  return null
-}
-
-// 终极兜底：用 PowerShell ExtractAssociatedIcon —— 与 Windows Explorer 完全一致
-// 对 app.getFileIcon 无法获取（图标在外部文件/manifest 指向）的情况有效
-function extractIconViaPowerShell(filePath: string): Promise<string | null> {
-  // 用 UTF-16LE EncodedCommand 避免中文路径转义问题
-  const script = [
-    'Add-Type -AssemblyName System.Drawing',
-    `$p=[System.IO.Path]::GetFullPath('${filePath.replace(/'/g, "''")}')`,
-    'try{',
-    '  $ico=[System.Drawing.Icon]::ExtractAssociatedIcon($p)',
-    '  $bmp=$ico.ToBitmap()',
-    '  $ms=New-Object System.IO.MemoryStream',
-    '  $bmp.Save($ms,[System.Drawing.Imaging.ImageFormat]::Png)',
-    '  Write-Output([Convert]::ToBase64String($ms.ToArray()))',
-    '}catch{Write-Output ""}'
-  ].join(';')
+  const safeFilePath = filePath.replace(/'/g, "''")
+  const script = `Add-Type -TypeDefinition @"\n${csCode}\n"@ -ReferencedAssemblies System.Drawing\nWrite-Output ([WinIcon]::Extract('${safeFilePath}'))\n`
   const encoded = Buffer.from(script, 'utf16le').toString('base64')
-  return new Promise((resolve) => {
+  return new Promise<string | null>((resolve) => {
     execFile('powershell.exe',
       ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-      { timeout: 8000 },
-      (_err, stdout) => {
-        const b64 = stdout?.trim()
-        resolve(b64 ? `data:image/png;base64,${b64}` : null)
+      { timeout: 12000 },
+      (_err, stdout, stderr) => {
+        const raw = stdout?.trim() ?? ''
+        const nlIdx = raw.indexOf('\n')
+        if (nlIdx > 0 && raw.startsWith('DBG:')) {
+          const dbg = raw.substring(0, nlIdx).trim()
+          const b64 = raw.substring(nlIdx + 1).trim()
+          console.log(`[icon] ${filePath.split(/[\\/]/).pop()} | ${dbg}`)
+          resolve(b64 ? `data:image/png;base64,${b64}` : null)
+        } else {
+          if (stderr?.trim()) console.log(`[icon-err] ${filePath.split(/[\\/]/).pop()} | ${stderr.trim().substring(0, 200)}`)
+          resolve(raw ? `data:image/png;base64,${raw}` : null)
+        }
       }
     )
   })
@@ -153,7 +185,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('resources:getById', (_e, id: string) => getResourceById(id))
 
   ipcMain.handle('resources:update', (_e, id: string, data: object) => {
-    updateResource(id, data)
+    updateResource(id, { ...data, user_modified: 1 })
     return getResourceById(id)
   })
 
@@ -403,7 +435,7 @@ export function registerIpcHandlers(): void {
   })
 
   // 获取可执行文件的系统图标（用于 .exe / .lnk 资源卡片预览）
-  // 策略1: app.getFileIcon (SHGetFileInfo) → 策略2: 同目录/子目录扫描 → 策略3: PowerShell ExtractAssociatedIcon
+  // 直接使用 IShellItemImageFactory —— 与 Windows 资源管理器完全相同的 API，返回 256×256 图标
   ipcMain.handle('files:getAppIcon', async (_e, filePath: string, force?: boolean) => {
     if (force) appIconCache.delete(filePath)
     if (appIconCache.has(filePath)) return appIconCache.get(filePath) ?? null
@@ -417,19 +449,8 @@ export function registerIpcHandlers(): void {
         try { targetPath = shell.readShortcutLink(filePath).target || filePath } catch { /* 忽略 */ }
       }
 
-      // 策略1：Electron getFileIcon (调用 SHGetFileInfo)
-      for (const size of ['large', 'normal'] as const) {
-        const icon = await app.getFileIcon(targetPath, { size })
-        if (!icon.isEmpty()) return cache(icon.toDataURL())
-      }
-
-      // 策略2：扫描同目录 / 常见子目录(assets/resources/icons/res) / 父目录
-      const nearby = findNearbyIcon(targetPath)
-      if (nearby) return cache(nearby)
-
-      // 策略3：PowerShell ExtractAssociatedIcon —— 与 Windows Explorer 完全相同的 API
-      const ps = await extractIconViaPowerShell(targetPath)
-      return cache(ps)
+      const icon = await getIconViaShellItemFactory(targetPath)
+      return cache(icon)
     } catch {
       return cache(null)
     }
@@ -501,7 +522,7 @@ export function registerIpcHandlers(): void {
   // 保存封面到本地磁盘，并更新数据库中的 cover_path
   // 使用时间戳后缀保证路径唯一 → 防止旧路径在主/渲染层缓存命中旧数据
   // 统一转换为 PNG（解决 .ico / .webp / SVG 等格式被 createThumbnailFromPath 无法解析的问题）
-  ipcMain.handle('files:saveCover', async (_e, resourceId: string, dataUrl: string) => {
+  ipcMain.handle('files:saveCover', async (_e, resourceId: string, dataUrl: string, userPicked = false) => {
     try {
       const coversDir = join(dataDir, 'covers')
       mkdirSync(coversDir, { recursive: true })
@@ -528,7 +549,7 @@ export function registerIpcHandlers(): void {
       // 时间戳后缀保证新路径与旧路径不同，渲染层/主进程缓存自动失效
       const coverPath = join(coversDir, `${resourceId}_${Date.now()}.png`)
       writeFileSync(coverPath, finalBuffer)
-      updateResource(resourceId, { cover_path: coverPath })
+      updateResource(resourceId, userPicked ? { cover_path: coverPath, user_modified: 1 } : { cover_path: coverPath })
       // Evict stale entries and pre-populate new path — readImage won't need
       // createThumbnailFromPath on a freshly-written file
       for (const key of thumbCache.keys()) {

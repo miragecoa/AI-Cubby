@@ -891,7 +891,8 @@ app.whenReady().then(() => {
   ipcMain.handle('drawer:openFilePicker', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'openDirectory', 'multiSelections'],
-      title: '选择要导入的文件'
+      title: '选择要导入的文件（快捷方式请选择 .lnk 文件）',
+      defaultPath: app.getPath('desktop')
     })
     if (result.canceled || !result.filePaths.length) return
     const items = resolveDroppedPaths(result.filePaths)

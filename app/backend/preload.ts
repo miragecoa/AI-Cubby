@@ -58,7 +58,7 @@ contextBridge.exposeInMainWorld('api', {
     readImage: (filePath: string): Promise<string | null> => ipcRenderer.invoke('files:readImage', filePath),
     readFullImage: (filePath: string): Promise<string | null> => ipcRenderer.invoke('files:readFullImage', filePath),
     getAppIcon: (filePath: string, force?: boolean): Promise<string | null> => ipcRenderer.invoke('files:getAppIcon', filePath, force),
-    saveCover: (resourceId: string, dataUrl: string): Promise<string | null> => ipcRenderer.invoke('files:saveCover', resourceId, dataUrl),
+    saveCover: (resourceId: string, dataUrl: string, userPicked?: boolean): Promise<string | null> => ipcRenderer.invoke('files:saveCover', resourceId, dataUrl, userPicked),
     pickFile: (): Promise<string | null> => ipcRenderer.invoke('files:pickFile'),
     pickImage: (): Promise<string | null> => ipcRenderer.invoke('files:pickImage'),
     pickFolder: (): Promise<string | null> => ipcRenderer.invoke('files:pickFolder'),

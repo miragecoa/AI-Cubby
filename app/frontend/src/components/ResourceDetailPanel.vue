@@ -273,9 +273,9 @@ async function pickCover() {
   hasEdited.value = true
   const dataUrl = await window.api.files.readImage(imagePath)
   if (!dataUrl) return
-  const savedPath = await window.api.files.saveCover(props.resource.id, dataUrl)
+  const savedPath = await window.api.files.saveCover(props.resource.id, dataUrl, true)
   if (savedPath) {
-    store.addOrUpdate({ ...props.resource, cover_path: savedPath })
+    store.addOrUpdate({ ...props.resource, cover_path: savedPath, user_modified: 1 })
     thumbSrc.value = dataUrl
   }
 }
@@ -559,12 +559,12 @@ async function refetchIcon() {
 }
 
 .cover-wrap.is-app img {
-  width: auto;
-  height: auto;
-  max-width: 55%;
-  max-height: 60%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  image-rendering: pixelated;
+  padding: 10%;
+  box-sizing: border-box;
+  image-rendering: auto;
 }
 
 .cover-placeholder {

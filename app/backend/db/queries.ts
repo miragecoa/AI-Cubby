@@ -17,6 +17,7 @@ export interface Resource {
   total_run_time: number
   last_run_at: number | null
   pinned?: number
+  user_modified?: number
   tags?: Tag[]
 }
 

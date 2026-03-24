@@ -526,13 +526,13 @@ function openInExplorer() {
   object-fit: cover;
 }
 
-/* 应用图标：系统提取的图标尺寸固定（48px），居中显示而不拉伸 */
+/* 应用图标：IShellItemImageFactory 返回 256×256，填满卡片留小边距 */
 .cover.is-app img {
-  width: auto;
-  height: auto;
-  max-width: 60%;
-  max-height: 60%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+  padding: 10%;
+  box-sizing: border-box;
   image-rendering: auto;
 }
 
