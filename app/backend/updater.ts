@@ -22,7 +22,7 @@ async function fetchWithTimeout(url: string, opts: RequestInit & { timeout?: num
 
 const REPO = 'miragecoa/AI-Resource-Manager'
 const CHECK_INTERVAL = 4 * 60 * 60 * 1000  // 4 hours
-const R2_PUBLIC_URL = 'https://pub-e99883270f2047d9a6151090f7da8a5c.r2.dev'
+const R2_PUBLIC_URL = 'https://download.aicubby.app'
 
 export interface UpdateInfo {
   hasUpdate: boolean
