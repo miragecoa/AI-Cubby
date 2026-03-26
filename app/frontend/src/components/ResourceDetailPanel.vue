@@ -108,7 +108,7 @@
                     />
                     <Transition name="fade-in">
                       <div v-if="newTagInput.trim()" class="tag-enter-badge">
-                        Enter创建
+                        {{ t('detail.tagEnterTip') }}
                       </div>
                     </Transition>
                   </div>
@@ -198,7 +198,7 @@ import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps<{ resource: Resource }>()
 const emit = defineEmits<{ close: [] }>()
@@ -419,7 +419,7 @@ const typeIcon = computed(() => TYPE_ICONS[props.resource.type] ?? TYPE_ICONS.ap
 
 function formatDate(ts: number): string {
   if (!ts) return t('detail.time.never')
-  return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+  return new Date(ts).toLocaleDateString(locale.value === 'en' ? 'en-US' : 'zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
 function formatDuration(seconds: number): string {

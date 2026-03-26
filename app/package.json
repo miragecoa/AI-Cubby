@@ -1,6 +1,6 @@
 {
   "name": "ai-resource-manager",
-  "version": "0.2.26",
+  "version": "0.2.27",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {

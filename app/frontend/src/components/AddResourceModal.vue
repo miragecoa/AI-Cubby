@@ -71,7 +71,7 @@
                     />
                     <Transition name="fade-in">
                       <div v-if="newTagInput.trim()" class="tag-enter-badge">
-                        Enter创建
+                        {{ t('detail.tagEnterTip') }}
                       </div>
                     </Transition>
                   </div>
@@ -220,7 +220,7 @@
                     />
                     <Transition name="fade-in">
                       <div v-if="newTagInput.trim()" class="tag-enter-badge">
-                        Enter创建
+                        {{ t('detail.tagEnterTip') }}
                       </div>
                     </Transition>
                   </div>

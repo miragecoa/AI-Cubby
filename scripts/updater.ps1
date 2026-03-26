@@ -121,4 +121,4 @@ if ($newExeInSource -and $newExeInSource.Name -ne $oldExeName) {
 # Keep .update-temp directory and its contents (zip + extracted) for user reference
 
 Write-Host 'Done! Launching...' -ForegroundColor Green
-Start-Process $exePath
+Start-Process -FilePath $exePath

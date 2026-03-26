@@ -256,13 +256,14 @@ export async function applyAndRestart(): Promise<void> {
   ].join('\r\n') + '\r\n')
 
   try {
-    spawn('conhost.exe', ['cmd.exe', '/c', batPath], {
+    // 'call' as a separate arg handles quoted paths with spaces correctly.
+    // cmd /c "path" strips outer quotes and fails; cmd /c call "path" works.
+    spawn('conhost.exe', ['cmd.exe', '/c', 'call', batPath], {
       detached: true,
       stdio: 'ignore',
     }).unref()
   } catch {
-    // conhost unavailable — fall back to cmd.exe directly
-    spawn('cmd.exe', ['/c', batPath], {
+    spawn('cmd.exe', ['/c', 'call', batPath], {
       detached: true,
       stdio: 'ignore',
     }).unref()
