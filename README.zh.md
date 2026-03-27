@@ -16,6 +16,11 @@
   <img src="https://img.shields.io/badge/platform-Windows_10+-blue?logo=windows" alt="Platform">
   <img src="https://img.shields.io/github/license/miragecoa/AI-Resource-Manager" alt="License">
   <img src="https://img.shields.io/github/v/release/miragecoa/AI-Resource-Manager?label=version" alt="Version">
+  <a href="https://aicubby.app/zh"><img src="https://img.shields.io/badge/官网-aicubby.app-6366F1" alt="官网"></a>
+</p>
+
+<p align="center">
+  <a href="https://aicubby.app/zh">🌐 官网 aicubby.app</a> · <a href="https://aicubby.app/zh">下载</a> · <a href="https://discord.gg/BKr8VMQB4R">Discord</a>
 </p>
 
 ---
@@ -139,9 +144,9 @@ AI小抽屉在你正常用电脑的过程中，把你打开过的每个程序、
 
 ## 下载安装
 
-前往 [Releases](../../releases) 页面下载最新版本：
+访问官网 **[aicubby.app](https://aicubby.app/zh)** 下载最新版本，或前往 [Releases](../../releases) 页面：
 
-- **便携版**（免安装）：`AI-Resource-Manager-x.x.x-portable-win-x64.zip`，解压即用
+- **便携版**（免安装）：`AI-Cubby-x.x.x-portable-win-x64.zip`，解压即用
 
 > 系统要求：Windows 10 及以上
 

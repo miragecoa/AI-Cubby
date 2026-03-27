@@ -16,6 +16,11 @@
   <img src="https://img.shields.io/badge/platform-Windows_10+-blue?logo=windows" alt="Platform">
   <img src="https://img.shields.io/github/license/miragecoa/AI-Resource-Manager" alt="License">
   <img src="https://img.shields.io/github/v/release/miragecoa/AI-Resource-Manager?label=version" alt="Version">
+  <a href="https://aicubby.app"><img src="https://img.shields.io/badge/website-aicubby.app-6366F1" alt="Website"></a>
+</p>
+
+<p align="center">
+  <a href="https://aicubby.app">🌐 aicubby.app</a> · <a href="https://aicubby.app/en">Download</a> · <a href="https://discord.gg/BKr8VMQB4R">Discord</a>
 </p>
 
 ---
@@ -131,7 +136,9 @@ That game from three months ago, that batch of photos from last week — open AI
 
 ## Download
 
-Go to the [Releases](../../releases) page for the latest version:
+Visit **[aicubby.app](https://aicubby.app)** for the latest release, changelog, and screenshots.
+
+Or go directly to the [Releases](../../releases) page:
 
 - **Portable** (no installer): `AI-Cubby-x.x.x-portable-win-x64.zip` — unzip and run
 
