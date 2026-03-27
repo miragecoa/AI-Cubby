@@ -66,6 +66,13 @@ const launchedHidden = process.argv.includes('--hidden')
 app.on('before-quit', () => {
   willQuit = true
   flushRunningSessions()
+  // 退出前同步保存窗口位置/大小，防止防抖定时器来不及触发
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    setSetting('windowMaximized', mainWindow.isMaximized() ? 'true' : 'false')
+    if (!mainWindow.isMaximized() && !mainWindow.isMinimized()) {
+      setSetting('windowBounds', JSON.stringify(mainWindow.getBounds()))
+    }
+  }
   // 显式释放所有全局快捷键，确保 Win+V 等在进程退出后还给系统
   // （Electron 退出时操作系统会自动释放，但显式调用更保险）
   if (app.isReady()) globalShortcut.unregisterAll()
@@ -647,6 +654,7 @@ function createWindow(): void {
     if (raw) savedBounds = { ...savedBounds, ...JSON.parse(raw) }
   } catch { /* use defaults */ }
 
+  const wasMaximized  = getSetting('windowMaximized') === 'true'
   const savedAppTitle = getSetting('appTitle') || 'AI小抽屉'
   const savedAppIconPath = getSetting('appCustomIcon') ?? ''
   const savedAppIcon = savedAppIconPath && existsSync(savedAppIconPath)
@@ -679,6 +687,7 @@ function createWindow(): void {
     const showOnAutoStart = getSetting('showOnAutoStart') === 'true'
     if (!launchedHidden || showOnAutoStart) {
       mainWindow?.setSkipTaskbar(false)
+      if (wasMaximized) mainWindow?.maximize()
       mainWindow?.show()
       drawerWindow?.hide()
     }
@@ -694,9 +703,15 @@ function createWindow(): void {
     drawerWindow?.hide()
   })
 
-  // 最大化/还原事件转发给渲染进程（用于更新自定义标题栏按钮图标）
-  mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximizeChange', true))
-  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximizeChange', false))
+  // 最大化/还原事件：转发给渲染进程 + 持久化状态
+  mainWindow.on('maximize', () => {
+    setSetting('windowMaximized', 'true')
+    mainWindow?.webContents.send('window:maximizeChange', true)
+  })
+  mainWindow.on('unmaximize', () => {
+    setSetting('windowMaximized', 'false')
+    mainWindow?.webContents.send('window:maximizeChange', false)
+  })
 
   // 窗口移动/缩放后保存位置（防抖 500ms）
   let saveBoundsTimer: ReturnType<typeof setTimeout>
