@@ -191,6 +191,7 @@ export default {
     },
     community: {
       title: 'Community',
+      website: 'Official Website',
     },
   },
   library: {

@@ -191,6 +191,7 @@ export default {
     },
     community: {
       title: '社区',
+      website: '官网',
     },
   },
   library: {

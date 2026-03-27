@@ -577,7 +577,7 @@ export function registerIpcHandlers(): void {
   })
 
   // ── 唤醒快捷键 ──────────────────────────────────────────
-  ipcMain.handle('hotkey:get', () => getSetting('hotkeyWake') || 'Alt+Space')
+  ipcMain.handle('hotkey:get', () => getSetting('hotkeyWake') ?? 'Alt+Space')
   ipcMain.handle('hotkey:set', (e, accelerator: string) => {
     // 只注销当前唤醒快捷键，不影响剪贴板快捷键
     const prev = getSetting('hotkeyWake') ?? 'Alt+Space'
