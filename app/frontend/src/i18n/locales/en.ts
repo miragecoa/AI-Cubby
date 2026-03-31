@@ -271,6 +271,7 @@ export default {
     batchDelete: 'Delete',
     batchTagTitle: 'Batch add tags',
     batchTagPlaceholder: 'Type tag name, press Enter',
+    tagEnterTip: 'Press Enter to create tag',
     batchTagApply: 'Apply to selected',
     batchIgnoreTitle: 'Batch ignore',
     batchIgnoreMsg: 'Ignore the {n} selected items? They will no longer be auto-imported.',

@@ -271,6 +271,7 @@ export default {
     batchDelete: '删除',
     batchTagTitle: '批量加标签',
     batchTagPlaceholder: '输入标签名，回车添加',
+    tagEnterTip: '按 Enter 创建标签',
     batchTagApply: '应用到已选项',
     batchIgnoreTitle: '批量忽略',
     batchIgnoreMsg: '确定要忽略所选的 {n} 项资源吗？忽略后将不再自动入库。',

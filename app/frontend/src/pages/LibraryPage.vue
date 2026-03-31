@@ -253,12 +253,13 @@
             <div v-else class="empty-hint">{{ t('library.emptyDefaultHint') }}</div>
           </div>
 
-          <div v-else ref="gridScrollRef" class="grid-scroll">
+          <div v-else ref="gridScrollRef" class="grid-scroll" @mousedown="onGridMousedown">
             <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
             <div v-if="viewMode !== 'list'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
               <ResourceCard
                 v-for="item in visibleItems"
                 :key="item.id"
+                :data-rid="item.id"
                 :resource="item"
                 :selectable="batchMode"
                 :selected="selectedIds.has(item.id)"
@@ -266,6 +267,7 @@
                 :show-micro-label="store.activeType === 'folder' || store.activeType === 'document'"
                 :heat-level="statsPanel === 'heat' ? heatLevel(item) : undefined"
                 @toggle-select="toggleSelect(item)"
+                @shift-select="onCardShiftSelect(item)"
                 @select="onCardSelect"
                 @select-hint="onCardSelectHint"
                 @open="openResource"
@@ -327,10 +329,11 @@
               <div
                 v-for="item in visibleItems"
                 :key="item.id"
+                :data-rid="item.id"
                 class="list-row"
                 :style="colStyle"
                 :class="{ selected: selectedId === item.id, 'batch-selected': batchMode && selectedIds.has(item.id) }"
-                @click="batchMode ? toggleSelect(item) : undefined"
+                @click="onListRowClick($event, item)"
                 @dblclick="openResource(item)"
                 @contextmenu.prevent="openListMenu($event, item)"
                 @mouseenter="onListRowEnter($event, item)"
@@ -609,6 +612,16 @@
       @close="selectedId = null; detailShowHint = false"
     />
 
+    <!-- 框选矩形 -->
+    <Teleport to="body">
+      <div v-if="boxSel.active" class="box-sel-rect" :style="{
+        left: Math.min(boxSel.x0, boxSel.x1) + 'px',
+        top:  Math.min(boxSel.y0, boxSel.y1) + 'px',
+        width:  Math.abs(boxSel.x1 - boxSel.x0) + 'px',
+        height: Math.abs(boxSel.y1 - boxSel.y0) + 'px',
+      }" />
+    </Teleport>
+
     <!-- 拖入提示 Toast -->
     <Teleport to="body">
       <Transition name="toast-slide">
@@ -695,13 +708,20 @@
                 <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
               </button>
             </span>
-            <input
-              v-model="batchTagInput"
-              class="tag-input"
-              :placeholder="t('library.batchTagPlaceholder')"
-              @keydown.enter.prevent="addBatchTag"
-              @keydown.188.prevent="addBatchTag"
-            />
+            <div class="batch-tag-input-wrap">
+              <input
+                v-model="batchTagInput"
+                class="tag-input"
+                :placeholder="t('library.batchTagPlaceholder')"
+                @keydown.enter.prevent="addBatchTag"
+                @keydown.188.prevent="addBatchTag"
+              />
+              <Transition name="fade-in">
+                <div v-if="batchTagInput.trim()" class="batch-tag-enter-badge">
+                  {{ t('library.tagEnterTip') }}
+                </div>
+              </Transition>
+            </div>
           </div>
           <div v-if="batchTagSuggestions.length" class="tag-suggestions">
             <button
@@ -1482,6 +1502,63 @@ const typeOptions = computed<Array<{ label: string; value: string }>>(() => [
   { label: t('resource.types.other'),    value: 'other' },
   ...settingsStore.customCategories.map(c => ({ label: c.name, value: c.id })),
 ])
+
+// ── Shift+Click 进入批量选择 ──────────────────────────────────────
+function onCardShiftSelect(item: Resource) {
+  if (!batchMode.value) enterBatchMode()
+  toggleSelect(item)
+}
+
+function onListRowClick(e: MouseEvent, item: Resource) {
+  if (e.shiftKey) { onCardShiftSelect(item); return }
+  if (batchMode.value) toggleSelect(item)
+}
+
+// ── 拖拽框选 ─────────────────────────────────────────────────────
+const boxSel = reactive({ active: false, x0: 0, y0: 0, x1: 0, y1: 0 })
+
+function onGridMousedown(e: MouseEvent) {
+  if (e.button !== 0 || showIgnored.value) return
+  const target = e.target as HTMLElement
+  if (target.closest('.card') || target.closest('.list-row')) return   // 点在卡片上，不触发框选
+  e.preventDefault()
+
+  const enteredNow = !batchMode.value
+  if (enteredNow) enterBatchMode()
+  const prevSelected = new Set(selectedIds)
+
+  boxSel.x0 = e.clientX; boxSel.y0 = e.clientY
+  boxSel.x1 = e.clientX; boxSel.y1 = e.clientY
+  boxSel.active = true
+
+  function onMove(ev: MouseEvent) {
+    boxSel.x1 = ev.clientX; boxSel.y1 = ev.clientY
+    const rx1 = Math.min(boxSel.x0, boxSel.x1), ry1 = Math.min(boxSel.y0, boxSel.y1)
+    const rx2 = Math.max(boxSel.x0, boxSel.x1), ry2 = Math.max(boxSel.y0, boxSel.y1)
+    selectedIds.clear()
+    for (const id of prevSelected) selectedIds.add(id)
+    const isListView = viewMode.value === 'list'
+    const els = Array.from(gridScrollRef.value?.querySelectorAll<HTMLElement>(
+      isListView ? '.list-row' : '.card'
+    ) ?? [])
+    els.forEach((el, idx) => {
+      if (idx >= visibleItems.value.length) return
+      const r = el.getBoundingClientRect()
+      if (r.right > rx1 && r.left < rx2 && r.bottom > ry1 && r.top < ry2)
+        selectedIds.add(visibleItems.value[idx].id)
+    })
+  }
+
+  function onUp() {
+    boxSel.active = false
+    if (enteredNow && selectedIds.size === 0) exitBatchMode()
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 function enterBatchMode() {
   batchMode.value = true
@@ -2802,6 +2879,15 @@ async function deleteIgnored(filePath: string) {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  user-select: none;
+}
+:global(.box-sel-rect) {
+  position: fixed;
+  pointer-events: none;
+  border: 1px solid var(--accent, #6366F1);
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: 3px;
+  z-index: 9999;
 }
 .grid {
   padding: clamp(6px, calc(var(--card-min-width, 225px) * 0.06), 20px);
@@ -4347,11 +4433,19 @@ async function deleteIgnored(filePath: string) {
 }
 .batch-modal .tag-remove:hover { color: var(--danger); }
 
+.batch-tag-input-wrap {
+  flex: 1; min-width: 100px; position: relative; display: flex; align-items: center;
+}
 .batch-modal .tag-input {
-  flex: 1; min-width: 100px; border: none; outline: none;
+  flex: 1; width: 100%; border: none; outline: none;
   background: transparent; color: var(--text); font-size: 13px;
 }
 .batch-modal .tag-input::placeholder { color: var(--text-3); }
+.batch-tag-enter-badge {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+  padding: 2px 7px; border-radius: 5px; white-space: nowrap; pointer-events: none;
+}
 
 .batch-modal .tag-suggestions {
   display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;

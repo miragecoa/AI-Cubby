@@ -1,6 +1,6 @@
 <template>
-  <div ref="cardRef" class="card" :class="[{ 'is-selected': selected }, heatLevel !== undefined ? `heat-lv${heatLevel}` : '']" :style="{ '--zoom': cardZoom }" @dblclick="selectable ? $emit('toggle-select', resource) : $emit('open', resource)" @contextmenu.prevent="!selectable && openMenu($event)" @click="selectable ? $emit('toggle-select', resource) : undefined" @mouseenter="onMicroEnter" @mouseleave="onMicroLeave">
-    <div class="cover" :class="{ 'is-app': resource.type === 'app' || resource.type === 'game' || resource.type === 'webpage' || resource.type === 'document' || resource.type.startsWith('cat_'), 'cover-solo': micro, 'cover-solo-labeled': micro && showMicroLabel }" @click.stop="selectable ? $emit('toggle-select', resource) : $emit('open', resource)">
+  <div ref="cardRef" class="card" :class="[{ 'is-selected': selected }, heatLevel !== undefined ? `heat-lv${heatLevel}` : '']" :style="{ '--zoom': cardZoom }" @dblclick="selectable ? $emit('toggle-select', resource) : $emit('open', resource)" @contextmenu.prevent="!selectable && openMenu($event)" @click="handleCardClick($event)" @mouseenter="onMicroEnter" @mouseleave="onMicroLeave">
+    <div class="cover" :class="{ 'is-app': resource.type === 'app' || resource.type === 'game' || resource.type === 'webpage' || resource.type === 'document' || resource.type.startsWith('cat_'), 'cover-solo': micro, 'cover-solo-labeled': micro && showMicroLabel }" @click.stop="handleCoverClick($event)">
       <img v-if="thumbSrc" :src="thumbSrc" :alt="resource.title" />
       <div v-else class="cover-placeholder" style="pointer-events:none">
         <span class="type-icon" v-html="typeIcon" />
@@ -198,7 +198,18 @@ const emit = defineEmits<{
   remove: [resource: Resource]
   ignore: [resource: Resource]
   'toggle-select': [resource: Resource]
+  'shift-select': [resource: Resource]
 }>()
+
+function handleCoverClick(e: MouseEvent) {
+  if (e.shiftKey && !props.selectable) { emit('shift-select', props.resource); return }
+  if (props.selectable) { emit('toggle-select', props.resource) } else { emit('open', props.resource) }
+}
+
+function handleCardClick(e: MouseEvent) {
+  if (e.shiftKey) { emit('shift-select', props.resource); return }
+  if (props.selectable) emit('toggle-select', props.resource)
+}
 
 const store = useResourceStore()
 const settingsStore = useSettingsStore()
