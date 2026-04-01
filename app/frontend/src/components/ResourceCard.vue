@@ -176,7 +176,7 @@ import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = withDefaults(defineProps<{
   resource: Resource
@@ -305,7 +305,7 @@ function fmtRelDate(ts: number): string {
   if (days === 0) return t('resource.stats.today')
   if (days === 1) return t('resource.stats.yesterday')
   if (days < 7) return t('resource.stats.daysAgo', { n: days })
-  return new Date(ts).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+  return new Date(ts).toLocaleDateString(locale.value === 'en' ? 'en-US' : 'zh-CN', { month: 'long', day: 'numeric' })
 }
 
 async function getCachedImage(path: string): Promise<string | null> {
