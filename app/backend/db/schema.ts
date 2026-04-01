@@ -12,7 +12,8 @@ export const SCHEMA_SQL = `
     updated_at     INTEGER NOT NULL,
     open_count     INTEGER DEFAULT 0,
     total_run_time INTEGER DEFAULT 0,
-    last_run_at    INTEGER
+    last_run_at    INTEGER,
+    stat_paused    INTEGER DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS tags (

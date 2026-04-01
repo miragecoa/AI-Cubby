@@ -51,6 +51,7 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE clipboard_items ADD COLUMN use_count INTEGER DEFAULT 0',
     'ALTER TABLE clipboard_items ADD COLUMN last_used_at INTEGER',
     'ALTER TABLE resources ADD COLUMN user_modified INTEGER DEFAULT 0',
+    'ALTER TABLE resources ADD COLUMN stat_paused INTEGER DEFAULT 0',
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
   }

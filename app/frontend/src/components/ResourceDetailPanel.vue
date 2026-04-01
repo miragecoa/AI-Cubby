@@ -30,13 +30,45 @@
             </div>
 
             <div class="stats-grid">
+              <!-- 打开次数（可编辑） -->
               <div class="stat-item">
                 <span class="stat-label">{{ t('detail.stats.count') }}</span>
-                <span class="stat-value">{{ resource.open_count ?? 0 }} {{ t('detail.stats.countUnit') }}</span>
+                <div class="stat-value-wrap">
+                  <template v-if="editingCount">
+                    <input
+                      class="stat-edit-input"
+                      type="number" min="0"
+                      v-model.number="editCountVal"
+                      @keydown.enter="saveCount"
+                      @keydown.escape="editingCount = false"
+                      ref="countInputRef"
+                    />
+                    <button class="stat-edit-ok" @click="saveCount">✓</button>
+                    <button class="stat-edit-cancel" @click="editingCount = false">✗</button>
+                  </template>
+                  <template v-else>
+                    <span class="stat-value" :class="{ 'is-paused': statPaused }">{{ resource.open_count ?? 0 }} {{ t('detail.stats.countUnit') }}</span>
+                    <button class="stat-edit-btn" @click="startEditCount" v-html="pencilSvg" />
+                  </template>
+                </div>
               </div>
-              <div v-if="resource.total_run_time" class="stat-item">
+              <!-- 总时长（可编辑） -->
+              <div class="stat-item">
                 <span class="stat-label">{{ t('detail.stats.duration') }}</span>
-                <span class="stat-value">{{ formatDuration(resource.total_run_time) }}</span>
+                <div class="stat-value-wrap">
+                  <template v-if="editingDuration">
+                    <input class="stat-edit-input stat-edit-small" type="number" min="0" v-model.number="editDurationH" ref="durationInputRef" @keydown.enter="saveDuration" @keydown.escape="editingDuration = false" />
+                    <span class="stat-edit-sep">{{ t('detail.stats.durationH') }}</span>
+                    <input class="stat-edit-input stat-edit-small" type="number" min="0" max="59" v-model.number="editDurationM" @keydown.enter="saveDuration" @keydown.escape="editingDuration = false" />
+                    <span class="stat-edit-sep">{{ t('detail.stats.durationM') }}</span>
+                    <button class="stat-edit-ok" @click="saveDuration">✓</button>
+                    <button class="stat-edit-cancel" @click="editingDuration = false">✗</button>
+                  </template>
+                  <template v-else>
+                    <span class="stat-value" :class="{ 'is-paused': statPaused }">{{ formatDuration(resource.total_run_time) }}</span>
+                    <button class="stat-edit-btn" @click="startEditDuration" v-html="pencilSvg" />
+                  </template>
+                </div>
               </div>
               <div v-if="resource.last_run_at" class="stat-item">
                 <span class="stat-label">{{ t('detail.stats.last') }}</span>
@@ -46,6 +78,14 @@
                 <span class="stat-label">{{ t('detail.stats.first') }}</span>
                 <span class="stat-value">{{ formatDate(resource.added_at) }}</span>
               </div>
+            </div>
+
+            <!-- 记录使用统计 toggle -->
+            <div class="stat-toggle-row" :title="statPaused ? t('detail.stats.pausedHint') : ''">
+              <span class="stat-toggle-label" :class="{ 'is-paused': statPaused }">{{ t('detail.stats.recordStats') }}</span>
+              <button class="stat-toggle-btn" :class="{ active: !statPaused }" @click="toggleStatPaused">
+                <span class="toggle-thumb" />
+              </button>
             </div>
 
             <button class="cover-btn" @click="pickCover">
@@ -200,7 +240,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, watchEffect, onMounted } from 'vue'
+import { ref, computed, watch, watchEffect, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
@@ -223,6 +263,50 @@ const newTagInput = ref('')
 const hasEdited   = ref(false)
 const pathCopied  = ref(false)
 
+// ─── Stat editing ──────────────────────────────────────────────────
+const editingCount    = ref(false)
+const editCountVal    = ref(0)
+const editingDuration = ref(false)
+const editDurationH   = ref(0)
+const editDurationM   = ref(0)
+const statPaused      = ref((props.resource.stat_paused ?? 0) === 1)
+const countInputRef    = ref<HTMLInputElement | null>(null)
+const durationInputRef = ref<HTMLInputElement | null>(null)
+
+function startEditCount() {
+  editCountVal.value = props.resource.open_count ?? 0
+  editingCount.value = true
+  nextTick(() => countInputRef.value?.focus())
+}
+function startEditDuration() {
+  const s = props.resource.total_run_time ?? 0
+  editDurationH.value = Math.floor(s / 3600)
+  editDurationM.value = Math.floor((s % 3600) / 60)
+  editingDuration.value = true
+  nextTick(() => durationInputRef.value?.focus())
+}
+async function saveCount() {
+  editingCount.value = false
+  const val = Math.max(0, Math.round(editCountVal.value || 0))
+  if (val === (props.resource.open_count ?? 0)) return
+  const updated = await window.api.resources.update(props.resource.id, { open_count: val })
+  if (updated) store.addOrUpdate(updated as Resource)
+}
+async function saveDuration() {
+  editingDuration.value = false
+  const h = Math.max(0, Math.round(editDurationH.value || 0))
+  const m = Math.max(0, Math.min(59, Math.round(editDurationM.value || 0)))
+  const newSeconds = h * 3600 + m * 60
+  if (newSeconds === (props.resource.total_run_time ?? 0)) return
+  const updated = await window.api.resources.update(props.resource.id, { total_run_time: newSeconds })
+  if (updated) store.addOrUpdate(updated as Resource)
+}
+async function toggleStatPaused() {
+  statPaused.value = !statPaused.value
+  const updated = await window.api.resources.update(props.resource.id, { stat_paused: statPaused.value ? 1 : 0 })
+  if (updated) store.addOrUpdate(updated as Resource)
+}
+
 watch(() => props.resource.id, () => {
   editTitle.value   = props.resource.title
   editNote.value    = props.resource.note ?? ''
@@ -231,6 +315,9 @@ watch(() => props.resource.id, () => {
   editPath.value    = props.resource.file_path
   newTagInput.value = ''
   pathCopied.value  = false
+  editingCount.value    = false
+  editingDuration.value = false
+  statPaused.value      = (props.resource.stat_paused ?? 0) === 1
   loadTagSuggestions()
 })
 
@@ -450,6 +537,7 @@ const imageSvg   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const refreshSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`
 const spinSvg    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="animation:spin .8s linear infinite"><circle cx="12" cy="12" r="10" stroke-opacity=".25"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>`
 const copySvg    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`
+const pencilSvg  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`
 
 // Types that support automatic icon fetching
 const REFETCHABLE_TYPES = new Set(['webpage', 'app', 'game'])
@@ -645,6 +733,72 @@ async function refetchIcon() {
   font-weight: 500;
   color: var(--text-2);
 }
+.stat-value.is-paused { color: var(--text-3); }
+
+/* 统计编辑 */
+.stat-value-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.stat-edit-btn {
+  width: 14px; height: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--text-3); opacity: 0; transition: opacity 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.stat-edit-btn :deep(svg) { width: 12px; height: 12px; }
+.stat-item:hover .stat-edit-btn { opacity: 1; }
+.stat-edit-btn:hover { color: var(--accent-2); }
+
+.stat-edit-input {
+  width: 56px; height: 20px;
+  background: var(--bg); border: 1px solid var(--accent);
+  border-radius: 4px; color: var(--text-1);
+  font-size: 11px; font-family: inherit;
+  text-align: center; padding: 0 4px;
+}
+.stat-edit-input.stat-edit-small { width: 34px; }
+.stat-edit-sep { font-size: 11px; color: var(--text-3); }
+.stat-edit-ok, .stat-edit-cancel {
+  background: none; border: none; padding: 0 2px;
+  cursor: pointer; font-size: 12px; line-height: 1;
+}
+.stat-edit-ok  { color: #6bffb8; }
+.stat-edit-cancel { color: #ff6b6b; }
+
+/* 统计开关行 */
+.stat-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  margin-top: 2px;
+}
+.stat-toggle-label {
+  font-size: 11px; color: var(--text-2);
+  transition: color 0.15s;
+}
+.stat-toggle-label.is-paused { color: var(--text-3); }
+.stat-toggle-btn {
+  width: 30px; height: 16px;
+  border-radius: 8px;
+  border: none; cursor: pointer;
+  background: rgba(255,255,255,0.12);
+  position: relative; flex-shrink: 0;
+  transition: background 0.2s;
+}
+.stat-toggle-btn.active { background: var(--accent); }
+.toggle-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+.stat-toggle-btn.active .toggle-thumb { transform: translateX(14px); }
 
 /* 设置封面按钮 */
 .cover-btn {

@@ -510,6 +510,10 @@ export default {
       countUnit: 'times',
       last: 'Last opened',
       first: 'First added',
+      recordStats: 'Track usage stats',
+      pausedHint: 'Paused — opens and time will not be recorded',
+      durationH: 'h',
+      durationM: 'm',
     },
     time: {
       hours: '{n}h',

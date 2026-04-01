@@ -21,6 +21,7 @@ export interface Resource {
   last_run_at: number | null
   pinned?: number
   user_modified?: number
+  stat_paused?: number
   tags?: Array<{ id: number; name: string; source: string }>
 }
 

@@ -18,6 +18,7 @@ export interface Resource {
   last_run_at: number | null
   pinned?: number
   user_modified?: number
+  stat_paused?: number
   tags?: Tag[]
 }
 
@@ -91,20 +92,22 @@ export function updateResource(id: string, data: Partial<Resource>): void {
     .run({ ...data, id })
 }
 
-/** 进程启动时调用：open_count +1，更新 last_run_at，返回更新后的资源 */
+/** 进程启动时调用：open_count +1，更新 last_run_at，返回更新后的资源（stat_paused=1 时跳过统计） */
 export function recordProcessStart(resourceId: string): Resource | null {
   const now = Date.now()
   getDb().prepare(`
-    UPDATE resources SET open_count = COALESCE(open_count, 0) + 1, last_run_at = ?, updated_at = ? WHERE id = ?
+    UPDATE resources SET open_count = COALESCE(open_count, 0) + 1, last_run_at = ?, updated_at = ?
+    WHERE id = ? AND (stat_paused IS NULL OR stat_paused = 0)
   `).run(now, now, resourceId)
   return getResourceById(resourceId)
 }
 
-/** 进程退出时调用：total_run_time 累加本次秒数，返回更新后的资源 */
+/** 进程退出时调用：total_run_time 累加本次秒数，返回更新后的资源（stat_paused=1 时跳过统计） */
 export function recordProcessStop(resourceId: string, elapsedSeconds: number): Resource | null {
   const now = Date.now()
   getDb().prepare(`
-    UPDATE resources SET total_run_time = COALESCE(total_run_time, 0) + ?, updated_at = ? WHERE id = ?
+    UPDATE resources SET total_run_time = COALESCE(total_run_time, 0) + ?, updated_at = ?
+    WHERE id = ? AND (stat_paused IS NULL OR stat_paused = 0)
   `).run(elapsedSeconds, now, resourceId)
   return getResourceById(resourceId)
 }

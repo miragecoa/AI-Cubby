@@ -510,6 +510,10 @@ export default {
       countUnit: '次',
       last: '上次打开',
       first: '首次添加',
+      recordStats: '记录使用统计',
+      pausedHint: '已暂停，不再记录次数和时长',
+      durationH: '时',
+      durationM: '分',
     },
     time: {
       hours: '{n}时',
