@@ -1373,7 +1373,7 @@ function ltFmtRelDate(ts: number): string {
   if (days === 1) return t('resource.stats.yesterday')
   if (days < 7) return t('resource.stats.daysAgo', { n: days })
   const dateLocale = locale.value === 'en' ? 'en-US' : 'zh-CN'
-  return new Date(ts).toLocaleDateString(dateLocale, { month: 'long', day: 'numeric' })
+  return new Date(ts).toLocaleDateString(dateLocale, { month: 'short' })
 }
 const ctxIcons = {
   play:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
