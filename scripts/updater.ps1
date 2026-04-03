@@ -6,7 +6,7 @@ foreach ($m in @('Microsoft.PowerShell.Management','Microsoft.PowerShell.Utility
     }
 }
 
-$host.UI.RawUI.WindowTitle = 'AI Resource Manager Updater'
+$host.UI.RawUI.WindowTitle = 'AI Cubby Updater'
 Write-Host 'Waiting for app to exit...' -ForegroundColor Cyan
 while (Get-Process -Id __PID__ -EA SilentlyContinue) { Start-Sleep 1 }
 
