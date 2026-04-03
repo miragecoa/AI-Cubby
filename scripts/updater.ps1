@@ -1,3 +1,11 @@
+# Force-load built-in modules — auto-loading can fail on some systems
+# (Group Policy constrained mode, corrupted module analysis cache, AV interference)
+foreach ($m in @('Microsoft.PowerShell.Management','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Archive')) {
+    if (-not (Get-Module -Name $m)) {
+        Import-Module $m -ErrorAction SilentlyContinue
+    }
+}
+
 $host.UI.RawUI.WindowTitle = 'AI Resource Manager Updater'
 Write-Host 'Waiting for app to exit...' -ForegroundColor Cyan
 while (Get-Process -Id __PID__ -EA SilentlyContinue) { Start-Sleep 1 }
