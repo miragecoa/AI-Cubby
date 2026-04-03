@@ -35,7 +35,7 @@ import { ensureProfiles, getProfileDir, loadManifest } from './db/profiles'
 import { registerIpcHandlers, resolveDroppedPaths, setOnLanguageChange } from './ipc/index'
 import { startMonitor, flushRunningSessions } from './monitor/recent-files'
 import type { RunningEvent } from './monitor/recent-files'
-import { initAutoUpdater } from './updater'
+import { initAutoUpdater, checkAndApplyPendingUpdate } from './updater'
 import { initHeartbeat, stopHeartbeat } from './heartbeat'
 
 let mainWindow: BrowserWindow | null = null
@@ -773,7 +773,10 @@ if (!gotLock) {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Apply any pending downloaded update before showing UI
+  await checkAndApplyPendingUpdate()
+
   Menu.setApplicationMenu(null)
 
   // local://local-file/D:/path/to/file → 本地文件流式响应

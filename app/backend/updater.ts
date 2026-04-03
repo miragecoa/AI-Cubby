@@ -1,7 +1,7 @@
 import { app, BrowserWindow, WebContents } from 'electron'
 import { net } from 'electron'
 import { dirname, join } from 'path'
-import { existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, writeFileSync, readFileSync } from 'fs'
 import { spawn } from 'child_process'
 import { getSetting, setSetting } from './db/queries'
 
@@ -192,12 +192,22 @@ export async function downloadUpdate(wc: WebContents | null): Promise<string> {
   setSetting('update_lastAssetTimestamp', latestUpdateInfo.assetUpdatedAt)
 
   downloadedZipPath = zipPath
+
+  // Write metadata alongside zip so startup check knows which version it is
+  try {
+    writeFileSync(
+      join(dirname(zipPath), 'update-meta.json'),
+      JSON.stringify({ version: latestUpdateInfo.remoteVersion }),
+      'utf8'
+    )
+  } catch { /* non-critical */ }
+
   return zipPath
 }
 
 // ── Apply and restart ────────────────────────────────────
 
-export async function applyAndRestart(): Promise<void> {
+export async function applyAndRestart(silent = false): Promise<void> {
   if (!downloadedZipPath || !existsSync(downloadedZipPath)) {
     throw new Error('No downloaded update to apply')
   }
@@ -231,38 +241,43 @@ export async function applyAndRestart(): Promise<void> {
   const logPath = join(tempDir, 'update.log')
   const batPath = join(tempDir, 'update.cmd')
 
-  // Self-elevate the .cmd itself via RunAs. %~f0 is cmd's built-in for the
-  // current batch file's full path — PowerShell single-quotes keep it as one
-  // token even when the path contains spaces. The re-launched elevated cmd
-  // then uses %~dp0 (its own directory) to locate update.ps1, sidestepping
-  // all cross-shell path-quoting issues.
-  writeFileSync(batPath, [
-    '@echo off',
-    `echo [%date% %time%] Updater started > "${logPath}"`,
-    'net session >nul 2>&1',
-    'if %ERRORLEVEL% equ 0 goto :run',
-    `echo [%date% %time%] Not admin, requesting elevation >> "${logPath}"`,
-    `powershell -NoProfile -WindowStyle Hidden -Command "Start-Process '%~f0' -Verb RunAs"`,
-    'exit /b 0',
-    ':run',
-    `echo [%date% %time%] Running as admin, starting extraction >> "${logPath}"`,
-    `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" >> "${logPath}" 2>&1`,
-    `echo [%date% %time%] PowerShell exited with code %ERRORLEVEL% >> "${logPath}"`,
-    'if %ERRORLEVEL% neq 0 pause',
-  ].join('\r\n') + '\r\n')
+  if (silent) {
+    // Silent mode: spawn PowerShell directly, hidden window, no UAC elevation.
+    // Portable app files are in a user-writable location so no admin needed.
+    spawn('powershell.exe', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass',
+      '-WindowStyle', 'Hidden',
+      '-File', psPath,
+      '-Silent',
+    ], { detached: true, stdio: 'ignore' }).unref()
+  } else {
+    // Interactive mode: visible window via conhost, with UAC elevation fallback.
+    writeFileSync(batPath, [
+      '@echo off',
+      `echo [%date% %time%] Updater started > "${logPath}"`,
+      'net session >nul 2>&1',
+      'if %ERRORLEVEL% equ 0 goto :run',
+      `echo [%date% %time%] Not admin, requesting elevation >> "${logPath}"`,
+      `powershell -NoProfile -WindowStyle Hidden -Command "Start-Process '%~f0' -Verb RunAs"`,
+      'exit /b 0',
+      ':run',
+      `echo [%date% %time%] Running as admin, starting extraction >> "${logPath}"`,
+      `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" >> "${logPath}" 2>&1`,
+      `echo [%date% %time%] PowerShell exited with code %ERRORLEVEL% >> "${logPath}"`,
+      'if %ERRORLEVEL% neq 0 pause',
+    ].join('\r\n') + '\r\n')
 
-  try {
-    // 'call' as a separate arg handles quoted paths with spaces correctly.
-    // cmd /c "path" strips outer quotes and fails; cmd /c call "path" works.
-    spawn('conhost.exe', ['cmd.exe', '/c', 'call', batPath], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref()
-  } catch {
-    spawn('cmd.exe', ['/c', 'call', batPath], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref()
+    try {
+      spawn('conhost.exe', ['cmd.exe', '/c', 'call', batPath], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref()
+    } catch {
+      spawn('cmd.exe', ['/c', 'call', batPath], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref()
+    }
   }
 
   app.quit()
@@ -334,6 +349,39 @@ export function getPendingUpdate(): UpdateInfo | null {
   const skippedTs  = getSetting('update_skippedTimestamp')
   if (skippedVer === latestUpdateInfo.remoteVersion && skippedTs === latestUpdateInfo.assetUpdatedAt) return null
   return latestUpdateInfo
+}
+
+// ── Startup pending-update check ─────────────────────────────────────────────
+
+/**
+ * Call once at startup (before any window is created).
+ * If a downloaded zip with a newer version exists in .update-temp, apply it
+ * silently and quit — the updater script will relaunch the new version.
+ */
+export async function checkAndApplyPendingUpdate(): Promise<void> {
+  try {
+    const appDir = app.isPackaged ? dirname(process.execPath) : app.getAppPath()
+    const tempDir = join(appDir, '.update-temp')
+    const zipPath = join(tempDir, 'update.zip')
+    const metaPath = join(tempDir, 'update-meta.json')
+
+    if (!existsSync(zipPath) || !existsSync(metaPath)) return
+
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8'))
+    if (typeof meta?.version !== 'string') return
+
+    if (compareVersions(meta.version, app.getVersion()) <= 0) {
+      // Stale or same version — clean up so it doesn't block future updates
+      try { unlinkSync(metaPath) } catch { /* ignore */ }
+      return
+    }
+
+    // Newer version waiting — apply silently
+    downloadedZipPath = zipPath
+    await applyAndRestart(true)
+  } catch (e) {
+    console.warn('[Updater] Pending update check failed:', e)
+  }
 }
 
 // ── Auto-update scheduler ────────────────────────────────
