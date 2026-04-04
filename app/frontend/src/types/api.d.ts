@@ -131,6 +131,9 @@ declare global {
         delete: (id: string) => Promise<void>
         switch: (id: string) => Promise<void>
       }
+      theme: {
+        getSmartData: () => Promise<{ accentColor: string }>
+      }
     }
   }
 }

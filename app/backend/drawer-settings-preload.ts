@@ -13,9 +13,9 @@ contextBridge.exposeInMainWorld('settingsApi', {
   recallDrawer:    () => ipcRenderer.invoke('drawerSettings:recallDrawer'),
   hideDrawer:      () => ipcRenderer.invoke('drawerSettings:hideDrawer'),
   close:           () => ipcRenderer.invoke('drawerSettings:close'),
-  onThemeChange:   (cb: (vars: { accent: string; accent2: string }) => void) => {
+  onThemeChange:   (cb: (vars: Record<string, string>) => void) => {
     ipcRenderer.on('theme:change', (_e, json) => {
-      try { const t = JSON.parse(json); cb({ accent: t['accent'] ?? '#6366F1', accent2: t['accent-2'] ?? '#818CF8' }) } catch {}
+      try { cb(JSON.parse(json)) } catch {}
     })
   },
   onLanguageChange: (cb: (lang: string) => void) => {

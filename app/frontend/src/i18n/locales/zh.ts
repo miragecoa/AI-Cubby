@@ -123,7 +123,26 @@ export default {
         'accent-2': '强调色2',
         danger: '危险色',
       },
+      palettes: {
+        smart: '智能',
+        indigo: '靛蓝',
+        purple: '紫色',
+        blue: '蓝色',
+        green: '绿色',
+        yellow: '黄色',
+        orange: '橙色',
+        red: '红色',
+      },
+      brightness: {
+        dark: '深色',
+        neutral: '中性',
+        light: '浅色',
+      },
+      glass: '毛玻璃',
+      glassOpacity: '不透明度',
+      smartHint: '为 Wallpaper Engine 设计。开启后将自动读取 Wallpaper Engine 写入 Windows 的主题配色，实时同步壁纸主色调。',
       presets: {
+        smart: '智能',
         dark: '深色',
         light: '浅色',
         midnight: '午夜',
@@ -135,7 +154,7 @@ export default {
     display: {
       title: '显示',
       showExt: '显示文件后缀',
-      showExtDesc: '在资源卡片标题中显示文件扩展名（如 .exe、.sai2）',
+      showExtDesc: '在资源卡片标题中显示文件扩展名（如 .exe、.txt、.mp4）',
     },
     data: {
       title: '数据管理',

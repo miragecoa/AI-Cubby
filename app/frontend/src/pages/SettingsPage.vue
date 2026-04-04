@@ -209,22 +209,95 @@
       <section class="section">
         <h2 class="section-title">{{ t('settings.theme.title') }}</h2>
 
-        <div class="theme-presets-grid">
+        <!-- 主色调选择 -->
+        <div class="palette-row">
+          <!-- 智能（WE取色） -->
+          <div class="palette-chip-wrap">
+            <button
+              class="palette-chip is-smart"
+              :class="{ active: settingsStore.paletteId === 'smart' }"
+              @click="onSetPalette('smart')"
+            >
+              <span class="palette-chip-circle-wrap">
+                <span class="palette-chip-inner smart-bokeh" />
+                <span
+                  class="smart-info-badge"
+                  @mouseenter="onSmartBadgeEnter"
+                  @mouseleave="smartTipVisible = false"
+                >?</span>
+              </span>
+              <span class="palette-chip-label">{{ t('settings.theme.palettes.smart') }}</span>
+            </button>
+          </div>
           <button
-            v-for="preset in THEME_PRESETS"
-            :key="preset.id"
-            class="theme-preset-card"
-            :class="{ active: currentPreset === preset.id }"
-            @click="applyPreset(preset.id)"
+            v-for="p in COLOR_PALETTES"
+            :key="p.id"
+            class="palette-chip"
+            :class="{ active: settingsStore.paletteId === p.id }"
+            @click="onSetPalette(p.id)"
+            :title="t('settings.theme.palettes.' + p.id)"
           >
-            <span class="preset-swatch">
-              <span class="swatch-bg" :style="{ background: preset.vars['bg'] }" />
-              <span class="swatch-surface" :style="{ background: preset.vars['surface'] }" />
-              <span class="swatch-accent" :style="{ background: preset.vars['accent'] }" />
-            </span>
-            <span class="preset-name">{{ t('settings.theme.presets.' + preset.id) }}</span>
+            <span class="palette-chip-inner" :style="{ background: p.accent }" />
+            <span class="palette-chip-label">{{ t('settings.theme.palettes.' + p.id) }}</span>
           </button>
         </div>
+
+        <!-- 深浅模式 + 毛玻璃 -->
+        <div class="brightness-row">
+          <div class="brightness-section">
+            <div class="brightness-toggle">
+              <button
+                v-for="m in BRIGHTNESS_MODES"
+                :key="m"
+                class="brightness-btn"
+                :class="{ active: settingsStore.brightnessMode === m }"
+                @click="onSetBrightness(m)"
+              >{{ t('settings.theme.brightness.' + m) }}</button>
+            </div>
+            <div class="brightness-slider-row">
+              <span class="brightness-slider-label">0</span>
+              <input
+                type="range" min="0" max="100" step="1"
+                class="brightness-slider"
+                :value="settingsStore.brightnessLevel"
+                @input="settingsStore.setBrightnessLevel(parseInt(($event.target as HTMLInputElement).value))"
+              />
+              <span class="brightness-slider-label">100</span>
+              <span class="brightness-slider-val">{{ settingsStore.brightnessLevel }}</span>
+            </div>
+          </div>
+
+          <!-- 毛玻璃开关 + 透明度 -->
+          <div class="glass-controls">
+            <div class="glass-toggle-row">
+              <span class="glass-toggle-label">{{ t('settings.theme.glass') }}</span>
+              <button
+                class="toggle"
+                :class="{ on: settingsStore.glassEnabled }"
+                @click="settingsStore.setGlassEnabled(!settingsStore.glassEnabled)"
+              >
+                <span class="toggle-thumb" />
+              </button>
+            </div>
+            <div v-if="settingsStore.glassEnabled" class="glass-opacity-row">
+              <span class="glass-opacity-label">{{ t('settings.theme.glassOpacity') }}</span>
+              <input
+                type="range" min="0" max="1" step="0.05"
+                class="opacity-slider"
+                :value="settingsStore.glassOpacity"
+                @input="settingsStore.setGlassOpacity(parseFloat(($event.target as HTMLInputElement).value))"
+              />
+              <span class="glass-opacity-val">{{ Math.round(settingsStore.glassOpacity * 100) }}%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- WE tooltip — teleported to body to escape overflow clipping -->
+        <Teleport to="body">
+          <div v-if="smartTipVisible" class="smart-tooltip-portal" :style="smartTipStyle">
+            {{ t('settings.theme.smartHint') }}
+          </div>
+        </Teleport>
 
         <div class="theme-colors-block">
           <button class="theme-colors-toggle" @click="showColors = !showColors">
@@ -493,8 +566,8 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useSettingsStore, DARK_THEME, LIGHT_THEME, THEME_PRESETS } from '../stores/settings'
-import type { ThemeId } from '../stores/settings'
+import { useSettingsStore, DARK_THEME, COLOR_PALETTES } from '../stores/settings'
+import type { PaletteId, BrightnessMode } from '../stores/settings'
 
 const settingsStore = useSettingsStore()
 const { t } = useI18n()
@@ -778,11 +851,40 @@ function applyZoom() {
 }
 
 // ── 外观主题 ──
+const BRIGHTNESS_MODES: BrightnessMode[] = ['dark', 'neutral', 'light']
+
+// Smart palette WE tooltip (teleported to body to escape overflow clipping)
+const smartTipVisible = ref(false)
+const smartTipX = ref(0)
+const smartTipY = ref(0)
+const smartTipStyle = computed(() => ({
+  position: 'fixed' as const,
+  left: `${smartTipX.value}px`,
+  top: `${smartTipY.value - 12}px`,
+  transform: 'translateX(-50%) translateY(-100%)',
+}))
+
+function onSmartBadgeEnter(e: MouseEvent) {
+  smartTipX.value = e.clientX
+  smartTipY.value = e.clientY
+  smartTipVisible.value = true
+}
+
 const showColors = ref(false)
 const importCode = ref('')
 const copied = ref(false)
 
-const exportCode = computed(() => btoa(JSON.stringify(settingsStore.themeVars)))
+const exportCode = computed(() => {
+  const payload = {
+    colors: settingsStore.themeVars,
+    paletteId: settingsStore.paletteId,
+    brightnessMode: settingsStore.brightnessMode,
+    brightnessLevel: settingsStore.brightnessLevel,
+    glassEnabled: settingsStore.glassEnabled,
+    glassOpacity: settingsStore.glassOpacity,
+  }
+  return btoa(JSON.stringify(payload))
+})
 
 function copyExportCode() {
   navigator.clipboard.writeText(exportCode.value)
@@ -790,10 +892,20 @@ function copyExportCode() {
   setTimeout(() => { copied.value = false }, 2000)
 }
 
-function importTheme() {
+async function importTheme() {
   try {
     const parsed = JSON.parse(atob(importCode.value.trim()))
-    settingsStore.setTheme({ ...DARK_THEME, ...parsed })
+    // Support both old format (plain color map) and new format (with config)
+    if (parsed.colors) {
+      const { colors, paletteId, brightnessMode, brightnessLevel, glassEnabled, glassOpacity } = parsed
+      if (paletteId) await settingsStore.setPaletteMode(paletteId, brightnessMode ?? 'dark')
+      if (typeof brightnessLevel === 'number') await settingsStore.setBrightnessLevel(brightnessLevel)
+      if (typeof glassOpacity === 'number') await settingsStore.setGlassOpacity(glassOpacity)
+      if (typeof glassEnabled === 'boolean') await settingsStore.setGlassEnabled(glassEnabled)
+      await settingsStore.setTheme({ ...DARK_THEME, ...colors })
+    } else {
+      await settingsStore.setTheme({ ...DARK_THEME, ...parsed })
+    }
     importCode.value = ''
   } catch {
     alert(t('settings.theme.invalidCode'))
@@ -814,17 +926,12 @@ const themeVarDefs = computed(() => [
   { key: 'danger',    label: t('settings.theme.vars.danger') },
 ])
 
-const currentPreset = computed(() => {
-  const v = settingsStore.themeVars
-  for (const p of THEME_PRESETS) {
-    if (Object.keys(p.vars).every(k => v[k] === p.vars[k])) return p.id
-  }
-  return 'custom'
-})
+function onSetPalette(pid: PaletteId) {
+  settingsStore.setPaletteMode(pid, settingsStore.brightnessMode)
+}
 
-function applyPreset(id: ThemeId) {
-  const preset = THEME_PRESETS.find(p => p.id === id)
-  if (preset) settingsStore.setTheme({ ...preset.vars })
+function onSetBrightness(mode: BrightnessMode) {
+  settingsStore.setPaletteMode(settingsStore.paletteId, mode)
 }
 
 function onColorChange(key: string, e: Event) {
@@ -871,7 +978,7 @@ function onColorChange(key: string, e: Event) {
 .section-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-3);
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 8px;
@@ -960,7 +1067,7 @@ function onColorChange(key: string, e: Event) {
 
 .setting-desc {
   font-size: 13px;
-  color: var(--text-3);
+  color: var(--text-2);
   line-height: 1.4;
 }
 
@@ -1067,7 +1174,7 @@ function onColorChange(key: string, e: Event) {
 
 .zoom-unit {
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
   margin-left: -4px;
 }
 
@@ -1128,48 +1235,274 @@ function onColorChange(key: string, e: Event) {
   font-weight: 600;
 }
 
-/* Theme */
-.theme-presets-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
+/* Theme — palette chips */
+.palette-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
 }
 
-.theme-preset-card {
+.palette-chip {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 10px 6px 8px;
-  background: var(--surface-2);
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
+  gap: 5px;
+  background: none;
+  border: none;
   cursor: pointer;
-  transition: border-color .15s, background .15s;
+  padding: 4px 6px;
 }
-.theme-preset-card:hover { border-color: var(--text-3); }
-.theme-preset-card.active { border-color: var(--accent); background: var(--surface-3); }
 
-.preset-swatch {
-  width: 36px;
-  height: 24px;
-  border-radius: 5px;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  border: 1px solid rgba(128,128,128,.2);
+.palette-chip-inner {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color .15s, transform .15s;
 }
-.swatch-bg     { grid-column: 1 / 3; grid-row: 1; }
-.swatch-surface { grid-column: 1;    grid-row: 2; }
-.swatch-accent  { grid-column: 2;    grid-row: 2; }
 
-.preset-name {
+.palette-chip.active .palette-chip-inner {
+  outline-color: var(--text);
+  transform: scale(1.1);
+}
+
+.palette-chip:not(.active):hover .palette-chip-inner {
+  transform: scale(1.07);
+  outline-color: var(--text-3);
+}
+
+.smart-gradient {
+  background: linear-gradient(135deg, #6366F1 0%, #22D3EE 50%, #F59E0B 100%);
+}
+
+.palette-chip-label {
   font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.palette-chip.active .palette-chip-label { color: var(--accent); font-weight: 600; }
+
+/* Smart chip wrapper */
+.palette-chip-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Relative wrapper around just the circle, so badge can anchor to its corner */
+.palette-chip-circle-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.smart-bokeh {
+  background:
+    radial-gradient(circle, rgba(255,255,255,0.88) 0%, rgba(255,255,255,0) 55%),
+    conic-gradient(from 0deg,
+      hsl(0,100%,50%), hsl(60,100%,50%), hsl(120,100%,50%),
+      hsl(180,100%,50%), hsl(240,100%,50%), hsl(300,100%,50%), hsl(360,100%,50%)
+    );
+  background-clip: padding-box;
+}
+
+.smart-info-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  z-index: 1;
+}
+.smart-info-badge:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* Teleported portal tooltip (rendered at body level, never clipped) */
+
+/* Brightness toggle */
+.brightness-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.brightness-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.brightness-toggle {
+  display: flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.brightness-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brightness-slider-label {
+  font-size: 11px;
+  color: var(--text-2);
+  width: 18px;
+  text-align: center;
+  user-select: none;
+}
+
+.brightness-slider-val {
+  font-size: 11px;
+  color: var(--text-2);
+  width: 24px;
+  text-align: right;
+  user-select: none;
+}
+
+.brightness-slider {
+  -webkit-appearance: none;
+  width: 130px;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, #111 0%, #fff 100%);
+  outline: none;
+  cursor: pointer;
+}
+.brightness-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+
+.glass-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.glass-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.glass-toggle-label {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.glass-opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.glass-opacity-label {
+  font-size: 12px;
   color: var(--text-2);
   white-space: nowrap;
 }
-.theme-preset-card.active .preset-name { color: var(--accent); font-weight: 600; }
+
+.opacity-slider {
+  -webkit-appearance: none;
+  width: 100px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+.opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--surface);
+}
+
+.glass-opacity-val {
+  font-size: 12px;
+  color: var(--text-2);
+  width: 32px;
+  text-align: right;
+}
+
+/* Teleported portal tooltip */
+.smart-tooltip-portal {
+  width: 210px;
+  padding: 9px 11px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+  margin-bottom: 2px;
+}
+
+.brightness-btn {
+  padding: 7px 22px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  position: relative;
+}
+
+.brightness-btn + .brightness-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 1px;
+  background: var(--border);
+}
+
+.brightness-btn.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.brightness-btn:not(.active):hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
 
 .theme-colors-block {
   background: var(--surface-2);

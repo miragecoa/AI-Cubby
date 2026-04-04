@@ -121,21 +121,6 @@
               </div>
             </div>
 
-            <!-- 评分 -->
-            <div class="field-row">
-              <label class="field-label">{{ t('detail.rating') }}</label>
-              <div class="stars-row">
-                <button
-                  v-for="n in 5"
-                  :key="n"
-                  class="star-btn"
-                  :class="{ active: n <= editRating }"
-                  @click="setRating(n)"
-                >★</button>
-                <button v-if="editRating > 0" class="clear-rating" @click="setRating(0)">{{ t('detail.clearRating') }}</button>
-              </div>
-            </div>
-
             <!-- 标签 -->
             <div class="field-row align-start">
               <label class="field-label">{{ t('detail.tags') }}</label>
@@ -257,7 +242,6 @@ const settingsStore = useSettingsStore()
 // ─── Local editable state ──────────────────────────────────────────
 const editTitle   = ref(props.resource.title)
 const editNote    = ref(props.resource.note ?? '')
-const editRating  = ref(props.resource.rating)
 const editPath    = ref(props.resource.file_path)
 const newTagInput = ref('')
 const hasEdited   = ref(false)
@@ -310,7 +294,6 @@ async function toggleStatPaused() {
 watch(() => props.resource.id, () => {
   editTitle.value   = props.resource.title
   editNote.value    = props.resource.note ?? ''
-  editRating.value  = props.resource.rating
   hasEdited.value   = false
   editPath.value    = props.resource.file_path
   newTagInput.value = ''
@@ -418,14 +401,6 @@ async function flushAndClose() {
   await Promise.all(promises)
   hasEdited.value = false
   emit('close')
-}
-
-// ─── Rating ────────────────────────────────────────────────────────
-async function setRating(n: number) {
-  editRating.value = n
-  hasEdited.value = true
-  const updated = await window.api.resources.update(props.resource.id, { rating: n })
-  if (updated) store.addOrUpdate(updated as Resource)
 }
 
 // ─── Tags ──────────────────────────────────────────────────────────
@@ -907,39 +882,6 @@ async function refetchIcon() {
   color: var(--text-3);
 }
 
-/* 评分 */
-.stars-row {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  flex: 1;
-}
-
-.star-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 22px;
-  line-height: 1;
-  padding: 0 2px;
-  color: var(--border);
-  transition: color 0.1s, transform 0.1s;
-}
-.star-btn.active { color: #F59E0B; }
-.star-btn:hover { transform: scale(1.15); color: #F59E0B; }
-
-.clear-rating {
-  margin-left: 8px;
-  font-size: 11px;
-  color: var(--text-3);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  font-family: inherit;
-  transition: color 0.1s;
-}
-.clear-rating:hover { color: var(--text-2); }
 
 /* 标签列 */
 .tag-col {

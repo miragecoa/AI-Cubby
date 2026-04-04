@@ -249,6 +249,17 @@ body {
   width: 100vw;
 }
 
+/* ── 毛玻璃模式 ──
+   JS overrides --bg/--surface/--surface-2/--surface-3 with rgba() values,
+   making every panel semi-transparent. The blur here composites the wallpaper. */
+:global(.glass-mode) body {
+  background: transparent;
+}
+:global(.glass-mode) .app {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
 /* ── 自定义标题栏 ── */
 .titlebar {
   display: flex;

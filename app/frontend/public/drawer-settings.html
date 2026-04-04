@@ -374,9 +374,10 @@
     })
 
     // Live theme updates (if popup stays open while theme changes)
-    window.settingsApi.onThemeChange(({ accent, accent2 }) => {
-      document.documentElement.style.setProperty('--accent', accent)
-      document.documentElement.style.setProperty('--accent-2', accent2)
+    const _THEME_KEYS = ['bg','surface','surface-2','surface-3','border','text','text-2','text-3','accent','accent-2','danger']
+    window.settingsApi.onThemeChange(vars => {
+      const r = document.documentElement
+      for (const k of _THEME_KEYS) { if (vars[k]) r.style.setProperty('--' + k, vars[k]) }
     })
 
     opacitySlider.addEventListener('input', () => {

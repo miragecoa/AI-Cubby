@@ -123,7 +123,26 @@ export default {
         'accent-2': 'Accent 2',
         danger: 'Danger',
       },
+      palettes: {
+        smart: 'Smart',
+        indigo: 'Indigo',
+        purple: 'Purple',
+        blue: 'Blue',
+        green: 'Green',
+        yellow: 'Yellow',
+        orange: 'Orange',
+        red: 'Red',
+      },
+      brightness: {
+        dark: 'Dark',
+        neutral: 'Neutral',
+        light: 'Light',
+      },
+      glass: 'Frosted glass',
+      glassOpacity: 'Opacity',
+      smartHint: 'Designed for Wallpaper Engine. Automatically reads the accent color WE writes to Windows and syncs your theme with your wallpaper in real time.',
       presets: {
+        smart: 'Smart',
         dark: 'Dark',
         light: 'Light',
         midnight: 'Midnight',
@@ -135,7 +154,7 @@ export default {
     display: {
       title: 'Display',
       showExt: 'Show file extensions',
-      showExtDesc: 'Show file extensions in card titles (e.g. .exe, .sai2)',
+      showExtDesc: 'Show file extensions in card titles (e.g. .exe, .txt, .mp4)',
     },
     data: {
       title: 'Data',

@@ -363,7 +363,7 @@
                 <span class="lr-date">{{ formatListDate(item.updated_at) }}</span>
                 <span class="lr-count">{{ t('resource.stats.count', { n: item.open_count }) }}</span>
                 <span class="lr-tags">
-                  <span v-for="tag in (item.tags || []).slice(0, 3)" :key="tag.id" class="lr-tag">{{ tag.name }}</span>
+                  <span v-for="tag in (item.tags || []).slice(0, 3)" :key="tag.id" class="lr-tag lr-tag-clickable" @click.stop="onCardSelectHint(item)">{{ tag.name }}</span>
                 </span>
               </div>
               <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
@@ -3125,10 +3125,19 @@ async function deleteIgnored(filePath: string) {
 .lr-tag {
   font-size: 11px;
   padding: 1px 6px;
-  background: rgba(99, 102, 241, 0.12);
-  color: var(--accent-2);
+  background: color-mix(in srgb, var(--text) 8%, var(--surface-2));
+  color: var(--text-2);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   border-radius: 3px;
   white-space: nowrap;
+}
+.lr-tag-clickable {
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.lr-tag-clickable:hover {
+  background: color-mix(in srgb, var(--text) 18%, var(--surface-2));
+  color: var(--text);
 }
 
 .col-resizer {

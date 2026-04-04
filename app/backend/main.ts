@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImage, protocol, globalShortcut, screen, dialog, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImage, protocol, globalShortcut, screen, dialog, clipboard, systemPreferences } from 'electron'
 import { join, extname, basename } from 'path'
 import { createHash } from 'crypto'
 import { deflateSync } from 'zlib'
@@ -130,6 +130,21 @@ function makeSolidPng(r: number, g: number, b: number, size = 16): Buffer {
 }
 
 let fileIcon: NativeImage | null | undefined = undefined  // undefined = not yet checked
+
+// ── Smart theme helpers ──────────────────────────────────────────────────────
+
+interface SmartThemeData {
+  // Windows accent color — when WE "修改Windows配色" is on, this IS the dominant wallpaper color
+  accentColor: string
+}
+
+function getSmartThemeData(): SmartThemeData {
+  const rawAccent = systemPreferences.getAccentColor?.() ?? null
+  const accentColor = rawAccent ? `#${rawAccent.slice(0, 6)}` : '#6366F1'
+  return { accentColor }
+}
+
+// ── App icon ─────────────────────────────────────────────────────────────────
 
 /** 只加载用户放在 resources/ 里的真实图标，找不到返回 null */
 function loadFileIcon(): NativeImage | null {
@@ -673,9 +688,10 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     frame: false,
+    transparent: true,       // Allows smart theme to show WE wallpaper through
+    backgroundColor: '#00000000',
     skipTaskbar: true,   // 默认不在任务栏，显示时再 setSkipTaskbar(false)
     title: savedAppTitle,
-    backgroundColor: '#0C0C18',
     ...(savedAppIcon ? { icon: savedAppIcon } : loadFileIcon() ? { icon: loadFileIcon()! } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -863,6 +879,8 @@ app.whenReady().then(() => {
   mkdirSync(clipboardImgDir, { recursive: true })
   registerIpcHandlers()
   setOnLanguageChange(() => tray?.setContextMenu(buildTrayMenu()))
+  // ── Smart theme ───────────────────────────────────────
+  ipcMain.handle('theme:smart:getData', () => getSmartThemeData())
   ipcMain.handle('masonry:open', (_e, items: Array<{ path: string; title: string }>) => { createMasonryWindow(items) })
   ipcMain.handle('masonry:getPaths', () => masonryPaths)
   ipcMain.handle('masonry:minimize', () => { masonryWindow?.minimize() })

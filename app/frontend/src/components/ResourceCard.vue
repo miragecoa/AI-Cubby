@@ -60,7 +60,7 @@
       </div>
       <div v-if="!narrow" class="tags">
         <template v-if="resource.tags?.length">
-          <span v-for="tag in resource.tags" :key="tag.id" class="tag">{{ tag.name }}</span>
+          <span v-for="tag in resource.tags" :key="tag.id" class="tag tag-clickable" @click.stop="$emit('select-hint', resource)">{{ tag.name }}</span>
         </template>
         <span v-else class="tag tag-unclassified tag-unclassified-btn" :title="t('resource.unclassifiedHint')" @click.stop="$emit('select-hint', resource)">{{ t('resource.unclassified') }}</span>
       </div>
@@ -599,8 +599,9 @@ function openInExplorer() {
 
 .tag {
   font-size: 11px;
-  background: var(--surface-3);
-  color: var(--accent-2);
+  background: color-mix(in srgb, var(--text) 8%, var(--surface-2));
+  color: var(--text-2);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   padding: 1px 5px;
   border-radius: 3px;
   font-weight: 500;
@@ -620,6 +621,14 @@ function openInExplorer() {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.tag-clickable {
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tag-clickable:hover {
+  background: color-mix(in srgb, var(--text) 18%, var(--surface-2));
+  color: var(--text);
 }
 
 .ctx-backdrop {
@@ -1204,11 +1213,11 @@ function openInExplorer() {
 
 .micro-tt-tag {
   font-size: 10px;
-  background: var(--surface-3);
-  color: var(--accent-2);
+  background: color-mix(in srgb, var(--text) 8%, var(--surface-2));
+  color: var(--text-2);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   padding: 1px 5px;
   border-radius: 3px;
-  border: 1px solid rgba(99, 102, 241, 0.15);
 }
 
 .micro-tt-tag-more {

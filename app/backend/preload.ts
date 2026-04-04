@@ -230,6 +230,12 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  // 主题
+  theme: {
+    getSmartData: (): Promise<{ accentColor: string }> =>
+      ipcRenderer.invoke('theme:smart:getData'),
+  },
+
   // 配置文件（多数据库）
   profiles: {
     list: (): Promise<{ active: string; profiles: Array<{ id: string; name: string }> }> =>

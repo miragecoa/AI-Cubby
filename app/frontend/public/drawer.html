@@ -162,13 +162,15 @@
     }
 
     // ── Theme ──────────────────────────────────────────────────────────────
-    function applyAccent({ accent, accent2 }) {
-      document.documentElement.style.setProperty('--accent', accent)
-      document.documentElement.style.setProperty('--accent-2', accent2)
+    const THEME_VAR_KEYS = ['bg','surface','surface-2','surface-3','border','text','text-2','text-3','accent','accent-2','danger']
+    function applyThemeVars(vars) {
+      const r = document.documentElement
+      for (const k of THEME_VAR_KEYS) { if (vars[k]) r.style.setProperty('--' + k, vars[k]) }
     }
     const _dp = new URLSearchParams(window.location.search)
-    if (_dp.get('accent')) applyAccent({ accent: _dp.get('accent'), accent2: _dp.get('accent2') || '#818CF8' })
-    window.drawerApi?.onThemeChange(v => applyAccent(v))
+    // Seed from URL params (zero-flash; params may only carry accent for legacy)
+    applyThemeVars({ accent: _dp.get('accent') || '#6366F1', 'accent-2': _dp.get('accent2') || '#818CF8' })
+    window.drawerApi?.onThemeChange(vars => applyThemeVars(vars))
 
     // Init strip size from URL params (passed at window creation — zero flash)
     if (_dp.get('stripLen')) STRIP_LEN = parseInt(_dp.get('stripLen'))
