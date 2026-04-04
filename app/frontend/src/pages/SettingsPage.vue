@@ -1708,8 +1708,8 @@ function onColorChange(key: string, e: Event) {
 .update-tips-box {
   margin-top: 8px;
   padding: 10px 14px;
-  background: rgba(99, 102, 241, 0.06);
-  border: 1px solid rgba(99, 102, 241, 0.18);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 8px;
 }
 .update-tips-title {
@@ -2018,6 +2018,6 @@ function onColorChange(key: string, e: Event) {
 .lang-btn.active {
   border-color: var(--accent);
   color: var(--accent-2);
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 </style>

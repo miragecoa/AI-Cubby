@@ -867,9 +867,9 @@ async function refetchIcon() {
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(99, 102, 241, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent-2);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   font-family: inherit;
   cursor: pointer;
   outline: none;
@@ -952,7 +952,7 @@ async function refetchIcon() {
   color: var(--accent-2);
   padding: 2px 4px 2px 7px;
   border-radius: 4px;
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .tag-remove {

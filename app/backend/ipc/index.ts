@@ -554,6 +554,7 @@ export function registerIpcHandlers(): void {
     documents: app.getPath('documents'),
     videos:    app.getPath('videos'),
     pictures:  app.getPath('pictures'),
+    recent:    app.getPath('recent'),
   }))
 
   let _diskScanSignal: DiskScanSignal = { cancelled: false }

@@ -495,7 +495,7 @@ function openInExplorer() {
 .card:hover {
   border-color: var(--accent);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 
@@ -1161,8 +1161,8 @@ function openInExplorer() {
   font-size: 10px;
   font-weight: 500;
   color: var(--accent-2);
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: 3px;
   padding: 1px 5px;
   flex-shrink: 0;

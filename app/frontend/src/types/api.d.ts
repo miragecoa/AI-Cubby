@@ -48,7 +48,7 @@ declare global {
         pickMultipleFiles: () => Promise<string[] | null>
         scanDirectory: (dirPath: string) => Promise<Array<{ path: string; name: string; type: string }>>
         listDrives: () => Promise<string[]>
-        getKnownFolders: () => Promise<{ desktop: string; downloads: string; documents: string; videos: string; pictures: string }>
+        getKnownFolders: () => Promise<{ desktop: string; downloads: string; documents: string; videos: string; pictures: string; recent: string }>
         diskScan: (roots: string[], types: string[]) => Promise<Array<{ type: string; title: string; file_path: string }>>
         diskScanCancel: () => Promise<void>
         onDiskScanProgress: (callback: (count: number, latest: string) => void) => () => void

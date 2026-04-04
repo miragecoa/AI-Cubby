@@ -1037,13 +1037,13 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
 .drop-zone:hover,
 .drop-zone.drag-over {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.06);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .drop-zone.has-file {
   border-style: solid;
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.04);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
   padding: 0;
 }
 
@@ -1262,7 +1262,7 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
 }
 .tag-chip:hover { border-color: var(--text-3); color: var(--text-2); }
 .tag-chip.selected {
-  background: rgba(99, 102, 241, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   border-color: var(--accent);
   color: var(--accent-2);
 }
@@ -1410,7 +1410,7 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
 
 .scan-pick-btn {
   padding: 8px 16px;
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: 1px solid var(--accent);
   border-radius: 7px;
   color: var(--accent-2);
@@ -1421,7 +1421,7 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
   white-space: nowrap;
   transition: background 0.12s;
 }
-.scan-pick-btn:hover:not(:disabled) { background: rgba(99, 102, 241, 0.2); }
+.scan-pick-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .scan-pick-btn:disabled { opacity: 0.5; cursor: default; }
 
 .scan-stats {
@@ -1524,7 +1524,7 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
   border-radius: 4px;
   transition: background 0.1s;
 }
-.scan-toggle-all:hover { background: rgba(99, 102, 241, 0.12); }
+.scan-toggle-all:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .scan-center {
   flex: 1;
@@ -1540,7 +1540,7 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
 
 .scan-center.drag-over {
   border: 2px dashed var(--accent);
-  background: rgba(99, 102, 241, 0.06);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .scan-center-text {
@@ -1567,7 +1567,7 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
   transition: background 0.08s;
 }
 .scan-file-row:hover { background: var(--surface-2); }
-.scan-file-row.selected { background: rgba(99, 102, 241, 0.05); }
+.scan-file-row.selected { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 
 .scan-checkbox {
   width: 14px;
@@ -1591,7 +1591,7 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
 .scan-type-badge.type-image { color: #10b981; background: rgba(16, 185, 129, 0.1); }
 .scan-type-badge.type-video { color: #8b5cf6; background: rgba(139, 92, 246, 0.1); }
 .scan-type-badge.type-music { color: #ec4899; background: rgba(236, 72, 153, 0.1); }
-.scan-type-badge.type-game  { color: var(--accent-2); background: rgba(99, 102, 241, 0.1); }
+.scan-type-badge.type-game  { color: var(--accent-2); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .scan-type-badge.type-app   { color: var(--text-2); background: var(--surface-3); }
 .scan-type-badge.type-comic { color: #f97316; background: rgba(249, 115, 22, 0.1); }
 .scan-type-badge.type-novel { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }

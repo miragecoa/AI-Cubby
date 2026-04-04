@@ -488,7 +488,7 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 }
 
 .edit-item.is-drag-over {
-  background: rgba(99, 102, 241, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
@@ -627,7 +627,7 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
   padding: 0;
 }
 .add-cat-ok { color: var(--accent-2); }
-.add-cat-ok:hover { background: rgba(99, 102, 241, 0.15); border-color: var(--accent); }
+.add-cat-ok:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: var(--accent); }
 .add-cat-ok:disabled { opacity: 0.4; cursor: not-allowed; }
 .add-cat-cancel-btn { color: var(--text-3); }
 .add-cat-cancel-btn:hover { background: var(--surface-2); }

@@ -243,7 +243,7 @@ async function quit() {
 .lang-btn.active {
   border-color: var(--accent);
   color: var(--accent-2);
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .divider {
@@ -283,7 +283,7 @@ async function quit() {
 
 .mode.selected {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .mode-icon {
@@ -314,7 +314,7 @@ async function quit() {
   font-size: 11px;
   font-weight: 600;
   color: var(--accent-2);
-  background: rgba(99, 102, 241, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   padding: 1px 6px;
   border-radius: 4px;
   letter-spacing: 0.02em;

@@ -890,13 +890,17 @@
             <template v-if="!sysScanning && sysScanResult === null">
               <span class="scan-modal-icon" v-html="scanSysSvg" />
               <p class="scan-modal-desc">{{ t('library.scanModal.desc') }}</p>
-              <p class="scan-modal-hint">{{ t('library.scanModal.historyHint') }}</p>
+              <p class="scan-modal-hint">
+                从 <button class="hint-path-btn" @click="openRecentFolder">%AppData%\Microsoft\Windows\Recent</button> 读取快捷方式，不会扫描磁盘
+              </p>
               <button class="scan-modal-btn" @click="doSystemScan">{{ t('library.scanModal.start') }}</button>
             </template>
             <template v-else-if="sysScanning">
               <div class="spinner lg" />
               <p class="scan-modal-desc">{{ t('library.scanModal.scanning') }}</p>
-              <p class="scan-modal-hint">{{ t('library.scanModal.historyHint') }}</p>
+              <p class="scan-modal-hint">
+                从 <button class="hint-path-btn" @click="openRecentFolder">%AppData%\Microsoft\Windows\Recent</button> 读取快捷方式，不会扫描磁盘
+              </p>
               <button class="scan-modal-btn secondary" @click="cancelScan">{{ t('library.scanModal.cancel') }}</button>
             </template>
             <template v-else>
@@ -961,6 +965,7 @@
                 <div class="disk-type-group">
                   <label v-for="tp in diskTypeOptions" :key="tp.value" class="disk-type-check">
                     <input type="checkbox" :value="tp.value" v-model="diskScanTypes" />
+                    <svg v-if="diskScanTypes.includes(tp.value)" viewBox="0 0 12 12" fill="none" width="11" height="11" style="flex-shrink:0"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     <span>{{ tp.label }}</span>
                   </label>
                 </div>
@@ -1048,18 +1053,19 @@
                   </span>
                   <span class="disk-preview-count">{{ diskSelectedCount }} / {{ diskNewResults.length }}</span>
                 </div>
-                <div class="disk-preview-list" @click="diskCtxMenu = null">
-                  <label v-for="r in diskNewResults" :key="r.file_path" class="disk-preview-item"
+                <div class="disk-preview-list" @click="diskCtxMenu = null" @mouseleave="diskDragStop" @mouseup="diskDragStop">
+                  <div v-for="r in diskNewResults" :key="r.file_path" class="disk-preview-item"
                     :class="{ selected: diskScanSelected.has(r.file_path) }"
-                    @contextmenu.prevent="showDiskCtxMenu($event, r)">
-                    <input type="checkbox"
-                      :checked="diskScanSelected.has(r.file_path)"
-                      @change="diskScanSelected.has(r.file_path) ? diskScanSelected.delete(r.file_path) : diskScanSelected.add(r.file_path); diskScanSelected = new Set(diskScanSelected)"
-                    />
+                    @contextmenu.prevent="showDiskCtxMenu($event, r)"
+                    @mousedown="diskItemMousedown($event, r.file_path)"
+                    @mouseenter="diskItemMouseenter(r.file_path)">
+                    <span class="disk-preview-checkbox" :class="{ checked: diskScanSelected.has(r.file_path) }">
+                      <svg v-if="diskScanSelected.has(r.file_path)" viewBox="0 0 12 12" fill="none" width="9" height="9"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
                     <span class="disk-preview-type-dot" :data-type="r.type" />
                     <span class="disk-preview-name">{{ r.title }}</span>
                     <span class="disk-preview-path">{{ r.file_path }}</span>
-                  </label>
+                  </div>
                 </div>
                 <!-- 右键菜单 -->
                 <Teleport to="body">
@@ -1197,12 +1203,13 @@ const scanTab = ref<'history' | 'disk'>('history')
 
 interface FolderPreset { key: string; label: string; path: string; checked: boolean }
 const diskFolderPresets = ref<FolderPreset[]>([])
+const recentFolderPath = ref('')
 const diskCustomFolders = ref<string[]>([])
 const availableDrives = ref<string[]>([])
 const diskScopeAll = ref(false)
 const diskScopeDrive = ref(false)
 const diskScopeDriveValue = ref('C:\\')
-const diskScanTypes = ref<string[]>(['app', 'image', 'video', 'music'])
+const diskScanTypes = ref<string[]>(['app', 'image', 'video', 'music', 'document'])
 const diskScanning = ref(false)
 const diskScanProgress = ref(0)
 const diskScanRecentFiles = ref<string[]>([])
@@ -1236,6 +1243,27 @@ const diskTypeOptions = computed(() => [
 const diskScanSelected = ref<Set<string>>(new Set())
 const diskScanError = ref<string | null>(null)
 const diskCtxMenu = ref<{ x: number; y: number; path: string } | null>(null)
+
+// ── 拖拽批量勾选 ──────────────────────────────────────────
+let _dragSelecting = false
+let _dragTargetState = false  // true = 勾选, false = 取消
+
+function diskItemMousedown(e: MouseEvent, path: string) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  _dragSelecting = true
+  _dragTargetState = !diskScanSelected.value.has(path)
+  const s = new Set(diskScanSelected.value)
+  _dragTargetState ? s.add(path) : s.delete(path)
+  diskScanSelected.value = s
+}
+function diskItemMouseenter(path: string) {
+  if (!_dragSelecting) return
+  const s = new Set(diskScanSelected.value)
+  _dragTargetState ? s.add(path) : s.delete(path)
+  diskScanSelected.value = s
+}
+function diskDragStop() { _dragSelecting = false }
 
 function showDiskCtxMenu(e: MouseEvent, r: { file_path: string }) {
   diskCtxMenu.value = { x: e.clientX, y: e.clientY, path: r.file_path }
@@ -2447,6 +2475,7 @@ onMounted(async () => {
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('dragover', onDocDragOver)
   document.addEventListener('click', onDocCloseTypeFilter)
+  document.addEventListener('mouseup', diskDragStop)
 
   // 悬浮小抽屉拖入
   unsubDrawerImport = window.api.onDrawerImport((items) => {
@@ -2538,6 +2567,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('dragover', onDocDragOver)
   document.removeEventListener('click', onDocCloseTypeFilter)
+  document.removeEventListener('mouseup', diskDragStop)
   sentinelObserver?.disconnect()
   unsubDrawerImport?.()
   unsubWake?.()
@@ -2776,6 +2806,7 @@ async function openScanModal() {
       window.api.files.getKnownFolders(),
       window.api.files.listDrives(),
     ])
+    recentFolderPath.value = kf.recent
     diskFolderPresets.value = [
       { key: 'desktop',   label: t('library.scanModal.diskFolderDesktop'),   path: kf.desktop,   checked: true },
       { key: 'downloads', label: t('library.scanModal.diskFolderDownloads'), path: kf.downloads, checked: false },
@@ -2808,6 +2839,14 @@ async function doSystemScan() {
   } finally {
     if (gen === scanGeneration) sysScanning.value = false
   }
+}
+
+async function openRecentFolder() {
+  if (!recentFolderPath.value) {
+    const kf = await window.api.files.getKnownFolders()
+    recentFolderPath.value = kf.recent
+  }
+  window.api.files.openInExplorer(recentFolderPath.value)
 }
 
 function cancelScan() {
@@ -3038,7 +3077,7 @@ async function deleteIgnored(filePath: string) {
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: 1px solid var(--accent);
   border-radius: 6px;
   color: var(--accent-2);
@@ -3049,31 +3088,32 @@ async function deleteIgnored(filePath: string) {
   white-space: nowrap;
 }
 
-.add-btn:hover { background: rgba(99, 102, 241, 0.2); }
+.add-btn:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 
 .ai-btn {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.08));
-  border: 1px solid rgba(168, 85, 247, 0.35);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent-2) 20%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent-2) 65%, transparent);
   border-radius: 6px;
-  color: #a78bfa;
+  color: var(--accent-2);
   font-size: 13px;
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   transition: background 0.15s;
   white-space: nowrap;
 }
-.ai-btn:hover { background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15)); }
+.ai-btn:hover { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, transparent), color-mix(in srgb, var(--accent-2) 30%, transparent)); }
 
 .scan-sys-toolbar-btn {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-dim);
@@ -3083,7 +3123,7 @@ async function deleteIgnored(filePath: string) {
   transition: background 0.15s, color 0.15s;
   white-space: nowrap;
 }
-.scan-sys-toolbar-btn:hover { background: rgba(99, 102, 241, 0.15); color: var(--text); }
+.scan-sys-toolbar-btn:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--text); }
 .scan-sys-toolbar-btn .btn-icon { width: 16px; height: 16px; }
 
 /* 系统扫描弹窗 */
@@ -3144,10 +3184,20 @@ async function deleteIgnored(filePath: string) {
 .scan-modal .spinner.lg { width: 40px; height: 40px; }
 
 /* 扫盘宽弹窗 & tabs */
-.scan-modal-wide { min-width: 480px; max-width: 560px; padding: 0; gap: 0; align-items: stretch; }
+.scan-modal-wide {
+  min-width: 480px;
+  max-width: 560px;
+  max-height: min(90vh, 780px);
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+}
 .scan-tabs {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   padding: 0 8px;
   gap: 2px;
@@ -3186,15 +3236,35 @@ async function deleteIgnored(filePath: string) {
   align-items: center;
   gap: 14px;
   padding: 32px 40px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .scan-disk-body { align-items: stretch; gap: 14px; }
-.scan-disk-body.has-results { max-height: 80vh; overflow-y: auto; }
 .scan-modal-hint {
   font-size: 12px;
   color: var(--text-3);
   text-align: center;
   max-width: 320px;
   line-height: 1.5;
+}
+.hint-path-btn {
+  display: inline;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  color: var(--accent-2);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--accent-2) 40%, transparent);
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+.hint-path-btn:hover {
+  color: var(--text);
+  text-decoration-color: var(--text-3);
 }
 
 /* 扫盘配置区 */
@@ -3442,11 +3512,25 @@ async function deleteIgnored(filePath: string) {
   cursor: pointer;
   border-bottom: 1px solid rgba(255,255,255,0.04);
   transition: background 0.1s;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .disk-preview-item:last-child { border-bottom: none; }
 .disk-preview-item:hover { background: rgba(255,255,255,0.04); }
-.disk-preview-item.selected { background: rgba(99,102,241,0.06); }
-.disk-preview-item input[type=checkbox] { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+.disk-preview-item.selected { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.disk-preview-checkbox {
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid var(--border);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, border-color 0.1s;
+  color: #fff;
+}
+.disk-preview-item.selected .disk-preview-checkbox {
+  background: var(--accent);
+  border-color: var(--accent);
+}
 .disk-preview-type-dot {
   width: 7px; height: 7px;
   border-radius: 50%;
@@ -3691,12 +3775,12 @@ async function deleteIgnored(filePath: string) {
 .ai-coming-badge {
   display: inline-block;
   padding: 3px 14px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15));
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 25%, transparent), color-mix(in srgb, var(--accent-2) 25%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent-2) 70%, transparent);
   border-radius: 20px;
   font-size: 12px;
-  color: #a78bfa;
-  font-weight: 500;
+  color: var(--accent-2);
+  font-weight: 600;
 }
 .ai-coming-close {
   margin-top: 8px;
@@ -3753,7 +3837,7 @@ async function deleteIgnored(filePath: string) {
   position: absolute;
   inset: 0;
   z-index: 100;
-  background: rgba(99, 102, 241, 0.06);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
   border: 2px dashed var(--accent);
   border-radius: 8px;
   display: flex;
@@ -3811,7 +3895,7 @@ async function deleteIgnored(filePath: string) {
   position: fixed;
   pointer-events: none;
   border: 1px solid var(--accent, #6366F1);
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   border-radius: 3px;
   z-index: 9999;
 }
@@ -3846,7 +3930,7 @@ async function deleteIgnored(filePath: string) {
   transition: background 0.15s, color 0.15s;
 }
 .view-toggle-btn.active {
-  background: rgba(99, 102, 241, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent-2);
 }
 .view-toggle-btn:hover:not(.active) { color: var(--text); }
@@ -3879,8 +3963,8 @@ async function deleteIgnored(filePath: string) {
   transition: background 0.1s;
 }
 .list-row:hover { background: var(--surface-2); }
-.list-row.selected { background: rgba(99, 102, 241, 0.1); }
-.list-row.batch-selected { background: rgba(99, 102, 241, 0.15); }
+.list-row.selected { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.list-row.batch-selected { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 
 .lr-play-btn {
   flex-shrink: 0;
@@ -4355,7 +4439,7 @@ async function deleteIgnored(filePath: string) {
   transition: background 0.1s, border-color 0.1s;
 }
 
-.unignore-btn:hover { background: rgba(99, 102, 241, 0.1); border-color: var(--accent); }
+.unignore-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); border-color: var(--accent); }
 
 .delete-ignored-btn {
   flex-shrink: 0;
@@ -4401,7 +4485,7 @@ async function deleteIgnored(filePath: string) {
 .bulk-unignore-btn {
   color: var(--accent-2);
 }
-.bulk-unignore-btn:hover { background: rgba(99, 102, 241, 0.1); border-color: var(--accent); }
+.bulk-unignore-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); border-color: var(--accent); }
 
 .bulk-delete-btn {
   color: var(--danger);
@@ -4539,7 +4623,7 @@ async function deleteIgnored(filePath: string) {
   transition: background 0.1s;
 }
 
-.clear-tags-btn:hover { background: rgba(99, 102, 241, 0.12); }
+.clear-tags-btn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .tag-search-input {
   width: calc(100% - 16px);
@@ -4584,8 +4668,8 @@ async function deleteIgnored(filePath: string) {
 .tag-chip:hover { background: var(--surface-2); }
 
 .tag-chip.active {
-  background: rgba(99, 102, 241, 0.1);
-  border-color: rgba(99, 102, 241, 0.35);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .tag-chip-name {
@@ -4611,7 +4695,7 @@ async function deleteIgnored(filePath: string) {
 }
 
 .tag-chip.active .tag-chip-count {
-  background: rgba(99, 102, 241, 0.18);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent-2);
 }
 
@@ -4654,7 +4738,7 @@ async function deleteIgnored(filePath: string) {
 }
 .stats-toggle-btn:hover { background: var(--surface-2); color: var(--text-2); }
 .stats-toggle-btn.active {
-  background: rgba(99, 102, 241, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -4681,7 +4765,7 @@ async function deleteIgnored(filePath: string) {
 }
 .stats-panel-resize-handle:hover,
 .stats-panel.no-transition .stats-panel-resize-handle {
-  background: rgba(99, 102, 241, 0.35);
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .stats-panel-header {
@@ -4714,7 +4798,7 @@ async function deleteIgnored(filePath: string) {
 }
 .stats-tab:hover { background: var(--surface-2); color: var(--text-2); }
 .stats-tab.active {
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   border-color: var(--accent);
   color: var(--accent-2);
 }
@@ -5024,7 +5108,7 @@ async function deleteIgnored(filePath: string) {
 .toast-undo-btn {
   flex-shrink: 0;
   padding: 5px 11px;
-  background: rgba(99, 102, 241, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: 1px solid var(--accent);
   border-radius: 6px;
   color: var(--accent-2);
@@ -5035,7 +5119,7 @@ async function deleteIgnored(filePath: string) {
   transition: background 0.12s;
 }
 
-.toast-undo-btn:hover { background: rgba(99, 102, 241, 0.22); }
+.toast-undo-btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 
 .toast-close-btn {
   flex-shrink: 0;
