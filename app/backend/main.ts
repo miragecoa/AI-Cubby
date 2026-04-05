@@ -36,7 +36,7 @@ import { registerIpcHandlers, resolveDroppedPaths, setOnLanguageChange } from '.
 import { startMonitor, flushRunningSessions } from './monitor/recent-files'
 import type { RunningEvent } from './monitor/recent-files'
 import { initAutoUpdater } from './updater'
-import { initHeartbeat, flushAndStop, incShortcutMain, incShortcutClip } from './heartbeat'
+import { initHeartbeat, flushAndStop, incShortcutMain, incShortcutClip, incWakeCount } from './heartbeat'
 
 let mainWindow: BrowserWindow | null = null
 let masonryWindow: BrowserWindow | null = null
@@ -397,7 +397,15 @@ function createTray(): void {
   tray = new Tray(trayIcon)
   tray.setToolTip(getSetting('appTitle') || 'AI小抽屉')
   tray.setContextMenu(buildTrayMenu())
-  tray.on('click', () => mainWindow?.show())
+  tray.on('click', () => {
+    if (!mainWindow) return
+    incWakeCount()
+    mainWindow.setSkipTaskbar(false)
+    mainWindow.show()
+    mainWindow.focus()
+    drawerWindow?.hide()
+    mainWindow.webContents.send('window:trayWake')
+  })
 }
 
 // Legacy named-preset → numeric (0-100) migration map
@@ -784,6 +792,7 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => {
     if (mainWindow) {
+      incWakeCount()
       mainWindow.setSkipTaskbar(false)
       mainWindow.show()
       mainWindow.focus()
@@ -1403,6 +1412,7 @@ function registerWakeShortcut(accelerator: string): void {
         mainWindow.hide()
         if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
       } else {
+        incWakeCount()
         mainWindow.setSkipTaskbar(false)
         mainWindow.show()
         mainWindow.focus()

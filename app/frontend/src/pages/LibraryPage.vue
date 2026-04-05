@@ -90,6 +90,13 @@
         </div>
       </div>
 
+      <!-- 托盘呼出快捷键提示 -->
+      <Transition name="tray-hint">
+        <div v-if="trayHintVisible" class="tray-hint-bar" @click="trayHintVisible = false">
+          💡 提示：下次试试按 <kbd>Alt + Space</kbd> 秒开小抽屉，效率提升 300%！
+        </div>
+      </Transition>
+
     </div>
 
     <!-- 批量操作工具栏 -->
@@ -1719,6 +1726,19 @@ watch(() => [store.activeType, store.searchQuery, store.activeTags], () => {
   renderLimit.value = BATCH_SIZE
 })
 
+// 搜索计数：从有内容到清空算 1 次完整搜索
+let _hadSearchContent = false
+watch(() => store.searchQuery, (q) => {
+  const hasContent = !!q.trim()
+  if (hasContent) {
+    _hadSearchContent = true
+  } else if (_hadSearchContent) {
+    // 刚从有内容变成空 → 一次搜索结束
+    _hadSearchContent = false
+    window.api.search.incSearch()
+  }
+})
+
 function setupSentinelObserver() {
   sentinelObserver?.disconnect()
   sentinelObserver = new IntersectionObserver((entries) => {
@@ -2563,6 +2583,20 @@ const unsubWake = window.api.onWake(() => {
   })
 })
 
+// ── 托盘呼出提示：每天最多显示一次 ──────────────────────
+const trayHintVisible = ref(false)
+let _trayHintTimer: ReturnType<typeof setTimeout> | null = null
+const TRAY_HINT_KEY = 'trayHintLastDate'
+
+const unsubTrayWake = window.api.onTrayWake(() => {
+  const today = new Date().toDateString()
+  if (localStorage.getItem(TRAY_HINT_KEY) === today) return
+  localStorage.setItem(TRAY_HINT_KEY, today)
+  trayHintVisible.value = true
+  if (_trayHintTimer) clearTimeout(_trayHintTimer)
+  _trayHintTimer = setTimeout(() => { trayHintVisible.value = false }, 8000)
+})
+
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('dragover', onDocDragOver)
@@ -2571,6 +2605,8 @@ onUnmounted(() => {
   sentinelObserver?.disconnect()
   unsubDrawerImport?.()
   unsubWake?.()
+  unsubTrayWake?.()
+  if (_trayHintTimer) clearTimeout(_trayHintTimer)
 })
 
 // Per-type view mode and card zoom (derived from active category)
@@ -2963,6 +2999,39 @@ async function deleteIgnored(filePath: string) {
   background: var(--bg);
   flex-shrink: 0;
 }
+
+/* 托盘呼出提示 */
+.tray-hint-bar {
+  flex-shrink: 0;
+  padding: 7px 16px;
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
+  cursor: pointer;
+  animation: tray-hint-pulse 2s ease-in-out 3;
+}
+.tray-hint-bar kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-family: inherit;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 4px;
+  color: var(--accent-2);
+}
+@keyframes tray-hint-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.tray-hint-enter-active { transition: all 0.3s ease; }
+.tray-hint-leave-active { transition: all 0.3s ease; }
+.tray-hint-enter-from { opacity: 0; max-height: 0; padding: 0 16px; }
+.tray-hint-enter-to { opacity: 1; max-height: 40px; }
+.tray-hint-leave-from { opacity: 1; max-height: 40px; }
+.tray-hint-leave-to { opacity: 0; max-height: 0; padding: 0 16px; }
 
 .toolbar-row {
   display: flex;

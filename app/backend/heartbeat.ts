@@ -25,6 +25,7 @@ let _pendingSearches = 0
 let _pendingTagUses  = 0
 let _pendingShortcutMain = 0
 let _pendingShortcutClip = 0
+let _pendingWakes = 0
 let _sid = ''
 let _sessionStart = 0
 
@@ -34,6 +35,8 @@ export function incSearchCount(): void   { _pendingSearches++ }
 export function incTagUseCount(): void   { _pendingTagUses++ }
 export function incShortcutMain(): void  { _pendingShortcutMain++ }
 export function incShortcutClip(): void  { _pendingShortcutClip++ }
+/** Call every time the main window is shown (tray, shortcut, taskbar, etc.) */
+export function incWakeCount(): void     { _pendingWakes++ }
 
 /** Returns the persisted install_id, creating one on first run. */
 function getInstallId(): string {
@@ -57,12 +60,13 @@ async function sendHeartbeat(installId: string, version: string): Promise<void> 
   const tc = _pendingTagUses;   _pendingTagUses  = 0
   const sm = _pendingShortcutMain; _pendingShortcutMain = 0
   const scl = _pendingShortcutClip; _pendingShortcutClip = 0
+  const wk = _pendingWakes; _pendingWakes = 0
   const se = Math.floor((Date.now() - _sessionStart) / 1000)
   try {
     await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: installId, v: version, lc, sc, tc, sm, scl, sid: _sid, se }),
+      body: JSON.stringify({ id: installId, v: version, lc, sc, tc, sm, scl, wk, sid: _sid, se }),
       signal: AbortSignal.timeout(8000),
     })
   } catch { /* offline, timeout, or any error — silently ignored */ }

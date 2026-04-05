@@ -28,6 +28,7 @@ declare global {
       }
       search: {
         query: (q: string, type?: string) => Promise<import('../stores/resources').Resource[]>
+        incSearch: () => Promise<void>
       }
       settings: {
         get: (key: string) => Promise<string | null>
@@ -60,6 +61,7 @@ declare global {
       onRunningChange: (callback: (event: { resourceId: string; running: boolean; startTime?: number }) => void) => () => void
       onReload: (callback: () => void) => () => void
       onWake: (callback: () => void) => () => void
+      onTrayWake: (callback: () => void) => () => void
       onDrawerImport: (callback: (items: Array<{ type: string; title: string; file_path: string; meta?: string }>) => void) => () => void
       onDropWindowItems: (callback: (items: Array<{ type: string; title: string; file_path: string; meta?: string }>) => void) => () => void
       dropImport: {

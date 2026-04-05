@@ -342,9 +342,9 @@ export function registerIpcHandlers(): void {
 
   // ── 搜索 ──────────────────────────────────────────────
   ipcMain.handle('search:query', (_e, q: string, type?: string) => {
-    if (q.trim()) incSearchCount()
     return searchResources(q, type)
   })
+  ipcMain.handle('search:incSearch', () => { incSearchCount() })
 
   // ── 设置 ──────────────────────────────────────────────
   ipcMain.handle('settings:get', (_e, key: string) => getSetting(key))

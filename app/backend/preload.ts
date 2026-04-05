@@ -39,7 +39,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // 搜索
   search: {
-    query: (q: string, type?: string) => ipcRenderer.invoke('search:query', q, type)
+    query: (q: string, type?: string) => ipcRenderer.invoke('search:query', q, type),
+    incSearch: () => ipcRenderer.invoke('search:incSearch'),
   },
 
   // 设置
@@ -106,6 +107,12 @@ contextBridge.exposeInMainWorld('api', {
   onWake: (callback: () => void) => {
     ipcRenderer.on('window:wake', () => callback())
     return () => ipcRenderer.removeAllListeners('window:wake')
+  },
+
+  // 托盘点击唤起窗口
+  onTrayWake: (callback: () => void) => {
+    ipcRenderer.on('window:trayWake', () => callback())
+    return () => ipcRenderer.removeAllListeners('window:trayWake')
   },
 
   // 监听进程运行状态变化
