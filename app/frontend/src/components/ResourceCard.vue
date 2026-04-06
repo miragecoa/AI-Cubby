@@ -168,16 +168,10 @@
     </Teleport>
 </template>
 
-<!-- 模块级缓存：在 <script setup> 之外声明，组件销毁/重建时仍存活 -->
-<script lang="ts">
-const _imgCache    = new Map<string, string | null>()
-const _iconCache   = new Map<string, string | null>()
-const _savedCovers = new Set<string>()   // 本次会话已保存封面的资源 ID
-</script>
-
 <script setup lang="ts">
-import { ref, computed, watchEffect, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watchEffect, watch, nextTick, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { getCached, isCached, loadImage, loadIcon, getCachedIcon, hasSavedCover, markCoverSaved, cancelQueued, isIndexVisible, getVisVersion } from '../utils/image-cache'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
@@ -191,8 +185,9 @@ const props = withDefaults(defineProps<{
   cardZoom?: number
   heatLevel?: number
   showMicroLabel?: boolean
+  itemIndex?: number
   display?: { duration?: boolean; count?: boolean; lastUsed?: boolean; tags?: boolean; fileSize?: boolean; cardBg?: boolean }
-}>(), { selectable: false, selected: false, cardZoom: 0.75, showMicroLabel: false })
+}>(), { selectable: false, selected: false, cardZoom: 0.75, showMicroLabel: false, itemIndex: 0 })
 
 // Responsive breakpoints based on zoom factor (150px * cardZoom = minCardWidth)
 const compact = computed(() => props.cardZoom <= 0.87) // < ~130px: collapse badge, hide tags
@@ -235,6 +230,15 @@ const settingsStore = useSettingsStore()
 const showKillConfirm = ref(false)
 const showIgnoreWarn = ref(false)
 const cardRef = ref<HTMLElement | null>(null)
+
+// ── 可见性追踪：基于滚动位置的 index 范围判断 ────────────────
+const _visCheck = ref(0)  // 用于触发响应式更新
+const isNearViewport = computed(() => { void _visCheck.value; return isIndexVisible(props.itemIndex) })
+
+// 定期同步全局可见版本号 → 触发 isNearViewport 重新计算
+let _visTimer: ReturnType<typeof setInterval> | null = null
+_visTimer = setInterval(() => { _visCheck.value = getVisVersion() }, 300)
+onUnmounted(() => { if (_visTimer) clearInterval(_visTimer) })
 
 // ── micro 悬浮提示 ──────────────────────────────────────────────────
 const showMicroTooltip = ref(false)
@@ -328,18 +332,15 @@ function fmtRelDate(ts: number): string {
 }
 
 async function getCachedImage(path: string): Promise<string | null> {
-  if (_imgCache.has(path)) return _imgCache.get(path) ?? null
-  const result = await window.api.files.readImage(path)
-  _imgCache.set(path, result)
-  return result
+  const cached = getCached(path)
+  if (cached !== undefined) return cached
+  return loadImage(path)
 }
 
-async function getCachedIcon(path: string): Promise<string | null> {
-  if (_iconCache.has(path)) return _iconCache.get(path) ?? null
-  const result = await window.api.files.getAppIcon(path)
-  // 只缓存成功结果，失败不缓存，允许重试
-  if (result !== null) _iconCache.set(path, result)
-  return result
+async function getCachedAppIcon(path: string): Promise<string | null> {
+  const cached = getCachedIcon(path)
+  if (cached !== undefined) return cached
+  return loadIcon(path)
 }
 
 
@@ -368,10 +369,23 @@ function openMenu(e: MouseEvent) {
 
 const thumbSrc = ref<string | null>(null)
 
+// 离屏时释放图片数据 + 取消待加载队列
+watch(isNearViewport, (near) => {
+  if (!near) {
+    thumbSrc.value = null
+    // 取消该资源的待加载项
+    const r = props.resource
+    const p = r.cover_path || r.file_path
+    if (p) cancelQueued(p)
+    cancelQueued('icon:' + r.file_path)
+  }
+})
+
 // 通过 IPC / Canvas 加载预览图
 watchEffect(async () => {
   const r = props.resource
   void iconRetries.value  // 加入响应式依赖，重试时触发重跑
+  if (!isNearViewport.value) return  // 离屏不加载
 
   if (r.cover_path) {
     thumbSrc.value = await getCachedImage(r.cover_path)
@@ -382,12 +396,12 @@ watchEffect(async () => {
     return
   }
   if (r.type === 'app' || r.type === 'game') {
-    const icon = await getCachedIcon(r.file_path)
+    const icon = await getCachedAppIcon(r.file_path)
     thumbSrc.value = icon
     if (icon) {
       // 首次获取成功后保存到磁盘，下次启动直接走 cover_path 分支
-      if (!r.cover_path && !_savedCovers.has(r.id)) {
-        _savedCovers.add(r.id)
+      if (!r.cover_path && !hasSavedCover(r.id)) {
+        markCoverSaved(r.id)
         window.api.files.saveCover(r.id, icon).then(path => {
           if (path) store.addOrUpdate({ ...r, cover_path: path })
         }).catch(() => {})
@@ -406,8 +420,8 @@ watchEffect(async () => {
     // 仅读取必要字节，不会将整个视频加载到内存
     const thumb = await getCachedImage(r.file_path)
     thumbSrc.value = thumb
-    if (thumb && !r.cover_path && !_savedCovers.has(r.id)) {
-      _savedCovers.add(r.id)
+    if (thumb && !r.cover_path && !hasSavedCover(r.id)) {
+      markCoverSaved(r.id)
       window.api.files.saveCover(r.id, thumb).then(path => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
@@ -421,10 +435,10 @@ watchEffect(async () => {
     // 优先尝试 OS Shell 缩略图（PDF、已预览过的 Office 文件有效）
     let thumb = skipThumb ? null : await getCachedImage(r.file_path)
     // fallback：获取系统文件图标（Word/Excel/PPT 等应用图标）
-    if (!thumb) thumb = await getCachedIcon(r.file_path)
+    if (!thumb) thumb = await getCachedAppIcon(r.file_path)
     thumbSrc.value = thumb
-    if (thumb && !r.cover_path && !_savedCovers.has(r.id)) {
-      _savedCovers.add(r.id)
+    if (thumb && !r.cover_path && !hasSavedCover(r.id)) {
+      markCoverSaved(r.id)
       window.api.files.saveCover(r.id, thumb).then(path => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
@@ -436,10 +450,10 @@ watchEffect(async () => {
     const ext = r.file_path.split('.').pop()?.toLowerCase() ?? ''
     const skipThumb = ['txt', 'csv', 'log', 'md', 'json', 'xml', 'ini', 'cfg', 'bat', 'sh', 'yaml', 'yml', 'toml', 'sql'].includes(ext)
     let thumb = skipThumb ? null : await getCachedImage(r.file_path)
-    if (!thumb) thumb = await getCachedIcon(r.file_path)
+    if (!thumb) thumb = await getCachedAppIcon(r.file_path)
     thumbSrc.value = thumb
-    if (thumb && !r.cover_path && !_savedCovers.has(r.id)) {
-      _savedCovers.add(r.id)
+    if (thumb && !r.cover_path && !hasSavedCover(r.id)) {
+      markCoverSaved(r.id)
       window.api.files.saveCover(r.id, thumb).then(path => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})

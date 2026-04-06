@@ -38,8 +38,30 @@ const SCAN_EXT_TYPES: Record<string, string> = {
   '.csv': 'document', '.rtf': 'document',
 }
 
-const appIconCache = new Map<string, string | null>()
-const thumbCache = new Map<string, string | null>()
+// LRU 缓存：防止缩略图/图标无限堆积内存
+class LRUMap<V> {
+  private map = new Map<string, V>()
+  constructor(private maxSize: number) {}
+  has(key: string) { return this.map.has(key) }
+  get(key: string) {
+    const v = this.map.get(key)
+    if (v !== undefined) { this.map.delete(key); this.map.set(key, v) }
+    return v
+  }
+  set(key: string, value: V) {
+    if (this.map.has(key)) this.map.delete(key)
+    this.map.set(key, value)
+    while (this.map.size > this.maxSize) {
+      this.map.delete(this.map.keys().next().value!)
+    }
+  }
+  keys() { return this.map.keys() }
+  delete(key: string) { return this.map.delete(key) }
+  get size() { return this.map.size }
+}
+
+const appIconCache = new LRUMap<string | null>(100)
+const thumbCache = new LRUMap<string | null>(200)
 
 
 // IShellItemImageFactory —— 与 Windows 资源管理器完全相同的图标 API
@@ -184,6 +206,9 @@ let _onLanguageChange: (() => void) | null = null
 export function setOnLanguageChange(cb: () => void) { _onLanguageChange = cb }
 
 export function registerIpcHandlers(): void {
+
+  // ── Debug: 渲染进程日志转发到 terminal ──────────────────
+  ipcMain.on('debug:log', (_e, ...args: unknown[]) => { console.log('[renderer]', ...args) })
 
   // ── 资源 ──────────────────────────────────────────────
   ipcMain.handle('resources:getAll', (_e, type?: string) => getAllResources(type))

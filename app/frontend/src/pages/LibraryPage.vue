@@ -332,29 +332,30 @@
             <div v-else class="empty-hint">{{ t('library.emptyDefaultHint') }}</div>
           </div>
 
-          <div v-else ref="gridScrollRef" class="grid-scroll" @mousedown="onGridMousedown">
+          <div v-else ref="gridScrollRef" class="grid-scroll" @mousedown="onGridMousedown" @scroll="onContentScroll">
             <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
             <div v-if="viewMode !== 'list'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
-              <ResourceCard
-                v-for="item in visibleItems"
-                :key="item.id"
-                :data-rid="item.id"
-                :resource="item"
-                :selectable="batchMode"
-                :selected="selectedIds.has(item.id)"
-                :card-zoom="cardZoom"
-                :show-micro-label="store.activeType === 'folder' || store.activeType === 'document'"
-                :heat-level="statsPanel === 'heat' ? heatLevel(item) : undefined"
-                :display="settingsStore.cardDisplay"
-                @toggle-select="toggleSelect(item)"
-                @shift-select="onCardShiftSelect(item)"
-                @select="onCardSelect"
-                @select-hint="onCardSelectHint"
-                @open="openResource"
-                @remove="removeResource"
-                @ignore="ignoreResource"
-              />
-              <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
+                <ResourceCard
+                  v-for="(item, idx) in visibleItems"
+                  :key="item.id"
+                  :data-rid="item.id"
+                  :resource="item"
+                  :item-index="idx"
+                  :selectable="batchMode"
+                  :selected="selectedIds.has(item.id)"
+                  :card-zoom="cardZoom"
+                  :show-micro-label="store.activeType === 'folder' || store.activeType === 'document'"
+                  :heat-level="statsPanel === 'heat' ? heatLevel(item) : undefined"
+                  :display="settingsStore.cardDisplay"
+                  @toggle-select="toggleSelect(item)"
+                  @shift-select="onCardShiftSelect(item)"
+                  @select="onCardSelect"
+                  @select-hint="onCardSelectHint"
+                  @open="openResource"
+                  @remove="removeResource"
+                  @ignore="ignoreResource"
+                />
+                <div v-if="renderLimit < listSortedFiltered.length" ref="sentinelRef" class="grid-sentinel" />
             </div>
             <!-- 列表视图 -->
             <div v-else-if="viewMode === 'list'" class="list-view" :style="{ '--list-zoom': cardZoom }">
@@ -411,50 +412,31 @@
                 </span>
                 <span v-if="settingsStore.listDisplay.tags" class="lh-tags">{{ t('library.listCols.tags') }}</span>
               </div>
-              <div
-                v-for="item in visibleItems"
+              <ListRow
+                v-for="(item, idx) in visibleItems"
                 :key="item.id"
-                :data-rid="item.id"
-                class="list-row"
-                :style="colStyle"
-                :class="{ selected: selectedId === item.id, 'batch-selected': batchMode && selectedIds.has(item.id) }"
+                :resource="item"
+                :item-index="idx"
+                :col-style="colStyle"
+                :selected="selectedId === item.id"
+                :batch-selected="batchMode && selectedIds.has(item.id)"
+                :batch-mode="batchMode"
+                :is-running="store.runningMap.has(item.id)"
+                :play-title="store.runningMap.has(item.id) ? t('resource.killConfirm') : t('detail.open')"
+                :show-size="settingsStore.listDisplay.size"
+                :show-type="settingsStore.listDisplay.type"
+                :show-date="settingsStore.listDisplay.date"
+                :show-count="settingsStore.listDisplay.count"
+                :show-tags="settingsStore.listDisplay.tags"
                 @click="onListRowClick($event, item)"
                 @dblclick="openResource(item)"
-                @contextmenu.prevent="openListMenu($event, item)"
+                @contextmenu="openListMenu($event, item)"
                 @mouseenter="onListRowEnter($event, item)"
                 @mouseleave="onListRowLeave"
-              >
-                <span class="lr-thumb">
-                  <button
-                    class="lr-play-btn"
-                    :class="{ 'is-running': store.runningMap.has(item.id) }"
-                    @click.stop="store.runningMap.has(item.id) ? (listMenuKillTarget = item) : openResource(item)"
-                    :title="store.runningMap.has(item.id) ? t('resource.killConfirm') : t('detail.open')"
-                  >
-                    <span v-html="store.runningMap.has(item.id) ? ctxIcons.kill : ctxIcons.play" />
-                  </button>
-                  <span v-if="store.runningMap.has(item.id)" class="lr-running-dot" />
-                  <img v-if="listThumbCache.get(item.id)" :src="listThumbCache.get(item.id)" class="lr-thumb-img" />
-                  <span v-else class="lr-thumb-placeholder" v-html="listTypeIcon(item.type)" />
-                </span>
-                <span class="lr-name" :title="item.file_path">
-                  <input v-if="batchMode" type="checkbox" :checked="selectedIds.has(item.id)" class="lr-checkbox" />
-                  {{ item.title }}
-                </span>
-                <span v-if="settingsStore.listDisplay.size" class="lr-size">{{ fmtFileSize(item.file_size) }}</span>
-                <template v-if="settingsStore.listDisplay.type">
-                <span class="lr-type">
-                  <span class="lr-type-icon" v-html="listTypeIcon(item.type)" />
-                  <span class="lr-type-ext">{{ getFileExt(item.file_path) || listTypeLabel(item.type) }}</span>
-                </span>
-                </template>
-                <span v-if="settingsStore.listDisplay.date" class="lr-date">{{ formatListDate(item.updated_at) }}</span>
-                <span v-if="settingsStore.listDisplay.count" class="lr-count">{{ t('resource.stats.count', { n: item.open_count }) }}</span>
-                <span v-if="settingsStore.listDisplay.tags" class="lr-tags">
-                  <span v-for="tag in (item.tags || []).slice(0, 3)" :key="tag.id" class="lr-tag lr-tag-clickable" @click.stop="onCardSelectHint(item)">{{ tag.name }}</span>
-                </span>
-              </div>
-              <div v-if="renderLimit < store.filtered.length" ref="sentinelRef" class="grid-sentinel" />
+                @play-click="store.runningMap.has(item.id) ? (listMenuKillTarget = item) : openResource(item)"
+                @tag-click="onCardSelectHint(item)"
+              />
+              <div v-if="renderLimit < listSortedFiltered.length" ref="sentinelRef" class="grid-sentinel" />
             </div>
             <!-- 列表视图右键菜单 -->
             <Teleport to="body">
@@ -1162,7 +1144,16 @@
                 </template>
               </div>
 
-              <div class="scan-modal-actions">
+              <!-- 导入进度条 -->
+              <div v-if="diskImporting" class="disk-import-progress">
+                <div class="disk-import-progress-inner">
+                  <svg class="disk-filter-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                  <span>正在导入… {{ diskImportProgress }}&thinsp;/&thinsp;{{ diskImportTotal }}</span>
+                </div>
+                <div class="disk-filter-bar"><div class="disk-filter-bar-fill" :style="{ width: (diskImportTotal ? diskImportProgress / diskImportTotal * 100 : 0) + '%' }" /></div>
+              </div>
+
+              <div v-else class="scan-modal-actions">
                 <button class="scan-modal-btn secondary" @click="resetDiskScan">{{ t('library.scanModal.diskRescan') }}</button>
                 <button v-if="diskNewResults.length > 0" class="scan-modal-btn" :disabled="diskSelectedCount === 0" @click="tryImportDiskScanResults">
                   {{ t('library.scanModal.diskImport') }} ({{ diskSelectedCount }})
@@ -1241,6 +1232,7 @@ import { useSettingsStore } from '../stores/settings'
 import { NAV_ITEM_DEFS } from '../config/navItems'
 import type { ResourceSortField, TagSortField } from '../stores/settings'
 import ResourceCard from '../components/ResourceCard.vue'
+import ListRow from '../components/ListRow.vue'
 import AddResourceModal from '../components/AddResourceModal.vue'
 import DropImportModal from '../components/DropImportModal.vue'
 import type { DropItem } from '../components/DropImportModal.vue'
@@ -1363,6 +1355,9 @@ function diskRemoveByPrefix(prefix?: string) {
 }
 
 const diskImportWarning = ref(false)
+const diskImporting = ref(false)
+const diskImportProgress = ref(0)
+const diskImportTotal = ref(0)
 function tryImportDiskScanResults() {
   if (diskSelectedCount.value > 1000) { diskImportWarning.value = true; return }
   importDiskScanResults()
@@ -1503,9 +1498,23 @@ async function importDiskScanResults() {
   const toImport = diskNewResults.value.filter(r => diskScanSelected.value.has(r.file_path))
   if (!toImport.length) return
   const items = toImport.map(r => ({ type: r.type, title: r.title, file_path: r.file_path }))
-  const { added } = await window.api.resources.batchAdd(items)
-  for (const r of added) store.addOrUpdate(r as any)
-  showScanModal.value = false
+  const CHUNK = 50
+  diskImporting.value = true
+  diskImportProgress.value = 0
+  diskImportTotal.value = items.length
+  try {
+    for (let i = 0; i < items.length; i += CHUNK) {
+      const chunk = items.slice(i, i + CHUNK)
+      const { added } = await window.api.resources.batchAdd(chunk)
+      for (const r of added) store.addOrUpdate(r as any)
+      diskImportProgress.value = Math.min(i + CHUNK, items.length)
+    }
+    // 重置渲染窗口
+    renderLimit.value = BATCH_SIZE
+    showScanModal.value = false
+  } finally {
+    diskImporting.value = false
+  }
 }
 
 async function pickDiskScanDir() {
@@ -1624,7 +1633,7 @@ async function addPresetApps() {
   }
 }
 
-// ── 渐进渲染（滚动到底部时加载更多卡片） ───────────────────
+// ── 渐进渲染 ───────────────────
 const BATCH_SIZE = 60
 const renderLimit = ref(BATCH_SIZE)
 const sentinelRef = ref<HTMLElement | null>(null)
@@ -1682,6 +1691,30 @@ function toggleTypeFilter(e: MouseEvent) {
 }
 
 function onDocCloseTypeFilter() { showTypeFilter.value = false; showQfDropdown.value = false; showDisplayDropdown.value = false }
+function onVisibilityChange() { setPaused(document.hidden) }
+
+// 滚动时更新可见 index 范围（用于卡片图片释放/加载）
+// 用滚动百分比推算中心 index，不依赖行高估算
+let _scrollRaf = 0
+function onContentScroll() {
+  if (_scrollRaf) return
+  _scrollRaf = requestAnimationFrame(() => {
+    _scrollRaf = 0
+    const el = gridScrollRef.value
+    if (!el) return
+
+    const total = visibleItems.value.length
+    if (total === 0) return
+    const scrollable = el.scrollHeight - el.clientHeight
+    const pct = scrollable > 0 ? el.scrollTop / scrollable : 0
+    const centerIdx = Math.floor(pct * total)
+    const BUFFER = 200  // 中心前后各 200 项保留图片
+    setVisibleRange(
+      Math.max(0, centerIdx - BUFFER),
+      Math.min(total, centerIdx + BUFFER)
+    )
+  })
+}
 
 const showDisplayDropdown = ref(false)
 const displayHasHidden = computed(() => {
@@ -1778,10 +1811,11 @@ const listSortedFiltered = computed(() => {
 
 const visibleItems = computed(() => listSortedFiltered.value.slice(0, renderLimit.value))
 
-// 过滤条件变化时重置渲染数量
+// 过滤条件变化时重置
 watch(() => [store.activeType, store.searchQuery, store.activeTags], () => {
   renderLimit.value = BATCH_SIZE
 })
+
 
 // 搜索计数：从有内容到清空算 1 次完整搜索
 let _hadSearchContent = false
@@ -1799,8 +1833,8 @@ watch(() => store.searchQuery, (q) => {
 function setupSentinelObserver() {
   sentinelObserver?.disconnect()
   sentinelObserver = new IntersectionObserver((entries) => {
-    if (entries[0]?.isIntersecting && renderLimit.value < store.filtered.length) {
-      renderLimit.value = Math.min(renderLimit.value + BATCH_SIZE, store.filtered.length)
+    if (entries[0]?.isIntersecting && renderLimit.value < listSortedFiltered.value.length) {
+      renderLimit.value = Math.min(renderLimit.value + BATCH_SIZE, listSortedFiltered.value.length)
     }
   }, { rootMargin: '200px' })
 }
@@ -1813,7 +1847,6 @@ watch(sentinelRef, (el) => {
     sentinelObserver!.observe(el)
   }
 })
-
 // 拖放导入
 const dropOver = ref(false)
 const showDropModal = ref(false)
@@ -2141,11 +2174,12 @@ function onGridMousedown(e: MouseEvent) {
     const els = Array.from(gridScrollRef.value?.querySelectorAll<HTMLElement>(
       isListView ? '.list-row' : '.card'
     ) ?? [])
+    const source = visibleItems.value
     els.forEach((el, idx) => {
-      if (idx >= visibleItems.value.length) return
+      if (idx >= source.length) return
       const r = el.getBoundingClientRect()
       if (r.right > rx1 && r.left < rx2 && r.bottom > ry1 && r.top < ry2)
-        selectedIds.add(visibleItems.value[idx].id)
+        selectedIds.add(source[idx].id)
     })
   }
 
@@ -2553,6 +2587,7 @@ onMounted(async () => {
   document.addEventListener('dragover', onDocDragOver)
   document.addEventListener('click', onDocCloseTypeFilter)
   document.addEventListener('mouseup', diskDragStop)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
   // 悬浮小抽屉拖入
   unsubDrawerImport = window.api.onDrawerImport((items) => {
@@ -2659,6 +2694,7 @@ onUnmounted(() => {
   document.removeEventListener('dragover', onDocDragOver)
   document.removeEventListener('click', onDocCloseTypeFilter)
   document.removeEventListener('mouseup', diskDragStop)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   sentinelObserver?.disconnect()
   unsubDrawerImport?.()
   unsubWake?.()
@@ -2778,20 +2814,24 @@ function onColResizeEnd() {
   settingsStore.setListColumns(settingsStore.listColumns)
 }
 
-// 列表视图缩略图缓存（通过 IPC 读取图片）
-const listThumbCache = reactive(new Map<string, string>())
-watch([visibleItems, () => viewMode.value], () => {
-  if (viewMode.value !== 'list') return
-  for (const item of visibleItems.value) {
-    if (listThumbCache.has(item.id)) continue
-    const thumbPath = item.cover_path || ((item.type === 'image' || item.type === 'video') ? item.file_path : null)
-    if (!thumbPath) continue
-    listThumbCache.set(item.id, '') // 占位，防止重复请求
-    window.api.files.readImage(thumbPath).then(src => {
-      if (src) listThumbCache.set(item.id, src)
-    }).catch(() => {})
+// ListRow 组件自行管理缩略图（同 ResourceCard），此处只需 preload/clearImageCache
+import { getCached, loadImage, preload, clearImageCache, cancelQueued, setPaused, setVisibleRange } from '../utils/image-cache'
+
+// 切换视图时：回到顶部、重置渲染窗口、清理上一模式资源
+watch(() => viewMode.value, (mode) => {
+  if (gridScrollRef.value) gridScrollRef.value.scrollTop = 0
+  renderLimit.value = BATCH_SIZE
+
+  // 切换时清理上一模式的图片缓存 + 取消队列
+  clearImageCache()
+
+  if (mode !== 'list') {
+    // 进入网格视图 → 预加载前 60 张
+    const items = listSortedFiltered.value.slice(0, 60)
+    const paths = items.map(r => r.cover_path || ((r.type === 'image' || r.type === 'video') ? r.file_path : '')).filter(Boolean)
+    preload(paths)
   }
-}, { immediate: true })
+})
 function fmtFileSize(bytes?: number): string {
   if (!bytes) return '—'
   if (bytes < 1024) return bytes + ' B'
@@ -3556,7 +3596,8 @@ async function deleteIgnored(filePath: string) {
   color: #fca5a5;
   word-break: break-all;
 }
-.disk-filter-banner { background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.2); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.disk-filter-banner, .disk-import-progress { background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.2); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.disk-import-progress-inner { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a5b4fc; }
 .disk-filter-banner-inner { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #a5b4fc; }
 .disk-filter-spin { animation: disk-spin 1.2s linear infinite; flex-shrink: 0; }
 @keyframes disk-spin { to { transform: rotate(360deg); } }
@@ -4087,7 +4128,8 @@ async function deleteIgnored(filePath: string) {
   z-index: 20;
   user-select: none;
 }
-.list-row {
+/* ListRow 子组件样式穿透 */
+.list-view :deep(.list-row) {
   display: flex;
   align-items: center;
   padding: calc(5px + 2px * var(--list-zoom, 1)) 14px;
@@ -4095,13 +4137,15 @@ async function deleteIgnored(filePath: string) {
   color: var(--text-2);
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  transition: background 0.1s;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
 }
-.list-row:hover { background: var(--surface-2); }
-.list-row.selected { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.list-row.batch-selected { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.list-view :deep(.list-row:hover) { transition: background 0.1s; background: var(--surface-2); }
+.list-view :deep(.list-row.selected) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.list-view :deep(.list-row.batch-selected) { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 
-.lr-play-btn {
+/* ListRow 子组件内部样式穿透 */
+.list-view :deep(.lr-play-btn) {
   position: absolute;
   left: 2px; top: 50%; transform: translateY(-50%);
   width: 22px; height: 22px;
@@ -4115,33 +4159,42 @@ async function deleteIgnored(filePath: string) {
   padding: 0;
   z-index: 1;
 }
-.lr-play-btn:hover { background: rgba(99,102,241,0.15); color: var(--accent); }
-.lr-play-btn.is-running { color: #ef4444; }
-.lr-play-btn.is-running:hover { background: rgba(239,68,68,0.12); }
-.lr-play-btn :deep(span) { display: flex; align-items: center; justify-content: center; line-height: 0; }
-.lr-play-btn :deep(svg) { width: 13px; height: 13px; display: block; }
-.list-row:not(:hover) .lr-play-btn:not(.is-running) { opacity: 0; }
+.list-view :deep(.lr-play-btn:hover) { background: rgba(99,102,241,0.15); color: var(--accent); }
+.list-view :deep(.lr-play-btn.is-running) { color: #ef4444; }
+.list-view :deep(.lr-play-btn.is-running:hover) { background: rgba(239,68,68,0.12); }
+.list-view :deep(.lr-play-btn span) { display: flex; align-items: center; justify-content: center; line-height: 0; }
+.list-view :deep(.lr-play-btn svg) { width: 13px; height: 13px; display: block; }
+.list-view :deep(.list-row:not(:hover) .lr-play-btn:not(.is-running)) { opacity: 0; }
 
-.lr-running-dot {
+.list-view :deep(.lr-running-dot) {
   position: absolute;
   left: 18px; bottom: 2px;
   width: 6px; height: 6px; border-radius: 50%;
   background: #22c55e;
 }
-.lr-thumb { width: calc(48px + 10px * var(--list-zoom, 1)); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; position: relative; padding-right: 4px; }
+.list-view :deep(.lr-thumb) { width: calc(48px + 10px * var(--list-zoom, 1)); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; position: relative; padding-right: 4px; }
 .lh-thumb { width: calc(48px + 10px * var(--list-zoom, 1)); flex-shrink: 0; }
-.lr-thumb-img { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); object-fit: cover; border-radius: 4px; }
-.lr-thumb-placeholder { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); display: flex; align-items: center; justify-content: center; color: var(--text-3); }
-.lr-thumb-placeholder :deep(svg) { width: calc(14px + 4px * var(--list-zoom, 1)); height: calc(14px + 4px * var(--list-zoom, 1)); }
+.list-view :deep(.lr-thumb-img) { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); object-fit: cover; border-radius: 4px; }
+.list-view :deep(.lr-thumb-placeholder) { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+.list-view :deep(.lr-thumb-placeholder svg) { width: calc(14px + 4px * var(--list-zoom, 1)); height: calc(14px + 4px * var(--list-zoom, 1)); }
+.list-view :deep(.lr-type-icon) { display: flex; flex-shrink: 0; }
+.list-view :deep(.lr-type-icon svg) { width: 13px; height: 13px; stroke: currentColor; }
 
 /* 列表列：统一左对齐 + 列间距由 gap 控制 */
-.list-header, .list-row { gap: 8px; }
-.lh-name, .lr-name { width: var(--col-name, 300px); flex-shrink: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lh-size, .lr-size { width: var(--col-size, 80px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
-.lh-type, .lr-type { width: var(--col-type, 70px); flex-shrink: 0; }
-.lh-date, .lr-date { width: var(--col-date, 130px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
-.lh-count, .lr-count { width: var(--col-count, 70px); flex-shrink: 0; font-size: 12px; }
-.lh-tags, .lr-tags { width: var(--col-tags, 200px); flex-shrink: 1; min-width: 0; display: flex; gap: 4px; overflow: hidden; }
+.list-header { gap: 8px; }
+.list-view :deep(.list-row) { gap: 8px; }
+.lh-name { width: var(--col-name, 300px); flex-shrink: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-view :deep(.lr-name) { width: var(--col-name, 300px); flex-shrink: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lh-size { width: var(--col-size, 80px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
+.list-view :deep(.lr-size) { width: var(--col-size, 80px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
+.lh-type { width: var(--col-type, 70px); flex-shrink: 0; }
+.list-view :deep(.lr-type) { width: var(--col-type, 70px); flex-shrink: 0; }
+.lh-date { width: var(--col-date, 130px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
+.list-view :deep(.lr-date) { width: var(--col-date, 130px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
+.lh-count { width: var(--col-count, 70px); flex-shrink: 0; font-size: 12px; }
+.list-view :deep(.lr-count) { width: var(--col-count, 70px); flex-shrink: 0; font-size: 12px; }
+.lh-tags { width: var(--col-tags, 200px); flex-shrink: 1; min-width: 0; display: flex; gap: 4px; overflow: hidden; }
+.list-view :deep(.lr-tags) { width: var(--col-tags, 200px); flex-shrink: 1; min-width: 0; display: flex; gap: 4px; overflow: hidden; }
 
 .sortable-col {
   cursor: pointer;
@@ -4269,13 +4322,11 @@ async function deleteIgnored(filePath: string) {
 .tfi-section-sep { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
 .tfi-ext { font-family: monospace; font-size: 12px; }
 
-.lr-name { display: flex; align-items: center; gap: 6px; }
-.lr-checkbox { accent-color: var(--accent); }
-.lr-type { font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 4px; overflow: hidden; }
-.lr-type-icon { display: flex; flex-shrink: 0; }
-.lr-type-icon :deep(svg) { width: 13px; height: 13px; stroke: currentColor; }
-.lr-type-ext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lr-tag {
+.list-view :deep(.lr-name) { display: flex; align-items: center; gap: 6px; }
+.list-view :deep(.lr-checkbox) { accent-color: var(--accent); }
+.list-view :deep(.lr-type) { font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 4px; overflow: hidden; }
+.list-view :deep(.lr-type-ext) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-view :deep(.lr-tag) {
   font-size: 11px;
   padding: 1px 6px;
   background: color-mix(in srgb, var(--text) 8%, var(--surface-2));
@@ -4284,11 +4335,11 @@ async function deleteIgnored(filePath: string) {
   border-radius: 3px;
   white-space: nowrap;
 }
-.lr-tag-clickable {
+.list-view :deep(.lr-tag-clickable) {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.lr-tag-clickable:hover {
+.list-view :deep(.lr-tag-clickable:hover) {
   background: color-mix(in srgb, var(--text) 18%, var(--surface-2));
   color: var(--text);
 }

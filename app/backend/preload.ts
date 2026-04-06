@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 
+// Debug log → main process terminal
+contextBridge.exposeInMainWorld('__debugLog', (...args: unknown[]) => {
+  ipcRenderer.send('debug:log', ...args)
+})
+
 // 暴露给渲染进程的 API（类型安全）
 contextBridge.exposeInMainWorld('api', {
   // 资源 CRUD
