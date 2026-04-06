@@ -26,7 +26,7 @@
 ---
 
 <p align="center">
-  <img src="docs/library.png" width="800" alt="主界面截图">
+  <img src="https://aicubby.app/media/zh/1.gif" width="800" alt="拖放导入">
 </p>
 
 ---
@@ -132,13 +132,13 @@ AI小抽屉在你正常用电脑的过程中，把你打开过的每个程序、
 
 ## 截图
 
-| 主界面 | 详情面板 | 手动添加 |
-|:---:|:---:|:---:|
-| ![主界面](docs/library.png) | ![详情](docs/detail.png) | ![添加](docs/add.png) |
+| 拖放导入 | 使用追踪 |
+|:---:|:---:|
+| ![导入](https://aicubby.app/media/zh/1.gif) | ![统计](https://aicubby.app/media/zh/2.gif) |
 
-| 拖拽导入 | 标签过滤 | 忽略列表 |
-|:---:|:---:|:---:|
-| ![拖拽导入](docs/drag-import.png) | ![标签](docs/tags.png) | ![忽略](docs/ignored.png) |
+| 搜索与筛选 | 主题自定义 |
+|:---:|:---:|
+| ![搜索](https://aicubby.app/media/zh/3.gif) | ![主题](https://aicubby.app/media/zh/4.gif) |
 
 ---
 

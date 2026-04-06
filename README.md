@@ -26,7 +26,7 @@
 ---
 
 <p align="center">
-  <img src="docs/en/Library.png" width="800" alt="Main interface screenshot">
+  <img src="https://aicubby.app/media/en/1.gif" width="800" alt="Drag and drop import">
 </p>
 
 ---
@@ -124,13 +124,13 @@ That game from three months ago, that batch of photos from last week — open AI
 
 ## Screenshots
 
-| Library | Detail panel | Manual add |
-|:---:|:---:|:---:|
-| ![Library](docs/en/Library.png) | ![Detail](docs/en/Detail.png) | ![Add](docs/en/add.png) |
+| Drag & Drop Import | Usage Tracking |
+|:---:|:---:|
+| ![Import](https://aicubby.app/media/en/1.gif) | ![Stats](https://aicubby.app/media/en/2.gif) |
 
-| Drag import | Tag filtering | Ignored list |
-|:---:|:---:|:---:|
-| ![Drag import](docs/en/drag-import.png) | ![Tags](docs/en/Tag%20filtering.png) | ![Ignored](docs/en/Ignored%20list.png) |
+| Search & Filter | Themes & Customization |
+|:---:|:---:|
+| ![Search](https://aicubby.app/media/en/3.gif) | ![Themes](https://aicubby.app/media/en/4.gif) |
 
 ---
 
