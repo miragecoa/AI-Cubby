@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { basename, extname } from 'path'
+import { statSync } from 'fs'
 import { getDb } from './index'
 
 export interface Resource {
@@ -19,6 +20,7 @@ export interface Resource {
   pinned?: number
   user_modified?: number
   stat_paused?: number
+  file_size?: number
   tags?: Tag[]
 }
 
@@ -131,10 +133,12 @@ export function addManualResource(data: {
   }
   const id = randomUUID()
   const now = Date.now()
+  let fileSize = 0
+  try { fileSize = statSync(data.file_path).size } catch { /* file gone or inaccessible */ }
   db.prepare(`
-    INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at)
-    VALUES (@id, @type, @title, @file_path, NULL, 0, @note, @meta, @added_at, @updated_at)
-  `).run({ id, type: data.type, title: data.title, file_path: data.file_path, note: data.note ?? null, meta: data.meta ?? null, added_at: now, updated_at: now })
+    INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, file_size)
+    VALUES (@id, @type, @title, @file_path, NULL, 0, @note, @meta, @added_at, @updated_at, @file_size)
+  `).run({ id, type: data.type, title: data.title, file_path: data.file_path, note: data.note ?? null, meta: data.meta ?? null, added_at: now, updated_at: now, file_size: fileSize })
   autoTagByDir(id, data.file_path, data.type as Resource['type'])
   return { resource: getResourceById(id)!, existed: false }
 }

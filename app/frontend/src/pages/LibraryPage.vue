@@ -216,22 +216,66 @@
                   <span class="type-filter-caret" v-html="chevronDownSvg" :class="{ open: showDisplayDropdown }" />
                 </button>
                 <div v-if="showDisplayDropdown" class="qf-dropdown" @click.stop>
-                  <label class="type-filter-item">
-                    <input type="checkbox" :checked="settingsStore.cardDisplay.duration" @change="onDisplayToggle('duration')" />
-                    <span class="tfi-label">{{ t('library.displayDuration') }}</span>
-                  </label>
-                  <label class="type-filter-item">
-                    <input type="checkbox" :checked="settingsStore.cardDisplay.count" @change="onDisplayToggle('count')" />
-                    <span class="tfi-label">{{ t('library.displayCount') }}</span>
-                  </label>
-                  <label class="type-filter-item">
-                    <input type="checkbox" :checked="settingsStore.cardDisplay.lastUsed" @change="onDisplayToggle('lastUsed')" />
-                    <span class="tfi-label">{{ t('library.displayLastUsed') }}</span>
-                  </label>
-                  <label class="type-filter-item">
-                    <input type="checkbox" :checked="settingsStore.cardDisplay.tags" @change="onDisplayToggle('tags')" />
-                    <span class="tfi-label">{{ t('library.displayTags') }}</span>
-                  </label>
+                  <!-- 网格视图显示设置 -->
+                  <template v-if="viewMode === 'grid'">
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.cardDisplay.duration" @change="onDisplayToggle('duration')" />
+                      <span class="tfi-label">{{ t('library.displayDuration') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.cardDisplay.count" @change="onDisplayToggle('count')" />
+                      <span class="tfi-label">{{ t('library.displayCount') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.cardDisplay.lastUsed" @change="onDisplayToggle('lastUsed')" />
+                      <span class="tfi-label">{{ t('library.displayLastUsed') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.cardDisplay.tags" @change="onDisplayToggle('tags')" />
+                      <span class="tfi-label">{{ t('library.displayTags') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.cardDisplay.fileSize" @change="onDisplayToggle('fileSize')" />
+                      <span class="tfi-label">{{ t('library.displayFileSize') }}</span>
+                    </label>
+                    <div class="display-separator" />
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.cardDisplay.cardBg" @change="onDisplayToggle('cardBg')" />
+                      <span class="tfi-label">{{ t('library.displayCardBg') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.cardDisplay.pinRunning" @change="onDisplayToggle('pinRunning')" />
+                      <span class="tfi-label">{{ t('library.displayPinRunning') }}</span>
+                    </label>
+                  </template>
+                  <!-- 列表视图显示设置 -->
+                  <template v-else>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.listDisplay.size" @change="onListDisplayToggle('size')" />
+                      <span class="tfi-label">{{ t('library.displayFileSize') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.listDisplay.type" @change="onListDisplayToggle('type')" />
+                      <span class="tfi-label">{{ t('library.listCols.type') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.listDisplay.date" @change="onListDisplayToggle('date')" />
+                      <span class="tfi-label">{{ t('library.listCols.date') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.listDisplay.count" @change="onListDisplayToggle('count')" />
+                      <span class="tfi-label">{{ t('library.listCols.count') }}</span>
+                    </label>
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.listDisplay.tags" @change="onListDisplayToggle('tags')" />
+                      <span class="tfi-label">{{ t('library.displayTags') }}</span>
+                    </label>
+                    <div class="display-separator" />
+                    <label class="type-filter-item">
+                      <input type="checkbox" :checked="settingsStore.cardDisplay.pinRunning" @change="onDisplayToggle('pinRunning')" />
+                      <span class="tfi-label">{{ t('library.displayPinRunning') }}</span>
+                    </label>
+                  </template>
                 </div>
               </div>
               <!-- 高级筛选下拉 -->
@@ -258,6 +302,7 @@
                 <option value="recentlyAdded">{{ t('library.sortRecentlyAdded') }}</option>
                 <option value="openCount">{{ t('library.sortOpenCount') }}</option>
                 <option value="totalTime">{{ t('library.sortTotalTime') }}</option>
+                <option value="fileSize">{{ t('library.sortFileSize') }}</option>
                 <option value="modifiedAt">{{ t('library.sortModifiedAt') }}</option>
               </select>
             </div>
@@ -317,15 +362,20 @@
                 <span class="lh-thumb"></span>
                 <span class="lh-name sortable-col" :class="{ active: listSortCol === 'name' }" @click="onColSort('name')" :title="t('library.listSortTitle')">
                   {{ t('library.listCols.name') }}<span class="sort-arrow" v-show="listSortCol === 'name'" v-html="listSortDesc ? arrowDownSvg : arrowUpSvg" />
-                </span><div class="col-resizer" @mousedown="startColResize('name', $event)" />
-                <span class="lh-type type-filter-col" :class="{ 'filter-active': activeFilterCount > 0 }" @click.stop="toggleTypeFilter($event)" :title="t('library.listFilterTitle')">
+                  <div class="col-resizer" @mousedown.stop="startColResize('name', $event)" />
+                </span>
+                <span v-if="settingsStore.listDisplay.size" class="lh-size sortable-col" :class="{ active: listSortCol === 'size' }" @click="onColSort('size')" :title="t('library.listSortTitle')">
+                  {{ t('library.listCols.size') }}<span class="sort-arrow" v-show="listSortCol === 'size'" v-html="listSortDesc ? arrowDownSvg : arrowUpSvg" />
+                  <div class="col-resizer" @mousedown.stop="startColResize('size', $event)" />
+                </span>
+                <span v-if="settingsStore.listDisplay.type" class="lh-type type-filter-col" :class="{ 'filter-active': activeFilterCount > 0 }" @click.stop="toggleTypeFilter($event)" :title="t('library.listFilterTitle')">
                   {{ t('library.listCols.type') }}
                   <span class="type-filter-badge" v-if="activeFilterCount > 0">{{ activeFilterCount }}</span>
                   <span class="type-filter-caret" v-html="chevronDownSvg" :class="{ open: showTypeFilter }" />
-                </span><div class="col-resizer" @mousedown="startColResize('type', $event)" />
+                  <div class="col-resizer" @mousedown.stop="startColResize('type', $event)" />
+                </span>
                 <!-- 类型 + 后缀 过滤下拉 -->
                 <div v-if="showTypeFilter" class="type-filter-dropdown" :style="{ top: typeFilterPos.top + 'px', left: typeFilterPos.left + 'px' }" @click.stop>
-                  <!-- 顶部：排序 + 清除 -->
                   <div class="tfi-sort-row">
                     <span class="tfi-sort-label">{{ t('library.listSort.title') }}</span>
                     <button class="tfi-sort-btn" :class="{ active: typeSortDir === 'asc' }" @click="typeSortDir = typeSortDir === 'asc' ? null : 'asc'">
@@ -336,14 +386,12 @@
                     </button>
                     <button v-if="activeFilterCount > 0" class="tfi-clear-btn tfi-clear-inline" @click="typeFilterArr = []; extFilterArr = []; typeSortDir = null">{{ t('library.filterClear') }}</button>
                   </div>
-                  <!-- 类型 section -->
                   <div class="tfi-section-label tfi-section-sep">{{ t('library.listCols.type') }}</div>
                   <label v-for="typeItem in availableTypes" :key="typeItem.value" class="type-filter-item">
                     <input type="checkbox" :value="typeItem.value" v-model="typeFilterArr" />
                     <span class="tfi-label">{{ typeItem.label }}</span>
                     <span class="tfi-count">{{ typeItem.count }}</span>
                   </label>
-                  <!-- 后缀 section -->
                   <template v-if="availableExts.length > 0">
                     <div class="tfi-section-label tfi-section-sep">{{ t('library.listExt') }}</div>
                     <label v-for="e in availableExts" :key="e.ext" class="type-filter-item">
@@ -353,13 +401,15 @@
                     </label>
                   </template>
                 </div>
-                <span class="lh-date sortable-col" :class="{ active: listSortCol === 'date' }" @click="onColSort('date')" :title="t('library.listSortTitle')">
+                <span v-if="settingsStore.listDisplay.date" class="lh-date sortable-col" :class="{ active: listSortCol === 'date' }" @click="onColSort('date')" :title="t('library.listSortTitle')">
                   {{ t('library.listCols.date') }}<span class="sort-arrow" v-show="listSortCol === 'date'" v-html="listSortDesc ? arrowDownSvg : arrowUpSvg" />
-                </span><div class="col-resizer" @mousedown="startColResize('date', $event)" />
-                <span class="lh-count sortable-col" :class="{ active: listSortCol === 'count' }" @click="onColSort('count')" :title="t('library.listSortTitle')">
+                  <div class="col-resizer" @mousedown.stop="startColResize('date', $event)" />
+                </span>
+                <span v-if="settingsStore.listDisplay.count" class="lh-count sortable-col" :class="{ active: listSortCol === 'count' }" @click="onColSort('count')" :title="t('library.listSortTitle')">
                   {{ t('library.listCols.count') }}<span class="sort-arrow" v-show="listSortCol === 'count'" v-html="listSortDesc ? arrowDownSvg : arrowUpSvg" />
-                </span><div class="col-resizer" @mousedown="startColResize('count', $event)" />
-                <span class="lh-tags">{{ t('library.listCols.tags') }}</span>
+                  <div class="col-resizer" @mousedown.stop="startColResize('count', $event)" />
+                </span>
+                <span v-if="settingsStore.listDisplay.tags" class="lh-tags">{{ t('library.listCols.tags') }}</span>
               </div>
               <div
                 v-for="item in visibleItems"
@@ -374,16 +424,16 @@
                 @mouseenter="onListRowEnter($event, item)"
                 @mouseleave="onListRowLeave"
               >
-                <button
-                  class="lr-play-btn"
-                  :class="{ 'is-running': store.runningMap.has(item.id) }"
-                  @click.stop="store.runningMap.has(item.id) ? (listMenuKillTarget = item) : openResource(item)"
-                  :title="store.runningMap.has(item.id) ? t('resource.killConfirm') : t('detail.open')"
-                >
-                  <span v-html="store.runningMap.has(item.id) ? ctxIcons.kill : ctxIcons.play" />
-                </button>
-                <span v-if="store.runningMap.has(item.id)" class="lr-running-dot" />
                 <span class="lr-thumb">
+                  <button
+                    class="lr-play-btn"
+                    :class="{ 'is-running': store.runningMap.has(item.id) }"
+                    @click.stop="store.runningMap.has(item.id) ? (listMenuKillTarget = item) : openResource(item)"
+                    :title="store.runningMap.has(item.id) ? t('resource.killConfirm') : t('detail.open')"
+                  >
+                    <span v-html="store.runningMap.has(item.id) ? ctxIcons.kill : ctxIcons.play" />
+                  </button>
+                  <span v-if="store.runningMap.has(item.id)" class="lr-running-dot" />
                   <img v-if="listThumbCache.get(item.id)" :src="listThumbCache.get(item.id)" class="lr-thumb-img" />
                   <span v-else class="lr-thumb-placeholder" v-html="listTypeIcon(item.type)" />
                 </span>
@@ -391,13 +441,16 @@
                   <input v-if="batchMode" type="checkbox" :checked="selectedIds.has(item.id)" class="lr-checkbox" />
                   {{ item.title }}
                 </span>
+                <span v-if="settingsStore.listDisplay.size" class="lr-size">{{ fmtFileSize(item.file_size) }}</span>
+                <template v-if="settingsStore.listDisplay.type">
                 <span class="lr-type">
                   <span class="lr-type-icon" v-html="listTypeIcon(item.type)" />
                   <span class="lr-type-ext">{{ getFileExt(item.file_path) || listTypeLabel(item.type) }}</span>
                 </span>
-                <span class="lr-date">{{ formatListDate(item.updated_at) }}</span>
-                <span class="lr-count">{{ t('resource.stats.count', { n: item.open_count }) }}</span>
-                <span class="lr-tags">
+                </template>
+                <span v-if="settingsStore.listDisplay.date" class="lr-date">{{ formatListDate(item.updated_at) }}</span>
+                <span v-if="settingsStore.listDisplay.count" class="lr-count">{{ t('resource.stats.count', { n: item.open_count }) }}</span>
+                <span v-if="settingsStore.listDisplay.tags" class="lr-tags">
                   <span v-for="tag in (item.tags || []).slice(0, 3)" :key="tag.id" class="lr-tag lr-tag-clickable" @click.stop="onCardSelectHint(item)">{{ tag.name }}</span>
                 </span>
               </div>
@@ -454,6 +507,7 @@
                   <span v-if="listTooltip.item.total_run_time > 0"><span class="lt-tt-label">{{ t('resource.stats.duration') }}</span>{{ ltFmtDuration(listTooltip.item.total_run_time) }}</span>
                   <span v-if="listTooltip.item.open_count > 0"><span class="lt-tt-label">{{ t('library.listCols.count') }}</span>{{ t('resource.stats.count', { n: listTooltip.item.open_count }) }}</span>
                   <span v-if="listTooltip.item.last_run_at && !store.runningMap.has(listTooltip.item.id)"><span class="lt-tt-label">{{ t('resource.stats.last') }}</span>{{ ltFmtRelDate(listTooltip.item.last_run_at) }}</span>
+                  <span v-if="listTooltip.item.file_size"><span class="lt-tt-label">{{ t('library.displayFileSize') }}</span>{{ fmtFileSize(listTooltip.item.file_size) }}</span>
                 </div>
                 <div v-if="listTooltip.item.tags?.length" class="lt-tt-tags">
                   <span v-for="tag in listTooltip.item.tags.slice(0, 4)" :key="tag.id" class="lt-tt-tag">{{ tag.name }}</span>
@@ -1577,7 +1631,7 @@ const sentinelRef = ref<HTMLElement | null>(null)
 let sentinelObserver: IntersectionObserver | null = null
 
 // ── 列表视图：本地列点击排序 ───────────────────
-const listSortCol = ref<'name'|'type'|'date'|'count'|null>(null)
+const listSortCol = ref<'name'|'type'|'date'|'count'|'size'|null>(null)
 const listSortDesc = ref(false)
 
 // ── 列表视图：类型 + 后缀过滤 ───────────────────────
@@ -1632,10 +1686,13 @@ function onDocCloseTypeFilter() { showTypeFilter.value = false; showQfDropdown.v
 const showDisplayDropdown = ref(false)
 const displayHasHidden = computed(() => {
   const d = settingsStore.cardDisplay
-  return !d.duration || !d.count || !d.lastUsed || !d.tags
+  return !d.duration || !d.count || !d.lastUsed || !d.tags || d.fileSize || !d.cardBg
 })
-function onDisplayToggle(key: 'duration' | 'count' | 'lastUsed' | 'tags') {
+function onDisplayToggle(key: 'duration' | 'count' | 'lastUsed' | 'tags' | 'fileSize' | 'cardBg' | 'pinRunning') {
   settingsStore.setCardDisplay({ [key]: !settingsStore.cardDisplay[key] })
+}
+function onListDisplayToggle(key: 'size' | 'type' | 'date' | 'count' | 'tags') {
+  settingsStore.setListDisplay({ [key]: !settingsStore.listDisplay[key] })
 }
 const displayEyeSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
 
@@ -1643,15 +1700,14 @@ const arrowUpSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const arrowDownSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>'
 const chevronDownSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
 
-function onColSort(col: 'name'|'type'|'date'|'count') {
+function onColSort(col: 'name'|'type'|'date'|'count'|'size') {
   if (listSortCol.value !== col) {
-    // 新列：设置默认方向（日期/次数默认降序）
     listSortCol.value = col
-    listSortDesc.value = (col === 'date' || col === 'count')
+    listSortDesc.value = (col === 'date' || col === 'count' || col === 'size')
     return
   }
   // 同一列：在默认方向 → 反向 → 重置 之间循环
-  const defaultDesc = (col === 'date' || col === 'count')
+  const defaultDesc = (col === 'date' || col === 'count' || col === 'size')
   if (listSortDesc.value === defaultDesc) {
     listSortDesc.value = !defaultDesc // 切换到反向
   } else {
@@ -1712,6 +1768,7 @@ const listSortedFiltered = computed(() => {
       else if (listSortCol.value === 'type')  cmp = listTypeLabel(a.type).localeCompare(listTypeLabel(b.type), 'zh-CN')
       else if (listSortCol.value === 'date')  cmp = a.updated_at - b.updated_at
       else if (listSortCol.value === 'count') cmp = a.open_count - b.open_count
+      else if (listSortCol.value === 'size')  cmp = (a.file_size ?? 0) - (b.file_size ?? 0)
       return listSortDesc.value ? -cmp : cmp
     }
 
@@ -2688,6 +2745,7 @@ const colStyle = computed(() => {
   const c = settingsStore.listColumns
   return {
     '--col-name': c.name + 'px',
+    '--col-size': (c.size ?? 80) + 'px',
     '--col-type': c.type + 'px',
     '--col-date': c.date + 'px',
     '--col-count': c.count + 'px',
@@ -2734,6 +2792,13 @@ watch([visibleItems, () => viewMode.value], () => {
     }).catch(() => {})
   }
 }, { immediate: true })
+function fmtFileSize(bytes?: number): string {
+  if (!bytes) return '—'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
+}
 function formatListDate(ts: number) {
   if (!ts) return '—'
   const d = new Date(ts)
@@ -4011,6 +4076,7 @@ async function deleteIgnored(filePath: string) {
 }
 .list-header {
   display: flex;
+  align-items: center;
   padding: 8px 14px;
   font-size: calc(10px + 1px * var(--list-zoom, 1));
   color: var(--text-3);
@@ -4036,7 +4102,8 @@ async function deleteIgnored(filePath: string) {
 .list-row.batch-selected { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 
 .lr-play-btn {
-  flex-shrink: 0;
+  position: absolute;
+  left: 2px; top: 50%; transform: translateY(-50%);
   width: 22px; height: 22px;
   border-radius: 50%;
   border: none;
@@ -4044,29 +4111,36 @@ async function deleteIgnored(filePath: string) {
   color: var(--text-3);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  margin-right: 2px;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
   padding: 0;
+  z-index: 1;
 }
 .lr-play-btn:hover { background: rgba(99,102,241,0.15); color: var(--accent); }
 .lr-play-btn.is-running { color: #ef4444; }
 .lr-play-btn.is-running:hover { background: rgba(239,68,68,0.12); }
 .lr-play-btn :deep(span) { display: flex; align-items: center; justify-content: center; line-height: 0; }
 .lr-play-btn :deep(svg) { width: 13px; height: 13px; display: block; }
+.list-row:not(:hover) .lr-play-btn:not(.is-running) { opacity: 0; }
 
 .lr-running-dot {
+  position: absolute;
+  left: 18px; bottom: 2px;
   width: 6px; height: 6px; border-radius: 50%;
-  background: #22c55e; flex-shrink: 0; margin-right: -2px;
+  background: #22c55e;
 }
-.lh-thumb, .lr-thumb { width: calc(24px + 10px * var(--list-zoom, 1)); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.lr-thumb { width: calc(48px + 10px * var(--list-zoom, 1)); flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; position: relative; padding-right: 4px; }
+.lh-thumb { width: calc(48px + 10px * var(--list-zoom, 1)); flex-shrink: 0; }
 .lr-thumb-img { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); object-fit: cover; border-radius: 4px; }
 .lr-thumb-placeholder { width: calc(20px + 8px * var(--list-zoom, 1)); height: calc(20px + 8px * var(--list-zoom, 1)); display: flex; align-items: center; justify-content: center; color: var(--text-3); }
 .lr-thumb-placeholder :deep(svg) { width: calc(14px + 4px * var(--list-zoom, 1)); height: calc(14px + 4px * var(--list-zoom, 1)); }
 
+/* 列表列：统一左对齐 + 列间距由 gap 控制 */
+.list-header, .list-row { gap: 8px; }
 .lh-name, .lr-name { width: var(--col-name, 300px); flex-shrink: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lh-size, .lr-size { width: var(--col-size, 80px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
 .lh-type, .lr-type { width: var(--col-type, 70px); flex-shrink: 0; }
 .lh-date, .lr-date { width: var(--col-date, 130px); flex-shrink: 0; font-size: 12px; color: var(--text-3); }
-.lh-count, .lr-count { width: var(--col-count, 70px); flex-shrink: 0; text-align: center; font-size: 12px; }
+.lh-count, .lr-count { width: var(--col-count, 70px); flex-shrink: 0; font-size: 12px; }
 .lh-tags, .lr-tags { width: var(--col-tags, 200px); flex-shrink: 1; min-width: 0; display: flex; gap: 4px; overflow: hidden; }
 
 .sortable-col {
@@ -4084,7 +4158,6 @@ async function deleteIgnored(filePath: string) {
   text-underline-offset: 4px;
   text-decoration-thickness: 2px;
 }
-.lh-count.sortable-col { justify-content: center; } /* keep count centered */
 .sort-arrow { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 2px; flex-shrink: 0; }
 .sort-arrow :deep(svg) { width: 14px; height: 14px; stroke: currentColor; }
 
@@ -4139,6 +4212,7 @@ async function deleteIgnored(filePath: string) {
 .type-filter-item input[type="checkbox"] { accent-color: var(--accent); flex-shrink: 0; }
 .tfi-label { flex: 1; }
 .tfi-count { font-size: 11px; color: var(--text-3); }
+.display-separator { height: 1px; background: var(--border); margin: 4px 14px; }
 .type-filter-footer {
   border-top: 1px solid var(--border);
   padding: 6px 14px 4px;
@@ -4219,21 +4293,25 @@ async function deleteIgnored(filePath: string) {
   color: var(--text);
 }
 
+.sortable-col, .lh-type, .lh-tags { position: relative; }
 .col-resizer {
-  width: 6px;
+  position: absolute;
+  top: 0; bottom: 0; right: -4px;
+  width: 8px;
   cursor: col-resize;
-  flex-shrink: 0;
-  align-self: stretch;
-  position: relative;
+  z-index: 2;
 }
 .col-resizer::after {
   content: '';
   position: absolute;
   top: 20%; bottom: 20%;
-  left: 2px; width: 1px;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-0.5px);
   background: var(--border);
   transition: background 0.15s;
 }
+.col-resizer:hover::after { background: var(--accent); }
 .col-resizer:hover::after { background: var(--accent); }
 
 .sort-wrap {

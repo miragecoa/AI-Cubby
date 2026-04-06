@@ -21,6 +21,7 @@ export interface Resource {
   last_run_at: number | null
   pinned?: number
   user_modified?: number
+  file_size?: number
   stat_paused?: number
   tags?: Array<{ id: number; name: string; source: string }>
 }
@@ -185,6 +186,7 @@ export const useResourceStore = defineStore('resources', () => {
       openCount:     (a, b) => b.open_count - a.open_count,
       totalTime:     (a, b) => b.total_run_time - a.total_run_time,
       modifiedAt:    (a, b) => b.updated_at - a.updated_at,
+      fileSize:      (a, b) => (b.file_size ?? 0) - (a.file_size ?? 0),
     }
     const userSort = SORT_FN[sortField] ?? SORT_FN.lastUsed
 
@@ -196,8 +198,9 @@ export const useResourceStore = defineStore('resources', () => {
         if (aPinned !== bPinned) return bPinned - aPinned
         return (relevanceMap.get(b.id) ?? 0) - (relevanceMap.get(a.id) ?? 0)
       }
-      const aScore = (a.pinned ? 2 : 0) + (runningMap.value.has(a.id) ? 1 : 0)
-      const bScore = (b.pinned ? 2 : 0) + (runningMap.value.has(b.id) ? 1 : 0)
+      const boostRunning = settingsStore.cardDisplay.pinRunning !== false
+      const aScore = (a.pinned ? 2 : 0) + (boostRunning && runningMap.value.has(a.id) ? 1 : 0)
+      const bScore = (b.pinned ? 2 : 0) + (boostRunning && runningMap.value.has(b.id) ? 1 : 0)
       if (aScore !== bScore) return bScore - aScore
       return userSort(a, b)
     })

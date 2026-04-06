@@ -1,5 +1,5 @@
 <template>
-  <div ref="cardRef" class="card" :class="[{ 'is-selected': selected }, heatLevel !== undefined ? `heat-lv${heatLevel}` : '']" :style="{ '--zoom': cardZoom }" @dblclick="selectable ? $emit('toggle-select', resource) : $emit('open', resource)" @contextmenu.prevent="!selectable && openMenu($event)" @click="handleCardClick($event)" @mouseenter="onMicroEnter" @mouseleave="onMicroLeave">
+  <div ref="cardRef" class="card" :class="[{ 'is-selected': selected, 'no-card-bg': props.display?.cardBg === false, 'is-minimal': minimal }, heatLevel !== undefined ? `heat-lv${heatLevel}` : '']" :style="{ '--zoom': cardZoom }" @dblclick="selectable ? $emit('toggle-select', resource) : $emit('open', resource)" @contextmenu.prevent="!selectable && openMenu($event)" @click="handleCardClick($event)" @mouseenter="onMicroEnter" @mouseleave="onMicroLeave">
     <div class="cover" :class="{ 'is-app': resource.type === 'app' || resource.type === 'game' || resource.type === 'webpage' || resource.type === 'document' || resource.type.startsWith('cat_'), 'cover-solo': micro, 'cover-solo-labeled': micro && showMicroLabel }" @click.stop="handleCoverClick($event)">
       <img v-if="thumbSrc" :src="thumbSrc" :alt="resource.title" />
       <div v-else class="cover-placeholder" style="pointer-events:none">
@@ -42,14 +42,19 @@
       </button>
     </div>
 
+    <!-- 精简模式：正方形图标 + 名称（任意缩放都显示名字） -->
+    <div v-if="minimal" class="info info-minimal">
+      <div class="title title-minimal" :title="displayTitle">{{ displayTitle }}</div>
+    </div>
+
     <!-- micro 模式：图片/文件夹分类下显示名称，其他分类纯图标 -->
-    <div v-if="micro && showMicroLabel" class="micro-label" :title="displayTitle">{{ displayTitle }}</div>
+    <div v-else-if="micro && showMicroLabel" class="micro-label" :title="displayTitle">{{ displayTitle }}</div>
 
     <div v-else-if="!micro" class="info" :class="{ 'info-narrow': narrow, 'info-compact': compact && !narrow }">
       <div class="title" :title="displayTitle" :class="{ 'title-single': narrow }">{{ displayTitle }}</div>
       <!-- 统计信息行 -->
       <div v-if="!narrow" class="stats-row">
-        <span v-if="props.display?.duration !== false" class="stat-item" :title="`${t('resource.stats.accumulated')}: ${fmtDuration(resource.total_run_time)}, ${t('resource.stats.count', { n: resource.open_count })}`">
+        <span v-if="props.display?.duration !== false" class="stat-item" :title="`${t('resource.stats.accumulated')}: ${fmtDuration(resource.total_run_time)}, ${t('resource.stats.count', { n: resource.open_count })}${resource.file_size ? ', ' + fmtSize(resource.file_size) : ''}`">
           <span v-html="clockIcon" />
           <span v-if="!compact" class="stat-label-text">{{ t('resource.stats.accumulated') }}</span>
           {{ resource.total_run_time > 0 ? fmtDuration(resource.total_run_time) : (resource.open_count > 0 ? '—' : unplayedLabel) }}
@@ -57,6 +62,7 @@
         <span v-if="resource.open_count > 0 && props.display?.count !== false" class="stat-count">{{ t('resource.stats.count', { n: resource.open_count }) }}</span>
         <span v-if="isRunning && props.display?.lastUsed !== false" class="stat-session"><span v-if="!compact" class="stat-label-text">{{ t('resource.stats.session') }}</span>{{ fmtDuration(currentSessionSecs) }}</span>
         <span v-else-if="resource.last_run_at && props.display?.lastUsed !== false" class="stat-last">{{ fmtRelDate(resource.last_run_at) }}</span>
+        <span v-if="props.display?.fileSize && resource.file_size" class="stat-size">{{ fmtSize(resource.file_size) }}</span>
       </div>
       <div v-if="!narrow && props.display?.tags !== false" class="tags">
         <template v-if="resource.tags?.length">
@@ -185,13 +191,25 @@ const props = withDefaults(defineProps<{
   cardZoom?: number
   heatLevel?: number
   showMicroLabel?: boolean
-  display?: { duration?: boolean; count?: boolean; lastUsed?: boolean; tags?: boolean }
+  display?: { duration?: boolean; count?: boolean; lastUsed?: boolean; tags?: boolean; fileSize?: boolean; cardBg?: boolean }
 }>(), { selectable: false, selected: false, cardZoom: 0.75, showMicroLabel: false })
 
 // Responsive breakpoints based on zoom factor (150px * cardZoom = minCardWidth)
 const compact = computed(() => props.cardZoom <= 0.87) // < ~130px: collapse badge, hide tags
 const narrow  = computed(() => props.cardZoom <= 0.60) // < ~90px:  hide stats row
-const micro   = computed(() => props.cardZoom <= 0.55) // < ~82px:  hide info entirely (only cover)
+const micro   = computed(() => props.cardZoom <= 0.35) // < ~52px:  hide info entirely (only cover)
+// 精简模式：所有统计信息都隐藏 → 正方形图标 + 名称
+const minimal = computed(() => {
+  const d = props.display
+  return d && d.duration === false && d.count === false && d.lastUsed === false && d.tags === false && !d.fileSize
+})
+
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
+}
 const emit = defineEmits<{
   open:   [resource: Resource]
   select: [resource: Resource]
@@ -498,6 +516,46 @@ function openInExplorer() {
   box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+/* 精简模式：正方形图标 + 名称 */
+.card.is-minimal .cover {
+  aspect-ratio: 1 / 1;
+}
+.info-minimal {
+  padding: 6px 6px 8px;
+}
+.title-minimal {
+  text-align: center;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* iOS 风格：无卡片背景 */
+.card.no-card-bg {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 0;
+}
+.card.no-card-bg:hover {
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: none;
+}
+.card.no-card-bg .cover {
+  background: transparent;
+  border-radius: 12px;
+  box-shadow: none;
+}
+.card.no-card-bg .info,
+.card.no-card-bg .info-minimal {
+  padding: 6px 2px 0;
+}
+.card.no-card-bg .title,
+.card.no-card-bg .title-minimal {
+  text-align: center;
+  font-size: 12px;
+}
 
 .cover {
   position: relative;
@@ -900,10 +958,9 @@ function openInExplorer() {
 .stats-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
   margin-top: 4px;
-  overflow: hidden;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .stat-item {
@@ -951,6 +1008,12 @@ function openInExplorer() {
   font-size: 11px;
   color: var(--text-3);
   white-space: nowrap;
+}
+.stat-size {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  margin-left: auto;
 }
 
 /* ── 热力模式：通过 CSS 变量统一作用于 card + cover ── */

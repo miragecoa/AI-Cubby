@@ -11,8 +11,20 @@ export interface CardDisplayFlags {
   count: boolean      // 使用次数
   lastUsed: boolean   // 最近使用 / 本次计时
   tags: boolean       // 标签
+  fileSize: boolean   // 文件大小
+  cardBg: boolean     // 卡片背景框
+  pinRunning: boolean // 置顶运行中的程序
 }
-const DEFAULT_CARD_DISPLAY: CardDisplayFlags = { duration: true, count: true, lastUsed: true, tags: true }
+const DEFAULT_CARD_DISPLAY: CardDisplayFlags = { duration: true, count: true, lastUsed: true, tags: true, fileSize: false, cardBg: true, pinRunning: true }
+
+export interface ListDisplayFlags {
+  size: boolean
+  type: boolean
+  date: boolean
+  count: boolean
+  tags: boolean
+}
+const DEFAULT_LIST_DISPLAY: ListDisplayFlags = { size: true, type: true, date: true, count: true, tags: true }
 export type PaletteId = 'smart' | 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'indigo' | 'purple'
 export type BrightnessMode = 'dark' | 'neutral' | 'light'
 
@@ -329,9 +341,10 @@ export const useSettingsStore = defineStore('settings', () => {
   const brightnessLevel = ref(0)  // 0=dark … 100=light, continuous
   const glassEnabled = ref(false)
   const glassOpacity = ref(0.6)  // 0 = fully transparent, 1 = fully opaque
-  const listColumns = ref<Record<string, number>>({ name: 300, type: 70, date: 130, count: 70, tags: 200 })
+  const listColumns = ref<Record<string, number>>({ name: 300, size: 80, type: 70, date: 130, count: 70, tags: 200 })
   const appTitle = ref('AI小抽屉')
   const cardDisplay = ref<CardDisplayFlags>({ ...DEFAULT_CARD_DISPLAY })
+  const listDisplay = ref<ListDisplayFlags>({ ...DEFAULT_LIST_DISPLAY })
   const offlineMode = ref(false)
   const showOnAutoStart = ref(false)
   const hotkeyWake = ref('Alt+Space')
@@ -343,7 +356,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal, hotkeyClipboardVal, langVal, consentVal, customCatVal, autoDirTagVal, themeIdVal, paletteIdVal, brightnessModeVal, brightnessLevelVal, glassEnabledVal, glassOpacityVal, cardDisplayVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, navVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal, hotkeyClipboardVal, langVal, consentVal, customCatVal, autoDirTagVal, themeIdVal, paletteIdVal, brightnessModeVal, brightnessLevelVal, glassEnabledVal, glassOpacityVal, cardDisplayVal, listDisplayVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
@@ -373,6 +386,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.settings.get('glassEnabled'),
       window.api.settings.get('glassOpacity'),
       window.api.settings.get('cardDisplay'),
+      window.api.settings.get('listDisplay'),
     ])
     monitorEnabled.value = monitorVal !== 'false'
     autostartEnabled.value = autostartVal
@@ -390,6 +404,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (listColVal) { try { listColumns.value = { ...listColumns.value, ...JSON.parse(listColVal) } } catch {} }
     if (appTitleVal) appTitle.value = appTitleVal
     if (cardDisplayVal) { try { cardDisplay.value = { ...DEFAULT_CARD_DISPLAY, ...JSON.parse(cardDisplayVal) } } catch {} }
+    if (listDisplayVal) { try { listDisplay.value = { ...DEFAULT_LIST_DISPLAY, ...JSON.parse(listDisplayVal) } } catch {} }
     if (offlineModeVal === 'true') offlineMode.value = true
     if (showOnAutoStartVal === 'true') showOnAutoStart.value = true
     if (hotkeyWakeVal !== null) hotkeyWake.value = hotkeyWakeVal
@@ -533,6 +548,11 @@ export const useSettingsStore = defineStore('settings', () => {
   async function setCardDisplay(flags: Partial<CardDisplayFlags>) {
     cardDisplay.value = { ...cardDisplay.value, ...flags }
     await window.api.settings.set('cardDisplay', JSON.stringify(cardDisplay.value))
+  }
+
+  async function setListDisplay(flags: Partial<ListDisplayFlags>) {
+    listDisplay.value = { ...listDisplay.value, ...flags }
+    await window.api.settings.set('listDisplay', JSON.stringify(listDisplay.value))
   }
 
   async function setAutoUpdate(enabled: boolean) {
@@ -872,5 +892,5 @@ export const useSettingsStore = defineStore('settings', () => {
     ])
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, autoDirTag, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, hotkeyClipboard, themeVars, language, customCategories, activeThemeId, isSmartTheme, paletteId, brightnessMode, brightnessLevel, glassEnabled, glassOpacity, cardDisplay, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setAutoDirTag, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setHotkeyClipboard, setTheme, setSmartTheme, setPaletteMode, setBrightnessLevel, setGlassEnabled, setGlassOpacity, setLanguage, addCustomCategory, renameCustomCategory, removeCustomCategory, resetToDefaults, setCardDisplay }
+  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, autoDirTag, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, hotkeyClipboard, themeVars, language, customCategories, activeThemeId, isSmartTheme, paletteId, brightnessMode, brightnessLevel, glassEnabled, glassOpacity, cardDisplay, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setAutoDirTag, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setHotkeyClipboard, setTheme, setSmartTheme, setPaletteMode, setBrightnessLevel, setGlassEnabled, setGlassOpacity, setLanguage, addCustomCategory, renameCustomCategory, removeCustomCategory, resetToDefaults, setCardDisplay, listDisplay, setListDisplay }
 })

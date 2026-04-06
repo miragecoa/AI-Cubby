@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { join } from 'path'
-import { mkdirSync, unlinkSync } from 'fs'
+import { mkdirSync, unlinkSync, statSync } from 'fs'
 import { SCHEMA_SQL } from './schema'
 import { loadManifest, getProfileDir } from './profiles'
 import { pinyin } from 'pinyin-pro'
@@ -52,6 +52,7 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE clipboard_items ADD COLUMN last_used_at INTEGER',
     'ALTER TABLE resources ADD COLUMN user_modified INTEGER DEFAULT 0',
     'ALTER TABLE resources ADD COLUMN stat_paused INTEGER DEFAULT 0',
+    'ALTER TABLE resources ADD COLUMN file_size INTEGER DEFAULT 0',
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
   }
@@ -73,6 +74,19 @@ export function initDatabase(profileId?: string): Database.Database {
     }
     db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('icon_refresh_v2', '1')`).run()
     console.log(`[migration] icon_refresh_v2: reset ${stale.length} stale app/game covers`)
+  }
+
+  // 补填 file_size（每次启动检查，确保新旧资源都有值）
+  {
+    const rows = db.prepare(`SELECT id, file_path FROM resources WHERE file_size IS NULL OR file_size = 0`).all() as Array<{ id: string; file_path: string }>
+    if (rows.length) {
+      const stmt = db.prepare(`UPDATE resources SET file_size = ? WHERE id = ?`)
+      let filled = 0
+      for (const r of rows) {
+        try { const s = statSync(r.file_path); stmt.run(s.size, r.id); filled++ } catch { /* file gone */ }
+      }
+      console.log(`[file_size] backfill: ${filled}/${rows.length}`)
+    }
   }
 
   console.log('Database initialized at:', dbPath)
