@@ -361,7 +361,7 @@ function buildTrayMenu(): Electron.Menu {
     ? { show: 'Show Window', clipboard: 'Clipboard History', hideDrawer: 'Hide Floating Drawer', showDrawer: 'Show Floating Drawer', recall: 'Recall Drawer to Center', quit: 'Quit' }
     : { show: '显示窗口', clipboard: '剪贴板历史', hideDrawer: '隐藏悬浮窗', showDrawer: '显示悬浮窗', recall: '召回悬浮窗到屏幕中央', quit: '退出' }
   return Menu.buildFromTemplate([
-    { label: L.show, click: () => mainWindow?.show() },
+    { label: L.show, click: () => { mainWindow?.setSkipTaskbar(false); mainWindow?.show() } },
     { label: L.clipboard, click: () => showClipboardWindow() },
     {
       label: drawerVisible ? L.hideDrawer : L.showDrawer,
@@ -701,7 +701,7 @@ function createWindow(): void {
     frame: false,
     transparent: true,       // Allows smart theme to show WE wallpaper through
     backgroundColor: '#00000000',
-    skipTaskbar: true,   // 默认不在任务栏，显示时再 setSkipTaskbar(false)
+    skipTaskbar: false,
     title: savedAppTitle,
     ...(savedAppIcon ? { icon: savedAppIcon } : loadFileIcon() ? { icon: loadFileIcon()! } : {}),
     webPreferences: {
@@ -732,6 +732,9 @@ function createWindow(): void {
       if (wasMaximized) mainWindow?.maximize()
       mainWindow?.show()
       drawerWindow?.hide()
+    } else {
+      // 自动启动隐藏模式：任务栏不显示，只有 tray
+      mainWindow?.setSkipTaskbar(true)
     }
   })
 
@@ -772,8 +775,8 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     if (!willQuit) {
       event.preventDefault()
-      mainWindow?.setSkipTaskbar(true)
       mainWindow?.hide()
+      mainWindow?.setSkipTaskbar(true)
       if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
     }
   })
@@ -1017,14 +1020,15 @@ app.whenReady().then(() => {
 
   // 悬浮小抽屉 IPC
   ipcMain.handle('drawer:openMain', () => {
+    mainWindow?.setSkipTaskbar(false)
     mainWindow?.show()
     mainWindow?.focus()
   })
   ipcMain.handle('drawer:toggleMain', () => {
     if (mainWindow && mainWindow.isVisible()) {
       // 隐藏主窗口 → 抽屉模式
-      mainWindow.setSkipTaskbar(true)
       mainWindow.hide()
+      mainWindow.setSkipTaskbar(true)
       if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
     } else {
       // 显示主窗口 → 任务栏可见，隐藏抽屉
@@ -1289,6 +1293,7 @@ app.whenReady().then(() => {
     drawerWindow.setResizable(false)
   })
   ipcMain.handle('drawerSettings:openMain', () => {
+    mainWindow?.setSkipTaskbar(false)
     mainWindow?.show()
     mainWindow?.focus()
     drawerSettingsWindow?.close()
@@ -1416,8 +1421,8 @@ function registerWakeShortcut(accelerator: string): void {
     const ok = globalShortcut.register(accelerator, () => {
       if (!mainWindow) return
       if (mainWindow.isVisible() && mainWindow.isFocused()) {
-        mainWindow.setSkipTaskbar(true)
         mainWindow.hide()
+        mainWindow.setSkipTaskbar(true)
         if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
       } else {
         incShortcutMain()
