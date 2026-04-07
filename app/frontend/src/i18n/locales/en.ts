@@ -655,6 +655,8 @@ export default {
     errorFileExists: 'This file is already in the library',
     errorWebpageExists: 'This webpage is already in the library',
     errorFolderExists: 'This folder is already in the library',
+    existsOverwrite: 'Already in library. Overwrite?',
+    btnOverwrite: 'Overwrite',
     errorAddFailed: 'Failed to add',
   },
   import: {

@@ -655,6 +655,8 @@ export default {
     errorFileExists: '此文件已在库中',
     errorWebpageExists: '此网页已在库中',
     errorFolderExists: '此文件夹已在库中',
+    existsOverwrite: '已在库中，是否覆盖更新？',
+    btnOverwrite: '覆盖',
     errorAddFailed: '添加失败',
   },
   import: {

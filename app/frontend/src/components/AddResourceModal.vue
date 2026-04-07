@@ -83,6 +83,7 @@
           <div class="modal-footer">
             <span v-if="errorMsg" class="error-msg">{{ errorMsg }}</span>
             <div class="footer-actions">
+              <button v-if="pendingOverwrite" class="btn-add" style="background:#f59e0b" @click="confirmOverwrite" :disabled="submitting">{{ t('addModal.btnOverwrite') }}</button>
               <button class="btn-cancel" @click="close">{{ t('common.cancel') }}</button>
               <button
                 class="btn-add"
@@ -233,6 +234,7 @@
           <div class="modal-footer">
             <span v-if="errorMsg" class="error-msg">{{ errorMsg }}</span>
             <div class="footer-actions">
+              <button v-if="pendingOverwrite" class="btn-add" style="background:#f59e0b" @click="confirmOverwrite" :disabled="submitting">{{ t('addModal.btnOverwrite') }}</button>
               <button class="btn-cancel" @click="close">{{ t('common.cancel') }}</button>
               <button
                 class="btn-add"
@@ -434,6 +436,7 @@ const filteredTags = computed(() => {
   )
 })
 const errorMsg = ref('')
+const pendingOverwrite = ref<{ resource: any; mode: 'file' | 'webpage' | 'folder' } | null>(null)
 const submitting = ref(false)
 const isDragOver = ref(false)
 
@@ -656,16 +659,12 @@ async function submitFile() {
       note: form.value.note.trim() || undefined,
     })
     if (existed) {
-      errorMsg.value = t('addModal.errorFileExists')
+      pendingOverwrite.value = { resource, mode: 'file' }
+      errorMsg.value = t('addModal.existsOverwrite')
       submitting.value = false
       return
     }
-    for (const tagId of selectedTagIds.value) {
-      await window.api.tags.addToResource(resource.id, tagId)
-    }
-    store.addOrUpdate(resource as any)
-    emit('added', resource)
-    close()
+    await applyTagsAndFinish(resource)
   } catch (e: any) {
     errorMsg.value = e?.message ?? t('addModal.errorAddFailed')
   } finally {
@@ -688,7 +687,8 @@ async function submitWebpage() {
       file_path: url,
     })
     if (existed) {
-      errorMsg.value = t('addModal.errorWebpageExists')
+      pendingOverwrite.value = { resource, mode: 'webpage' }
+      errorMsg.value = t('addModal.existsOverwrite')
       submitting.value = false
       return
     }
@@ -697,12 +697,7 @@ async function submitWebpage() {
       const coverPath = await window.api.files.saveCover(resource.id, webFavicon.value)
       if (coverPath) (resource as any).cover_path = coverPath
     }
-    for (const tagId of selectedTagIds.value) {
-      await window.api.tags.addToResource(resource.id, tagId)
-    }
-    store.addOrUpdate(resource as any)
-    emit('added', resource)
-    close()
+    await applyTagsAndFinish(resource)
   } catch (e: any) {
     errorMsg.value = e?.message ?? t('addModal.errorAddFailed')
   } finally {
@@ -741,16 +736,12 @@ async function submitFolder() {
       note: folderForm.value.note.trim() || undefined,
     })
     if (existed) {
-      errorMsg.value = t('addModal.errorFolderExists')
+      pendingOverwrite.value = { resource, mode: 'folder' }
+      errorMsg.value = t('addModal.existsOverwrite')
       submitting.value = false
       return
     }
-    for (const tagId of selectedTagIds.value) {
-      await window.api.tags.addToResource(resource.id, tagId)
-    }
-    store.addOrUpdate(resource as any)
-    emit('added', resource)
-    close()
+    await applyTagsAndFinish(resource)
   } catch (e: any) {
     errorMsg.value = e?.message ?? t('addModal.errorAddFailed')
   } finally {
@@ -841,6 +832,41 @@ function toggleTag(id: number) {
   const idx = selectedTagIds.value.indexOf(id)
   if (idx >= 0) selectedTagIds.value.splice(idx, 1)
   else selectedTagIds.value.push(id)
+  // 清空输入框，防止 blur 触发 createAndAddTag 意外创建标签
+  newTagInput.value = ''
+}
+
+async function applyTagsAndFinish(resource: any) {
+  for (const tagId of selectedTagIds.value) {
+    await window.api.tags.addToResource(resource.id, tagId)
+  }
+  const full = selectedTagIds.value.length ? await window.api.resources.getById(resource.id) : null
+  store.addOrUpdate((full ?? resource) as any)
+  emit('added', full ?? resource)
+  close()
+}
+
+async function confirmOverwrite() {
+  if (!pendingOverwrite.value) return
+  const { resource } = pendingOverwrite.value
+  submitting.value = true
+  errorMsg.value = ''
+  pendingOverwrite.value = null
+  try {
+    // 更新现有资源的标题等信息
+    const title = mode.value === 'webpage' ? (webForm.value.title.trim() || resource.title) : form.value.title.trim()
+    await window.api.resources.update(resource.id, { title })
+    // Save favicon for webpage
+    if (mode.value === 'webpage' && webFavicon.value) {
+      const coverPath = await window.api.files.saveCover(resource.id, webFavicon.value)
+      if (coverPath) resource.cover_path = coverPath
+    }
+    await applyTagsAndFinish(resource)
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? t('addModal.errorAddFailed')
+  } finally {
+    submitting.value = false
+  }
 }
 
 async function createAndAddTag() {
@@ -867,6 +893,8 @@ function stemName(path: string) {
 }
 
 function close() {
+  pendingOverwrite.value = null
+  errorMsg.value = ''
   emit('update:modelValue', false)
 }
 
