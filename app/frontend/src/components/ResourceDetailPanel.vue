@@ -324,6 +324,7 @@ const filteredSuggestions = computed(() => {
 async function addTagFromSuggestion(tag: { id: number; name: string }) {
   if (props.resource.tags?.some(t => t.id === tag.id)) return
   hasEdited.value = true
+  newTagInput.value = ''
   await window.api.tags.addToResource(props.resource.id, tag.id)
   store.addOrUpdate({
     ...props.resource,

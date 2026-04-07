@@ -54,7 +54,7 @@
                       :key="tag.id"
                       class="tag-chip"
                       :class="{ selected: selectedTagIds.includes(tag.id) }"
-                      @click="toggleTag(tag.id)"
+                      @mousedown.prevent="toggleTag(tag.id)"
                     >
                       {{ tag.name }}<span v-if="tag.count" class="tag-count">{{ tag.count }}</span>
                     </button>
@@ -204,7 +204,7 @@
                       :key="tag.id"
                       class="tag-chip"
                       :class="{ selected: selectedTagIds.includes(tag.id) }"
-                      @click="toggleTag(tag.id)"
+                      @mousedown.prevent="toggleTag(tag.id)"
                     >
                       {{ tag.name }}<span v-if="tag.count" class="tag-count">{{ tag.count }}</span>
                     </button>
@@ -592,6 +592,10 @@ function resetAll() {
   sysScanning.value = false
   sysScanResult.value = null
   submitting.value = false
+  pendingOverwrite.value = null
+  webForm.value = { url: '', title: '' }
+  webFavicon.value = null
+  webFaviconLoading.value = false
 }
 
 // ── 单个文件操作 ────────────────────────────────────────
