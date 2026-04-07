@@ -34,8 +34,10 @@ class LRUCache<V> {
   }
 
   get size(): number { return this.map.size }
+  get capacity(): number { return this.maxSize }
 
   clear(): void { this.map.clear() }
+  forEach(fn: (key: string, value: V) => void): void { this.map.forEach((v, k) => fn(k, v)) }
 }
 
 // ── Concurrency-limited queue ────────────────────────────────────────────────
@@ -47,6 +49,10 @@ const MAX_CONCURRENT = 3  // 降低并发，避免启动时大量 IPC 卡死主�
 let _running = 0
 const _queue: QueueItem[] = []
 let _paused = false
+let _onIdleCallback: (() => void) | null = null
+
+/** Register a one-shot callback that fires when the queue becomes empty. */
+export function onQueueIdle(cb: () => void): void { _onIdleCallback = cb }
 
 /** Pause/resume the loading queue (e.g. when window is minimized). */
 export function setPaused(paused: boolean): void {
@@ -83,6 +89,11 @@ export function drainQueue(): void {
 
 function flush() {
   if (_paused) return
+  if (_queue.length === 0 && _running === 0 && _onIdleCallback) {
+    const cb = _onIdleCallback
+    _onIdleCallback = null
+    cb()
+  }
   while (_running < MAX_CONCURRENT && _queue.length > 0) {
     const item = _queue.pop()!
     // Skip if already cached by the time it's dequeued
@@ -106,13 +117,28 @@ function flush() {
 
 // ── Shared caches ────────────────────────────────────────────────────────────
 
-const _imgCache = new LRUCache<string | null>(150)
+let _imgCache = new LRUCache<string | null>(300)  // 动态调整：pageSize + 100
+
+/** Resize the image cache (call when pageSize changes). */
+export function resizeImageCache(pageSize: number): void {
+  const newSize = pageSize + 100
+  if (newSize === _imgCache.capacity) return
+  const old = _imgCache
+  _imgCache = new LRUCache<string | null>(newSize)
+  // 迁移旧缓存
+  old.forEach((k, v) => _imgCache.set(k, v))
+}
 const _iconCache = new LRUCache<string | null>(100)
 const _savedCovers = new Set<string>()
 
 /** Get a cached image (cover, thumbnail). Returns undefined if not cached. */
 export function getCached(path: string): string | null | undefined {
   return _imgCache.get(path)
+}
+
+/** Get cached image at any size (400px or 64px). Returns undefined if not cached. */
+export function getCachedAnySize(path: string): string | null | undefined {
+  return _imgCache.get(path) ?? _imgCache.get(`${path}@64`)
 }
 
 /** Check if path is already cached or loading. */
@@ -152,7 +178,15 @@ export function getCachedIcon(path: string): string | null | undefined {
 export function hasSavedCover(id: string): boolean { return _savedCovers.has(id) }
 export function markCoverSaved(id: string): void { _savedCovers.add(id) }
 
-/** Clear image cache and cancel all pending loads (for view switching). */
+/** Cancel pending loads but keep cached images (for view switching — preserves preloaded data). */
+export function cancelPendingLoads(): void {
+  while (_queue.length > 0) {
+    const item = _queue.shift()!
+    item.resolve(null)
+  }
+}
+
+/** Clear image cache and cancel all pending loads (for page change). */
 export function clearImageCache(): void {
   _imgCache.clear()
   // Drain the queue (resolve all pending as null)
@@ -177,13 +211,6 @@ export function cacheStats() {
 
 const dlog = (...args: unknown[]) => { try { (window as any).__debugLog?.(...args) } catch {} }
 
-// 每 5 秒输出缓存状态
-setInterval(() => {
-  const s = cacheStats()
-  if (s.images > 0 || s.running > 0) {
-    dlog(`[cache] imgs=${s.images}/150 icons=${s.icons}/100 queue=${s.queue} running=${s.running}`)
-  }
-}, 5000)
 
 // ── Visible index range (managed by LibraryPage scroll tracking) ─────────────
 

@@ -2617,6 +2617,9 @@ onMounted(async () => {
       stopLoadWatch()
     }
   })
+  resizeImageCache(settingsStore.pageSize)
+  // settings 异步加载完后 pageSize 可能变化，自动 resize
+  watch(() => settingsStore.pageSize, (size) => resizeImageCache(size))
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('dragover', onDocDragOver)
   document.addEventListener('click', onDocCloseTypeFilter)
@@ -2745,16 +2748,38 @@ function goToPage(page: number) {
   const clamped = Math.max(1, Math.min(page, totalPages.value))
   if (clamped === currentPage.value) return
   currentPage.value = clamped
-  clearImageCache()
-  // 清理 Chromium 内部缓存（图片解码位图等）
+  // 只清队列不清缓存 — 保留当前视图 + 预加载的缩略图
+  cancelPendingLoads()
   ;(window as any).__clearRendererCache?.()
   if (gridScrollRef.value) gridScrollRef.value.scrollTop = 0
-  // 整页可见，让所有组件加载图片
+
+  // 当前页加载完成后，预加载另一个视图的缩略图
+  onQueueIdle(() => preloadOtherView())
+}
+
+/** 预加载另一个视图的全页缩略图，切换时无感 */
+function preloadOtherView() {
+  const items = visibleItems.value.slice(0, settingsStore.pageSize)
+  const isGrid = viewMode.value !== 'list'
+  for (const r of items) {
+    if (isGrid) {
+      // 当前网格(400px) → 预加载列表的 64px 版本
+      if (!r.cover_path) {
+        const p = (r.type === 'image' || r.type === 'video') ? r.file_path : ''
+        if (p) loadImageSmall(p)
+      }
+    } else {
+      // 当前列表(64px) → 预加载网格的 400px 版本
+      const p = r.cover_path || ((r.type === 'image' || r.type === 'video') ? r.file_path : '')
+      if (p) loadImage(p)
+    }
+  }
 }
 
 function onPageSizeChange(e: Event) {
   const val = parseInt((e.target as HTMLSelectElement).value)
   settingsStore.setPageSize(val)
+  resizeImageCache(val)
   currentPage.value = 1
   clearImageCache()
   if (gridScrollRef.value) gridScrollRef.value.scrollTop = 0
@@ -2881,26 +2906,18 @@ function onColResizeEnd() {
 }
 
 // ListRow 组件自行管理缩略图（同 ResourceCard），此处只需 preload/clearImageCache
-import { getCached, loadImage, preload, clearImageCache, cancelQueued, reverseQueue, setPaused } from '../utils/image-cache'
+import { getCached, loadImage, loadImageSmall, preload, clearImageCache, cancelPendingLoads, cancelQueued, reverseQueue, onQueueIdle, resizeImageCache, setPaused } from '../utils/image-cache'
 
 // 切换视图时：回到顶部、重置渲染窗口、清理上一模式资源
 watch(() => viewMode.value, (mode) => {
   if (gridScrollRef.value) gridScrollRef.value.scrollTop = 0
-  currentPage.value = 1
 
-  // 切换时清理上一模式的图片缓存 + Chromium 内部缓存
-  ;(window as any).__clearRendererCache?.()
-  // 新组件按 0→N mount 入队，reverse 后 pop() 从上往下加载
+  // 切换视图：取消排队但保留已缓存的缩略图（预加载的数据不丢）
+  cancelPendingLoads()
   nextTick(() => reverseQueue())
-  // 新组件按 0→N 入队，reverse 后 pop() 从上往下加载
-  clearImageCache()
 
-  if (mode !== 'list') {
-    // 进入网格视图 → 预加载前 60 张
-    const items = listSortedFiltered.value.slice(0, 60)
-    const paths = items.map(r => r.cover_path || ((r.type === 'image' || r.type === 'video') ? r.file_path : '')).filter(Boolean)
-    preload(paths)
-  }
+  // 当前视图加载完成后，预加载另一个视图的顶部缩略图
+  onQueueIdle(() => preloadOtherView())
 })
 function fmtFileSize(bytes?: number): string {
   if (!bytes) return '—'

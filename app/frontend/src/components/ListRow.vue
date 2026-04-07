@@ -45,7 +45,7 @@
 <script setup lang="ts">
 import { ref, computed, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { loadImage, loadImageSmall, loadIcon, hasSavedCover, markCoverSaved } from '../utils/image-cache'
+import { getCachedAnySize, getCachedIcon, loadImage, loadImageSmall, loadIcon, hasSavedCover, markCoverSaved } from '../utils/image-cache'
 import { useResourceStore } from '../stores/resources'
 import type { Resource } from '../stores/resources'
 
@@ -96,7 +96,22 @@ const thumbSrc = ref<string | null>(null)
 watchEffect(async () => {
   const r = props.resource
 
-  // 已有 cover_path → 直接加载
+  // 同步缓存命中 → 立即设值（切换视图时瞬间显示）
+  if (r.cover_path) {
+    const hit = getCachedAnySize(r.cover_path)
+    if (hit !== undefined) { thumbSrc.value = hit; return }
+  } else if (r.type === 'image' || r.type === 'video') {
+    const hit = getCachedAnySize(r.file_path)
+    if (hit !== undefined) { thumbSrc.value = hit; return }
+  } else if (r.type === 'app' || r.type === 'game') {
+    const hit = getCachedIcon(r.file_path)
+    if (hit !== undefined) { thumbSrc.value = hit; return }
+  } else if (r.type === 'document' || r.type.startsWith('cat_')) {
+    const hit = getCachedAnySize(r.file_path) ?? getCachedIcon(r.file_path)
+    if (hit !== undefined) { thumbSrc.value = hit; return }
+  }
+
+  // 异步加载（未缓存的）
   if (r.cover_path) {
     thumbSrc.value = await loadImage(r.cover_path)
     return

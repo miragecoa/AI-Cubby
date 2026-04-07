@@ -171,7 +171,7 @@
 <script setup lang="ts">
 import { ref, computed, watchEffect, watch, nextTick, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getCached, isCached, loadImage, loadIcon, getCachedIcon, hasSavedCover, markCoverSaved, cancelQueued, isIndexVisible, getVisVersion } from '../utils/image-cache'
+import { getCached, getCachedAnySize, isCached, loadImage, loadIcon, getCachedIcon, hasSavedCover, markCoverSaved, cancelQueued, isIndexVisible, getVisVersion } from '../utils/image-cache'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
@@ -374,6 +374,21 @@ const thumbSrc = ref<string | null>(null)
 watchEffect(async () => {
   const r = props.resource
   void iconRetries.value  // 加入响应式依赖，重试时触发重跑
+
+  // 同步缓存命中 → 立即设值，不走 await 微任务（切换视图时瞬间显示）
+  const syncPath = r.cover_path || ((r.type === 'image' || r.type === 'video') ? r.file_path : '')
+  if (syncPath) {
+    const hit = getCachedAnySize(syncPath)
+    if (hit !== undefined) { thumbSrc.value = hit; return }
+  }
+  if ((r.type === 'app' || r.type === 'game') && !r.cover_path) {
+    const hit = getCachedIcon(r.file_path)
+    if (hit !== undefined) { thumbSrc.value = hit; return }
+  }
+  if ((r.type === 'document' || r.type.startsWith('cat_')) && !r.cover_path) {
+    const hit = getCachedAnySize(r.file_path) ?? getCachedIcon(r.file_path)
+    if (hit !== undefined) { thumbSrc.value = hit; return }
+  }
 
   if (r.cover_path) {
     thumbSrc.value = await getCachedImage(r.cover_path)
