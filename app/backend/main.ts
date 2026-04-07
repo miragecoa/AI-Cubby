@@ -3,6 +3,7 @@ import { join, extname, basename } from 'path'
 import { createHash } from 'crypto'
 import { deflateSync } from 'zlib'
 import { existsSync, createReadStream, statSync, copyFileSync, unlinkSync, readFileSync, mkdirSync, writeFileSync } from 'fs'
+import { writeFile } from 'fs/promises'
 // import { pathToFileURL } from './utils/fs-safe'
 import { execFile } from 'child_process'
 
@@ -331,21 +332,25 @@ function startClipboardPolling(): void {
         }
       }
 
-      // Image (only when image format is present)
+      // Image (only when image format is present) — async to avoid blocking main thread on large screenshots
       if (hasImage) {
         const img = clipboard.readImage()
         if (!img.isEmpty()) {
-          const buf = img.toPNG()
-          const hash = createHash('sha256').update(buf).digest('hex')
-          if (hash !== _lastClipImgHash) {
-            _lastClipImgHash = hash
-            _lastClipText = ''  // reset text tracker when image replaces clipboard
-            mkdirSync(clipboardImgDir, { recursive: true })
-            const imgPath = join(clipboardImgDir, `${Date.now()}.png`)
-            writeFileSync(imgPath, buf)
-            clipboardAddItem('image', null, imgPath, buf.length, hash)
-            notifyClipboardUpdated()
-          }
+          setImmediate(async () => {
+            try {
+              const buf = img.toPNG()
+              const hash = createHash('sha256').update(buf).digest('hex')
+              if (hash !== _lastClipImgHash) {
+                _lastClipImgHash = hash
+                _lastClipText = ''
+                mkdirSync(clipboardImgDir, { recursive: true })
+                const imgPath = join(clipboardImgDir, `${Date.now()}.png`)
+                await writeFile(imgPath, buf)
+                clipboardAddItem('image', null, imgPath, buf.length, hash)
+                notifyClipboardUpdated()
+              }
+            } catch { /* ignore */ }
+          })
         }
       } else {
         if (_lastClipImgHash) _lastClipImgHash = ''
