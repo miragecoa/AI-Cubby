@@ -1,12 +1,12 @@
 {
   "name": "ai-cubby",
-  "version": "0.2.68",
+  "version": "0.3.0",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "package": "electron-vite build && electron-builder",
+    "package": "electron-vite build && electron-builder && node ../scripts/repack.cjs",
     "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
   "devDependencies": {

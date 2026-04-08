@@ -1,0 +1,26 @@
+// Icon — same as the main app
+1 ICON "../app/resources/icon.ico"
+
+// Version info
+1 VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "CompanyName",      "miragecoa"
+            VALUE "FileDescription",  "AI Cubby"
+            VALUE "FileVersion",      "1.0.0"
+            VALUE "InternalName",     "AI-Cubby"
+            VALUE "OriginalFilename", "AI-Cubby.exe"
+            VALUE "ProductName",      "AI Cubby"
+            VALUE "ProductVersion",   "1.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0804, 1200
+    END
+END

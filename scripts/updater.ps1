@@ -128,5 +128,33 @@ if ($newExeInSource -and $newExeInSource.Name -ne $oldExeName) {
 
 # Keep .update-temp directory and its contents (zip + extracted) for user reference
 
+# ── Migration cleanup: remove orphaned flat Electron files from pre-core/ versions ──
+# When upgrading from v0.2.x (flat layout) to v0.3+ (core/ layout), the old
+# DLLs / PAK files / resource folders in the root become orphaned.
+# Safe to delete: Electron now lives entirely inside core\.
+$coreDir = Join-Path $appDir 'core'
+if (Test-Path $coreDir) {
+    $oldFiles = @(
+        'ffmpeg.dll','libEGL.dll','libGLESv2.dll','d3dcompiler_47.dll',
+        'vulkan-1.dll','vk_swiftshader.dll','vk_swiftshader_icd.json',
+        'chrome_100_percent.pak','chrome_200_percent.pak','resources.pak',
+        'icudtl.dat','snapshot_blob.bin','v8_context_snapshot.bin',
+        'LICENSE.electron.txt','LICENSES.chromium.html'
+    )
+    foreach ($f in $oldFiles) {
+        $fp = Join-Path $appDir $f
+        if (Test-Path $fp) { Remove-Item $fp -Force -EA SilentlyContinue }
+    }
+    # Remove old flat resource/locale directories (now live under core\)
+    foreach ($d in @('resources','locales')) {
+        $dp = Join-Path $appDir $d
+        # Only remove if NOT inside core\ (just in case)
+        if ((Test-Path $dp) -and ($dp -notlike "*\core\*")) {
+            Remove-Item $dp -Recurse -Force -EA SilentlyContinue
+        }
+    }
+    Write-Host 'Migration: cleaned up old flat Electron files.' -ForegroundColor DarkGray
+}
+
 Write-Host 'Done! Launching...' -ForegroundColor Green
 Start-Process -FilePath $exePath

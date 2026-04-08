@@ -328,7 +328,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const viewModeByType = ref<Record<string, string>>({})
   const cardZoomByType = ref<Record<string, number>>({})
   const sidebarNav = ref<SidebarNavConfig[]>(DEFAULT_SIDEBAR_NAV.map(x => ({ ...x })))
-  const pageSize = ref(200)
+  const pageSize = ref(100)
   const resourceSort = ref<ResourceSortField>('lastUsed')
   const tagSort = ref<TagSortField>('lastUsed')
   const sidebarCollapsed = ref(true)
@@ -337,11 +337,11 @@ export const useSettingsStore = defineStore('settings', () => {
   const autoDirTag = ref(true)
   const activeThemeId = ref<ThemeId>('smart')
   const isSmartTheme = computed(() => activeThemeId.value === 'smart')
-  const paletteId = ref<PaletteId>('smart')
-  const brightnessMode = ref<BrightnessMode>('dark')
-  const brightnessLevel = ref(0)  // 0=dark … 100=light, continuous
-  const glassEnabled = ref(false)
-  const glassOpacity = ref(0.6)  // 0 = fully transparent, 1 = fully opaque
+  const paletteId = ref<PaletteId>('indigo')
+  const brightnessMode = ref<BrightnessMode>('neutral')
+  const brightnessLevel = ref(50)  // 0=dark … 100=light, continuous
+  const glassEnabled = ref(true)
+  const glassOpacity = ref(1.0)  // 0 = fully transparent, 1 = fully opaque
   const listColumns = ref<Record<string, number>>({ name: 300, size: 80, type: 70, date: 130, count: 70, tags: 200 })
   const appTitle = ref('AI小抽屉')
   const cardDisplay = ref<CardDisplayFlags>({ ...DEFAULT_CARD_DISPLAY })
@@ -397,7 +397,7 @@ export const useSettingsStore = defineStore('settings', () => {
     zoom.value = zoomVal ? parseFloat(zoomVal) : 1.5
     window.api.app.setZoom(zoom.value)
 
-    if (pageSizeVal) pageSize.value = parseInt(pageSizeVal as string) || 200
+    if (pageSizeVal) pageSize.value = parseInt(pageSizeVal as string) || 100
     if (resSortVal) resourceSort.value = resSortVal as ResourceSortField
     if (tagSortVal) tagSort.value = tagSortVal as TagSortField
     if (collapsedVal) sidebarCollapsed.value = collapsedVal === 'true'
@@ -456,8 +456,8 @@ export const useSettingsStore = defineStore('settings', () => {
       if (!isNaN(parsed)) glassOpacity.value = Math.min(1, Math.max(0, parsed))
     }
 
-    // Glass mode: restore saved preference, or default ON for legacy smart theme users
-    const shouldGlass = glassEnabledVal === 'true' || (glassEnabledVal === null && themeIdVal === 'smart')
+    // Glass mode: restore saved preference; default ON for new users
+    const shouldGlass = glassEnabledVal === 'true' || glassEnabledVal === null
     if (shouldGlass) {
       glassEnabled.value = true
       document.documentElement.classList.add('glass-mode')
