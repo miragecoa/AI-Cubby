@@ -950,6 +950,34 @@ app.whenReady().then(() => {
     }
   }
 
+  // ── 开始菜单快捷方式（仅打包版，失败静默）──────────────────
+  if (app.isPackaged) {
+    try {
+      const lang = getSetting('language') ?? 'zh'
+      const appTitle = getSetting('appTitle') || (lang === 'en' ? 'AI Cubby' : 'AI小抽屉')
+      const startMenuDir = join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+      const lnkPath = join(startMenuDir, `${appTitle}.lnk`)
+      const exePath = process.execPath
+      // 清理指向同一 exe 或旧名称的快捷方式
+      try {
+        for (const f of readdirSync(startMenuDir)) {
+          if (!f.endsWith('.lnk')) continue
+          const fullPath = join(startMenuDir, f)
+          if (f === `${appTitle}.lnk`) continue // 跳过当前名称
+          try {
+            const detail = shell.readShortcutLink(fullPath)
+            if (detail.target === exePath) unlinkSync(fullPath)
+          } catch {} // 读取/删除单个快捷方式失败不影响其他
+        }
+      } catch {} // readdir 失败不影响后续创建
+      shell.writeShortcutLink(lnkPath, 'create', {
+        target: exePath,
+        description: lang === 'en' ? 'AI Cubby — Desktop Organizer & File Search' : 'AI小抽屉 — 桌面整理与文件搜索',
+      })
+      console.log('[StartMenu] Shortcut:', lnkPath)
+    } catch {} // 整体失败静默，不影响应用启动
+  }
+
   createTray()
   createWindow()
 
