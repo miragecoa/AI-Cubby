@@ -109,7 +109,7 @@ function noUpdate(currentVersion: string): UpdateInfo {
 // ── Download update ──────────────────────────────────────
 
 async function followDownload(url: string, totalSize: number, wc: WebContents | null = null): Promise<string> {
-  const appDir = app.isPackaged ? dirname(process.execPath) : app.getAppPath()
+  const appDir = app.isPackaged ? dirname(process.env.LAUNCHER_EXE ?? process.execPath) : app.getAppPath()
   const tempDir = join(appDir, '.update-temp')
   if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true })
   const zipPath = join(tempDir, 'update.zip')
@@ -206,8 +206,15 @@ export async function applyAndRestart(): Promise<void> {
     throw new Error('No downloaded update to apply')
   }
 
-  const appDir = app.isPackaged ? dirname(process.execPath) : app.getAppPath()
-  const exePath = app.isPackaged ? process.execPath : join(appDir, 'AI资源管家.exe')
+  // If running via the launcher stub, LAUNCHER_EXE points to the root launcher.
+  // Use that as the app root and restart target so autostart / update paths stay correct.
+  const launcherExe = process.env.LAUNCHER_EXE
+  const appDir  = app.isPackaged
+    ? (launcherExe ? dirname(launcherExe) : dirname(process.execPath))
+    : app.getAppPath()
+  const exePath = app.isPackaged
+    ? (launcherExe ?? process.execPath)
+    : join(appDir, 'AI资源管家.exe')
   const pid = process.pid
 
   // Fetch updater script from R2. This allows updating the install logic without

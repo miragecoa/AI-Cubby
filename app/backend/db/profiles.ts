@@ -14,7 +14,11 @@ export interface ProfileManifest {
 }
 
 function getAppDir(): string {
-  return app.isPackaged ? dirname(process.execPath) : app.getAppPath()
+  if (!app.isPackaged) return app.getAppPath()
+  // When launched via the launcher stub, LAUNCHER_EXE points to root/AI-Cubby.exe.
+  // Use that so data directories (profiles/, covers/, etc.) resolve to the root,
+  // not to core/ where the Electron exe now lives.
+  return dirname(process.env.LAUNCHER_EXE ?? process.execPath)
 }
 
 function getManifestPath(): string {

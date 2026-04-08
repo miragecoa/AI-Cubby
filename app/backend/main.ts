@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImage, protocol, globalShortcut, screen, dialog, clipboard, systemPreferences, webContents } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImage, protocol, globalShortcut, screen, dialog, clipboard, systemPreferences, webContents, Notification } from 'electron'
 import { join, extname, basename } from 'path'
 import { createHash } from 'crypto'
 import { deflateSync } from 'zlib'
@@ -938,7 +938,9 @@ app.whenReady().then(() => {
     app.setLoginItemSettings({ openAtLogin: false, path: process.execPath })
   } else {
     const userDisabled = getSetting('autoStartDisabled') === 'true'
-    const exePath = process.execPath
+    // Prefer the launcher exe (root AI-Cubby.exe) over the Electron exe in core/.
+    // LAUNCHER_EXE is set by the launcher stub so the correct path is always registered.
+    const exePath = process.env.LAUNCHER_EXE ?? process.execPath
     if (!userDisabled) {
       // 每次启动都重新注册，确保路径和参数始终最新（便携版移动、版本升级等场景自动修正）
       app.setLoginItemSettings({ openAtLogin: true, path: exePath, args: ['--hidden'] })
@@ -958,7 +960,7 @@ app.whenReady().then(() => {
       const appTitle = getSetting('appTitle') || (lang === 'en' ? 'AI Cubby' : 'AI小抽屉')
       const startMenuDir = join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
       const lnkPath = join(startMenuDir, `${appTitle}.lnk`)
-      const exePath = process.execPath
+      const exePath = process.env.LAUNCHER_EXE ?? process.execPath
       // 清理指向同一 exe 或旧名称的快捷方式
       try {
         for (const f of readdirSync(startMenuDir)) {
@@ -981,6 +983,36 @@ app.whenReady().then(() => {
 
   createTray()
   createWindow()
+
+  // ── 首次安装次日提示（仅出现一次）────────────────────────
+  // 安装当天记录日期；次日（D1）首次启动时弹一次 Toast，此后永不再弹。
+  // 所有操作静默失败，不影响主流程。
+  if (app.isPackaged) {
+    try {
+      const today = new Date().toISOString().slice(0, 10)  // YYYY-MM-DD
+      if (!getSetting('installDate')) setSetting('installDate', today)
+      if (!getSetting('firstRunNotified')) {
+        const installDate = getSetting('installDate')
+        if (installDate && today > installDate) {
+          setSetting('firstRunNotified', 'true')
+          const lang = getSetting('language') ?? 'zh'
+          const hotkeyWake = getSetting('hotkeyWake') ?? 'Alt+Space'
+          const isZh = lang !== 'en'
+          setTimeout(() => {
+            try {
+              new Notification({
+                title: isZh ? 'AI小抽屉 已在后台静默运行' : 'AI Cubby is running in background',
+                body: isZh
+                  ? `随时按下 ${hotkeyWake} 即可秒开工作台。此提示仅出现一次，以后不再弹出。`
+                  : `Press ${hotkeyWake} anytime to open your workspace. This is a one-time notice — it will never appear again.`,
+                silent: true,
+              }).show()
+            } catch { /* non-critical */ }
+          }, 3000)
+        }
+      }
+    } catch { /* non-critical */ }
+  }
 
   // ── 应用标题 / 图标 IPC ───────────────────────────────
   ipcMain.handle('app:setTitle', (_e, title: string) => {
