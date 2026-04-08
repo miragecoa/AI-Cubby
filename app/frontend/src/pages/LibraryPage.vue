@@ -73,6 +73,9 @@
         </button>
         <div class="toolbar-right">
           <div class="view-toggle">
+            <button class="view-toggle-btn" :class="{ active: viewMode === 'pinboard' }" @click="settingsStore.setViewMode(store.activeType, 'pinboard')" :title="t('library.viewPinboard')">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
+            </button>
             <button class="view-toggle-btn" :class="{ active: viewMode === 'grid' }" @click="settingsStore.setViewMode(store.activeType, 'grid')" :title="t('library.viewGrid')">
               <span v-html="gridViewSvg" />
             </button>
@@ -103,28 +106,40 @@
     <div v-else class="toolbar batch-toolbar">
       <div class="batch-row-1">
         <button class="batch-select-all" @click="toggleSelectAll">
-          {{ selectedIds.size === store.filtered.length ? t('library.batchDeselectAll') : t('library.batchSelectAll') }}
+          {{ selectedIds.size === batchTotalCount ? t('library.batchDeselectAll') : t('library.batchSelectAll') }}
         </button>
         <span class="batch-count">{{ t('library.batchSelected', { n: selectedIds.size }) }}</span>
         <span class="batch-spacer" />
         <button class="batch-cancel-btn" @click="exitBatchMode">{{ t('library.batchCancel') }}</button>
       </div>
       <div class="batch-row-2">
-        <button class="batch-action-btn" :disabled="selectedIds.size === 0" @click="showBatchType = true">
-          <span class="btn-icon" v-html="typeSvg" />{{ t('library.batchChangeType') }}
-        </button>
-        <button class="batch-action-btn" :disabled="selectedIds.size === 0" @click="openBatchTag">
-          <span class="btn-icon" v-html="tagBatchSvg" />{{ t('library.batchAddTag') }}
-        </button>
-        <button class="batch-action-btn" :disabled="selectedIds.size === 0" @click="showBatchPath = true">
-          <span class="btn-icon" v-html="pathSvg" />{{ t('library.batchChangePath') }}
-        </button>
-        <button class="batch-action-btn batch-warn" :disabled="selectedIds.size === 0" @click="showBatchIgnore = true">
-          <span class="btn-icon" v-html="ignoreSvg" />{{ t('library.batchIgnore') }}
-        </button>
-        <button class="batch-action-btn batch-danger" :disabled="selectedIds.size === 0" @click="showBatchDelete = true">
-          <span class="btn-icon" v-html="deleteSvg" />{{ t('library.batchDelete') }}
-        </button>
+        <template v-if="viewMode === 'pinboard'">
+          <button class="batch-action-btn batch-warn" :disabled="selectedIds.size === 0" @click="batchRemoveFromQuickPanel">
+            <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></span>{{ t('pinboard.batchRemove') }}
+          </button>
+        </template>
+        <template v-else>
+          <button class="batch-action-btn" :disabled="selectedIds.size === 0" @click="showBatchType = true">
+            <span class="btn-icon" v-html="typeSvg" />{{ t('library.batchChangeType') }}
+          </button>
+          <button class="batch-action-btn" :disabled="selectedIds.size === 0" @click="openBatchTag">
+            <span class="btn-icon" v-html="tagBatchSvg" />{{ t('library.batchAddTag') }}
+          </button>
+          <button class="batch-action-btn" :disabled="selectedIds.size === 0" @click="showBatchPath = true">
+            <span class="btn-icon" v-html="pathSvg" />{{ t('library.batchChangePath') }}
+          </button>
+          <button class="batch-action-btn" :disabled="selectedIds.size === 0" @click="batchAddToQuickPanel">
+            <span class="btn-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
+            </span>{{ t('library.batchAddToQuickPanel') }}
+          </button>
+          <button class="batch-action-btn batch-warn" :disabled="selectedIds.size === 0" @click="showBatchIgnore = true">
+            <span class="btn-icon" v-html="ignoreSvg" />{{ t('library.batchIgnore') }}
+          </button>
+          <button class="batch-action-btn batch-danger" :disabled="selectedIds.size === 0" @click="showBatchDelete = true">
+            <span class="btn-icon" v-html="deleteSvg" />{{ t('library.batchDelete') }}
+          </button>
+        </template>
       </div>
     </div>
 
@@ -199,7 +214,7 @@
         <!-- 普通库视图 -->
         <template v-else>
           <!-- 排序栏 -->
-          <div v-if="!store.loading && store.filtered.length > 0" class="sort-bar">
+          <div v-if="!store.loading && store.filtered.length > 0 && viewMode !== 'pinboard'" class="sort-bar">
             <span class="sort-bar-count">{{ t('library.count', { n: listSortedFiltered.length }) }}</span>
 
             <!-- 分页 -->
@@ -365,7 +380,10 @@
 
           <div v-else ref="gridScrollRef" class="grid-scroll" @mousedown="onGridMousedown" @scroll="onContentScroll" @wheel="onContentWheel">
             <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
-            <div v-if="viewMode !== 'list'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
+            <!-- Pin Board -->
+            <PinBoard ref="pinBoardRef" v-if="viewMode === 'pinboard'" :zoom="cardZoom" :batch-mode="batchMode" :selected-ids="selectedIds" @open="openResource" @refresh="() => {}" />
+
+            <div v-else-if="viewMode !== 'list'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
                 <ResourceCard
                   v-for="(item, idx) in visibleItems"
                   :key="item.id"
@@ -464,6 +482,7 @@
                 @mouseleave="onListRowLeave"
                 @play-click="store.runningMap.has(item.id) ? (listMenuKillTarget = item) : openResource(item)"
                 @tag-click="onCardSelectHint(item)"
+                @toggle-pin="toggleListPin(item)"
               />
             </div>
             <!-- 列表视图右键菜单 -->
@@ -484,6 +503,9 @@
                 </button>
                 <button v-if="store.runningMap.has(listMenu.item!.id)" @click="listMenuKillTarget = listMenu.item!; listMenu.show = false" class="danger">
                   <span v-html="ctxIcons.kill" />{{ t('resource.kill') }}
+                </button>
+                <button @click="addToQuickPanel(listMenu.item!); listMenu.show = false">
+                  <span v-html="ctxIcons.play" />{{ t('resource.addToQuickPanel') }}
                 </button>
                 <hr />
                 <button @click="ignoreResource(listMenu.item!); listMenu.show = false" class="danger">
@@ -913,6 +935,34 @@
       </div>
     </Teleport>
 
+    <!-- 批量加入快捷面板确认弹窗 -->
+    <Teleport to="body">
+      <div v-if="showBatchQuickPanel" class="modal-overlay" @mousedown.self="showBatchQuickPanel = false">
+        <div class="batch-modal">
+          <div class="batch-modal-title">{{ t('pinboard.batchAddTitle') }}</div>
+          <div class="batch-modal-hint">{{ t('pinboard.confirmBulkAdd', { n: selectedIds.size }) }}</div>
+          <div class="batch-modal-actions">
+            <button class="bm-cancel" @click="showBatchQuickPanel = false">{{ t('library.cancelBtn') }}</button>
+            <button class="bm-confirm" @click="doBatchAddToQuickPanel">{{ t('library.confirmBtn') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 拖入快捷面板 100+ 项目确认 -->
+    <Teleport to="body">
+      <div v-if="showDropBulkConfirm" class="modal-overlay" @mousedown.self="resolveDropBulk(false)">
+        <div class="batch-modal">
+          <div class="batch-modal-title">{{ t('pinboard.batchAddTitle') }}</div>
+          <div class="batch-modal-hint">{{ t('pinboard.confirmBulkAdd', { n: dropBulkCount }) }}</div>
+          <div class="batch-modal-actions">
+            <button class="bm-cancel" @click="resolveDropBulk(false)">{{ t('library.cancelBtn') }}</button>
+            <button class="bm-confirm" @click="resolveDropBulk(true)">{{ t('library.confirmBtn') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- AI 智能设置 — 敬请期待 -->
     <Teleport to="body">
       <div v-if="showAiComingSoon" class="modal-overlay" @mousedown.self="showAiComingSoon = false">
@@ -1261,6 +1311,7 @@ import { NAV_ITEM_DEFS } from '../config/navItems'
 import type { ResourceSortField, TagSortField } from '../stores/settings'
 import ResourceCard from '../components/ResourceCard.vue'
 import ListRow from '../components/ListRow.vue'
+import PinBoard from '../components/PinBoard.vue'
 import AddResourceModal from '../components/AddResourceModal.vue'
 import DropImportModal from '../components/DropImportModal.vue'
 import type { DropItem } from '../components/DropImportModal.vue'
@@ -1552,6 +1603,7 @@ async function pickDiskScanDir() {
 
 // ── 底部导入按钮（滚动到底部才显示） ──────────────────────
 const gridScrollRef = ref<HTMLElement | null>(null)
+const pinBoardRef = ref<{ reload: () => Promise<void>; boardItemIds: string[] } | null>(null)
 const footerVisible = ref(false)
 
 function onGridScroll(e: Event) {
@@ -1879,6 +1931,7 @@ watch(() => store.searchQuery, (q) => {
 
 // 拖放导入
 const dropOver = ref(false)
+let _isPinboardDrag = false
 const showDropModal = ref(false)
 const dropResolved = ref<DropItem[]>([])
 let dragLeaveTimer: ReturnType<typeof setTimeout> | null = null
@@ -1891,6 +1944,8 @@ function clearFallback() {
 
 function onDragOver(e: DragEvent) {
   if (showIgnored.value || batchMode.value) return
+  _isPinboardDrag = !!e.dataTransfer?.types.includes('text/x-pinboard')
+  if (_isPinboardDrag) return
   if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
   if (!dropOver.value) dropReceived = false
   dropOver.value = true
@@ -1899,6 +1954,7 @@ function onDragOver(e: DragEvent) {
 }
 
 function onDragLeave() {
+  if (_isPinboardDrag) return
   dragLeaveTimer = setTimeout(() => { dropOver.value = false }, 50)
   // 如果 300ms 内没有新的 dragover（说明拖拽已结束而非移到子元素），
   // 且 drop 事件从未触发（浏览器拒绝了放置），则自动弹出文件选择器
@@ -1914,6 +1970,8 @@ function onDragLeave() {
 const dropHintVisible = ref(false)
 
 async function onDrop(e: DragEvent) {
+  // PinBoard 内部拖拽不走导入流程
+  if (e.dataTransfer?.types.includes('text/x-pinboard')) return
   dropReceived = true
   dropOver.value = false
   if (dragLeaveTimer) { clearTimeout(dragLeaveTimer); dragLeaveTimer = null }
@@ -1964,8 +2022,20 @@ async function onDropConfirm(dropItems: DropItem[]) {
   try {
     // 去除 Vue reactive proxy，IPC structured clone 不支持 Proxy
     const plain = dropItems.map(({ type, title, file_path, meta }) => ({ type, title, file_path, meta }))
-    const { added, skipped } = await window.api.resources.batchAdd(plain)
+    const { added, existing, skipped } = await window.api.resources.batchAdd(plain)
     for (const r of added) store.addOrUpdate(r)
+    // 在快捷面板模式下拖入 → 自动加入快捷面板（新增 + 已存在的都加）
+    if (viewMode.value === 'pinboard') {
+      const allIds = [...added.map((r: any) => r.id), ...(existing || []).map((r: any) => r.id)]
+      if (allIds.length >= 100) {
+        const confirmed = await awaitDropBulkConfirm(allIds.length)
+        if (!confirmed) return
+      }
+      if (allIds.length > 0) {
+        await window.api.pinboard.batchAdd(allIds)
+        pinBoardRef.value?.reload()
+      }
+    }
     if (added.length > 0 && skipped > 0) {
       showImportToast(t('library.dropImportedSkipped', { n: added.length, s: skipped }))
     } else if (added.length > 0) {
@@ -2129,6 +2199,21 @@ const showBatchTag = ref(false)
 const showBatchPath = ref(false)
 const showBatchIgnore = ref(false)
 const showBatchDelete = ref(false)
+const showBatchQuickPanel = ref(false)
+// 拖入快捷面板时 100+ 项目确认
+const showDropBulkConfirm = ref(false)
+const dropBulkCount = ref(0)
+let dropBulkResolve: ((v: boolean) => void) | null = null
+function awaitDropBulkConfirm(n: number): Promise<boolean> {
+  dropBulkCount.value = n
+  showDropBulkConfirm.value = true
+  return new Promise(resolve => { dropBulkResolve = resolve })
+}
+function resolveDropBulk(yes: boolean) {
+  showDropBulkConfirm.value = false
+  dropBulkResolve?.(yes)
+  dropBulkResolve = null
+}
 const batchTagInput = ref('')
 const batchTags = ref<Array<{ id: number; name: string }>>([])
 const batchTagAllSuggestions = ref<Array<{ id: number; name: string; count: number }>>([])
@@ -2172,6 +2257,30 @@ function onCardShiftSelect(item: Resource) {
   toggleSelect(item)
 }
 
+function batchAddToQuickPanel() {
+  if (!selectedIds.size) return
+  showBatchQuickPanel.value = true
+}
+
+async function doBatchAddToQuickPanel() {
+  const ids = [...selectedIds]
+  showBatchQuickPanel.value = false
+  await window.api.pinboard.batchAdd(ids)
+  pinBoardRef.value?.reload()
+  showImportToast(t('library.batchAddedToQuickPanel', { n: ids.length }))
+}
+
+async function addToQuickPanel(item: Resource) {
+  await window.api.pinboard.add(item.id)
+  store.addOrUpdate({ ...item, in_quickpanel: 1 })
+}
+
+async function toggleListPin(item: Resource) {
+  const newPinned = item.pinned ? 0 : 1
+  await window.api.resources.update(item.id, { pinned: newPinned })
+  store.addOrUpdate({ ...item, pinned: newPinned })
+}
+
 function onListRowClick(e: MouseEvent, item: Resource) {
   if (e.shiftKey) { onCardShiftSelect(item); return }
   if (batchMode.value) toggleSelect(item)
@@ -2184,6 +2293,7 @@ function onGridMousedown(e: MouseEvent) {
   if (e.button !== 0 || showIgnored.value) return
   const target = e.target as HTMLElement
   if (target.closest('.card') || target.closest('.list-row')) return   // 点在卡片上，不触发框选
+  if (viewMode.value === 'pinboard' && target.closest('.pb-cell')) return  // 快捷面板图标上不框选（留给拖拽）
   e.preventDefault()
 
   const enteredNow = !batchMode.value
@@ -2200,16 +2310,22 @@ function onGridMousedown(e: MouseEvent) {
     const rx2 = Math.max(boxSel.x0, boxSel.x1), ry2 = Math.max(boxSel.y0, boxSel.y1)
     selectedIds.clear()
     for (const id of prevSelected) selectedIds.add(id)
+    const isPinboard = viewMode.value === 'pinboard'
     const isListView = viewMode.value === 'list'
-    const els = Array.from(gridScrollRef.value?.querySelectorAll<HTMLElement>(
-      isListView ? '.list-row' : '.card'
-    ) ?? [])
+    const isGrid = !isPinboard && !isListView
+    const selector = isPinboard ? '.pb-cell' : isListView ? '.list-row' : '.card'
+    const els = Array.from(gridScrollRef.value?.querySelectorAll<HTMLElement>(selector) ?? [])
     const source = visibleItems.value
     els.forEach((el, idx) => {
-      if (idx >= source.length) return
       const r = el.getBoundingClientRect()
-      if (r.right > rx1 && r.left < rx2 && r.bottom > ry1 && r.top < ry2)
-        selectedIds.add(source[idx].id)
+      if (!(r.right > rx1 && r.left < rx2 && r.bottom > ry1 && r.top < ry2)) return
+      if (isGrid) {
+        // ResourceCard has no data-rid (Vue fragment); use index against visibleItems
+        if (idx < source.length) selectedIds.add(source[idx].id)
+      } else {
+        const rid = el.getAttribute('data-rid')
+        if (rid) selectedIds.add(rid)
+      }
     })
   }
 
@@ -2247,13 +2363,36 @@ function toggleSelect(resource: Resource) {
   }
 }
 
+// 全选数量：快捷面板模式用 pinboard 的实际条目数，否则用 store.filtered
+const batchTotalCount = computed(() =>
+  viewMode.value === 'pinboard' ? (pinBoardRef.value?.boardItemIds.length ?? 0) : store.filtered.length
+)
+
 function toggleSelectAll() {
+  if (viewMode.value === 'pinboard') {
+    const ids = pinBoardRef.value?.boardItemIds ?? []
+    if (selectedIds.size === ids.length && ids.every(id => selectedIds.has(id))) {
+      selectedIds.clear()
+    } else {
+      selectedIds.clear()
+      for (const id of ids) selectedIds.add(id)
+    }
+    return
+  }
   if (selectedIds.size === store.filtered.length) {
     selectedIds.clear()
   } else {
     selectedIds.clear()
     for (const r of store.filtered) selectedIds.add(r.id)
   }
+}
+
+async function batchRemoveFromQuickPanel() {
+  const ids = [...selectedIds]
+  if (!ids.length) return
+  await window.api.pinboard.batchRemove(ids)
+  await pinBoardRef.value?.reload()
+  exitBatchMode()
 }
 
 async function doBatchType() {
@@ -2795,19 +2934,19 @@ function onPageInputBlur(e: Event) {
 }
 
 watch(totalPages, (tp) => { if (currentPage.value > tp) currentPage.value = tp })
-const cardZoom = computed(() => settingsStore.getCardZoom(store.activeType))
+const cardZoom = computed(() => settingsStore.getCardZoom(`__view:${viewMode.value}`))
 
 const cardMinWidth = computed(() => Math.round(150 * cardZoom.value))
 
 function onCardZoomChange(e: Event) {
   const val = parseFloat((e.target as HTMLInputElement).value)
-  settingsStore.setCardZoom(store.activeType, val)
+  settingsStore.setCardZoom(`__view:${viewMode.value}`, val)
 }
 
 function onCardZoomInput(e: Event) {
   const raw = parseInt((e.target as HTMLInputElement).value, 10)
   const clamped = Math.min(150, Math.max(25, isNaN(raw) ? 75 : raw))
-  settingsStore.setCardZoom(store.activeType, clamped / 100)
+  settingsStore.setCardZoom(`${store.activeType}:${viewMode.value}`, clamped / 100)
 }
 
 function onSortChange(e: Event) {
@@ -4430,6 +4569,21 @@ async function deleteIgnored(filePath: string) {
   background: color-mix(in srgb, var(--text) 18%, var(--surface-2));
   color: var(--text);
 }
+.list-view :deep(.lr-pin-btn) {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.12);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 0;
+  transition: color 0.15s;
+  opacity: 0;
+}
+.list-view :deep(.list-row:hover .lr-pin-btn) { opacity: 1; }
+.list-view :deep(.lr-pin-btn:hover) { color: #f59e0b; }
+.list-view :deep(.lr-pin-btn.pinned) { color: #f59e0b; opacity: 1; }
+.list-view :deep(.lr-pin-btn.pinned svg) { fill: #f59e0b; }
 
 .sortable-col, .lh-type, .lh-tags { position: relative; }
 .col-resizer {

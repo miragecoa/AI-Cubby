@@ -223,6 +223,22 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  // Quick Panel
+  pinboard: {
+    getAll: (): Promise<any[]> => ipcRenderer.invoke('pinboard:getAll'),
+    add: (id: string): Promise<void> => ipcRenderer.invoke('pinboard:add', id),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('pinboard:remove', id),
+    batchAdd: (ids: string[]): Promise<void> => ipcRenderer.invoke('pinboard:batchAdd', ids),
+    batchRemove: (ids: string[]): Promise<void> => ipcRenderer.invoke('pinboard:batchRemove', ids),
+    setOrder: (items: Array<{ id: string; order: number }>): Promise<void> => ipcRenderer.invoke('pinboard:setOrder', items),
+    getGroups: (): Promise<any[]> => ipcRenderer.invoke('pinboard:getGroups'),
+    createGroup: (id: string, name: string, sortOrder: number): Promise<any> => ipcRenderer.invoke('pinboard:createGroup', id, name, sortOrder),
+    renameGroup: (id: string, name: string): Promise<void> => ipcRenderer.invoke('pinboard:renameGroup', id, name),
+    removeGroup: (id: string): Promise<void> => ipcRenderer.invoke('pinboard:removeGroup', id),
+    setGroupFor: (resourceId: string, groupId: string | null): Promise<void> => ipcRenderer.invoke('pinboard:setGroupFor', resourceId, groupId),
+    setGroupOrder: (id: string, order: number): Promise<void> => ipcRenderer.invoke('pinboard:setGroupOrder', id, order),
+    setGroupCollapsed: (id: string, collapsed: boolean): Promise<void> => ipcRenderer.invoke('pinboard:setGroupCollapsed', id, collapsed),
+  },
   // 主进程代理 HTTP（避免渲染进程 CORS/CSP 限制）
   net: {
     fetchJson: (url: string): Promise<any> => ipcRenderer.invoke('net:fetchJson', url),

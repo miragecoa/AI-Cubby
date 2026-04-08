@@ -700,6 +700,7 @@ function createWindow(): void {
 
   const wasMaximized  = getSetting('windowMaximized') === 'true'
   const savedAppTitle = getSetting('appTitle') || 'AI小抽屉'
+  app.setName(savedAppTitle)
   const savedAppIconPath = getSetting('appCustomIcon') ?? ''
   const savedAppIcon = savedAppIconPath && existsSync(savedAppIconPath)
     ? (() => { try { const img = nativeImage.createFromPath(savedAppIconPath); return img.isEmpty() ? null : img } catch { return null } })()

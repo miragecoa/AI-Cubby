@@ -97,6 +97,20 @@ declare global {
         getVersion: () => Promise<string>
         openUrl: (url: string) => Promise<void>
       }
+      pinboard: {
+        getAll: () => Promise<any[]>
+        add: (id: string) => Promise<void>
+        remove: (id: string) => Promise<void>
+        batchAdd: (ids: string[]) => Promise<void>
+        setOrder: (items: Array<{ id: string; order: number }>) => Promise<void>
+        getGroups: () => Promise<any[]>
+        createGroup: (id: string, name: string, sortOrder: number) => Promise<any>
+        renameGroup: (id: string, name: string) => Promise<void>
+        removeGroup: (id: string) => Promise<void>
+        setGroupFor: (resourceId: string, groupId: string | null) => Promise<void>
+        setGroupOrder: (id: string, order: number) => Promise<void>
+        setGroupCollapsed: (id: string, collapsed: boolean) => Promise<void>
+      }
       net: {
         fetchJson: (url: string) => Promise<any>
       }

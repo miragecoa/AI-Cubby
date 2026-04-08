@@ -542,3 +542,65 @@ function attachTags(resource: Resource): Resource {
 
   return { ...resource, tags }
 }
+
+// ── Pin Board (Quick Panel) ──────────────────────────────────────────────────
+
+export interface PinGroup {
+  id: string; name: string; sort_order: number; collapsed: number; created_at: number
+}
+
+export function getQuickPanelResources(): Resource[] {
+  const db = getDb()
+  const rows = db.prepare(`SELECT * FROM resources WHERE in_quickpanel = 1 ORDER BY pin_order ASC, added_at DESC`).all() as Resource[]
+  return rows.map(attachTags)
+}
+
+export function setQuickPanel(id: string, value: boolean): void {
+  getDb().prepare(`UPDATE resources SET in_quickpanel = ? WHERE id = ?`).run(value ? 1 : 0, id)
+}
+
+export function batchSetQuickPanel(ids: string[], value: boolean): void {
+  const db = getDb()
+  const stmt = db.prepare(`UPDATE resources SET in_quickpanel = ? WHERE id = ?`)
+  db.transaction(() => { for (const id of ids) stmt.run(value ? 1 : 0, id) })()
+}
+
+export function batchSetPinOrder(items: Array<{ id: string; order: number }>): void {
+  const db = getDb()
+  const stmt = db.prepare(`UPDATE resources SET pin_order = ? WHERE id = ?`)
+  db.transaction(() => { for (const item of items) stmt.run(item.order, item.id) })()
+}
+
+export function getAllPinGroups(): PinGroup[] {
+  return getDb().prepare(`SELECT * FROM pin_groups ORDER BY sort_order ASC, created_at ASC`).all() as PinGroup[]
+}
+
+export function createPinGroup(id: string, name: string, sortOrder: number): PinGroup {
+  const now = Date.now()
+  getDb().prepare(`INSERT INTO pin_groups (id, name, sort_order, created_at) VALUES (?, ?, ?, ?)`).run(id, name, sortOrder, now)
+  return { id, name, sort_order: sortOrder, collapsed: 0, created_at: now }
+}
+
+export function renamePinGroup(id: string, name: string): void {
+  getDb().prepare(`UPDATE pin_groups SET name = ? WHERE id = ?`).run(name, id)
+}
+
+export function removePinGroup(id: string): void {
+  const db = getDb()
+  db.transaction(() => {
+    db.prepare(`UPDATE resources SET pin_group_id = NULL WHERE pin_group_id = ?`).run(id)
+    db.prepare(`DELETE FROM pin_groups WHERE id = ?`).run(id)
+  })()
+}
+
+export function setPinGroupForResource(resourceId: string, groupId: string | null): void {
+  getDb().prepare(`UPDATE resources SET pin_group_id = ? WHERE id = ?`).run(groupId, resourceId)
+}
+
+export function setPinGroupOrder(id: string, order: number): void {
+  getDb().prepare(`UPDATE pin_groups SET sort_order = ? WHERE id = ?`).run(order, id)
+}
+
+export function setPinGroupCollapsed(id: string, collapsed: boolean): void {
+  getDb().prepare(`UPDATE pin_groups SET collapsed = ? WHERE id = ?`).run(collapsed ? 1 : 0, id)
+}

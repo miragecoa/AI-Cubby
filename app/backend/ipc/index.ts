@@ -16,6 +16,8 @@ import {
 } from '../db/queries'
 import { scanRecentFolder, scanProcesses, setMonitorPaused, getRunningSessions, killRunningResource, trackRunningProcess } from '../monitor/recent-files'
 import { dbPath, dataDir, clipboardGetItems, clipboardDeleteItem, clipboardClearAll, clipboardRecordUse } from '../db/index'
+import { getQuickPanelResources, setQuickPanel, batchSetQuickPanel, batchSetPinOrder, getAllPinGroups, createPinGroup, renamePinGroup, removePinGroup,
+  setPinGroupForResource, setPinGroupOrder, setPinGroupCollapsed } from '../db/queries'
 import { checkForUpdate, downloadUpdate, applyAndRestart, skipUpdate, forceUpdate, getChangelog, getPendingUpdate } from '../updater'
 import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest } from '../db/profiles'
 import { listDrives, diskScan, isGuiExe, type DiskScanSignal } from '../disk-scan'
@@ -253,6 +255,21 @@ export function registerIpcHandlers(): void {
     // 强制 V8 GC（主进程有 --expose-gc 标志时可用）
     if (typeof global.gc === 'function') global.gc()
   })
+
+  // ── Quick Panel ──────────────────────────────────────────
+  ipcMain.handle('pinboard:getAll', () => getQuickPanelResources())
+  ipcMain.handle('pinboard:add', (_e, id: string) => setQuickPanel(id, true))
+  ipcMain.handle('pinboard:remove', (_e, id: string) => setQuickPanel(id, false))
+  ipcMain.handle('pinboard:batchAdd', (_e, ids: string[]) => batchSetQuickPanel(ids, true))
+  ipcMain.handle('pinboard:batchRemove', (_e, ids: string[]) => batchSetQuickPanel(ids, false))
+  ipcMain.handle('pinboard:setOrder', (_e, items: Array<{ id: string; order: number }>) => batchSetPinOrder(items))
+  ipcMain.handle('pinboard:getGroups', () => getAllPinGroups())
+  ipcMain.handle('pinboard:createGroup', (_e, id: string, name: string, sortOrder: number) => createPinGroup(id, name, sortOrder))
+  ipcMain.handle('pinboard:renameGroup', (_e, id: string, name: string) => renamePinGroup(id, name))
+  ipcMain.handle('pinboard:removeGroup', (_e, id: string) => removePinGroup(id))
+  ipcMain.handle('pinboard:setGroupFor', (_e, resourceId: string, groupId: string | null) => setPinGroupForResource(resourceId, groupId))
+  ipcMain.handle('pinboard:setGroupOrder', (_e, id: string, order: number) => setPinGroupOrder(id, order))
+  ipcMain.handle('pinboard:setGroupCollapsed', (_e, id: string, collapsed: boolean) => setPinGroupCollapsed(id, collapsed))
 
   // ── 资源 ──────────────────────────────────────────────
   ipcMain.handle('resources:getAll', (_e, type?: string) => getAllResources(type))

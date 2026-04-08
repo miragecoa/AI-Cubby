@@ -123,6 +123,9 @@
         <button v-if="isRunning" @click="showKillConfirm = true; showMenu = false" class="danger">
           <span v-html="killIcon" />{{ t('resource.kill') }}
         </button>
+        <button @click="addToQuickPanel(); showMenu = false">
+          <span v-html="pinIcon" />{{ t('resource.addToQuickPanel') }}
+        </button>
         <hr />
         <button @click="$emit('ignore', resource); showMenu = false" class="danger">
           <span v-html="ignoreIcon" />{{ t('resource.ignore') }}
@@ -279,6 +282,11 @@ async function togglePin() {
   const newPinned = props.resource.pinned ? 0 : 1
   await window.api.resources.update(props.resource.id, { pinned: newPinned })
   store.addOrUpdate({ ...props.resource, pinned: newPinned })
+}
+
+async function addToQuickPanel() {
+  await window.api.pinboard.add(props.resource.id)
+  store.addOrUpdate({ ...props.resource, in_quickpanel: 1 })
 }
 
 function handleIgnoreClick() {

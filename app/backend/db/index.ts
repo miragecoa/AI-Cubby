@@ -53,9 +53,23 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE resources ADD COLUMN user_modified INTEGER DEFAULT 0',
     'ALTER TABLE resources ADD COLUMN stat_paused INTEGER DEFAULT 0',
     'ALTER TABLE resources ADD COLUMN file_size INTEGER DEFAULT 0',
+    'ALTER TABLE resources ADD COLUMN pin_order INTEGER DEFAULT 0',
+    'ALTER TABLE resources ADD COLUMN pin_group_id TEXT DEFAULT NULL',
+    'ALTER TABLE resources ADD COLUMN in_quickpanel INTEGER DEFAULT 0',
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
   }
+
+  // Pin groups table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pin_groups (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL DEFAULT '新文件夹',
+      sort_order INTEGER DEFAULT 0,
+      collapsed  INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )
+  `)
 
   // 一次性迁移：为从旧版本升级的用户重置 app/game 的自动生成封面
   // 目的：旧版本用 app.getFileIcon (低质量) 生成封面，新版本改用 IShellItemImageFactory
@@ -213,3 +227,4 @@ export function clipboardClearAll(): void {
     try { require('fs').unlinkSync(r.image_path) } catch { /* already gone */ }
   }
 }
+

@@ -39,6 +39,9 @@
     <span v-if="showTags" class="lr-tags">
       <span v-for="tag in displayTags" :key="tag.id" class="lr-tag lr-tag-clickable" @click.stop="$emit('tag-click')">{{ tag.name }}</span>
     </span>
+    <button v-if="!batchMode" class="lr-pin-btn" :class="{ pinned: resource.pinned }" @click.stop="$emit('toggle-pin')" :title="resource.pinned ? t('resource.unpin') : t('resource.pin')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2z"/></svg>
+    </button>
   </div>
 </template>
 
@@ -87,6 +90,7 @@ defineEmits<{
   mouseleave: []
   'play-click': []
   'tag-click': []
+  'toggle-pin': []
 }>()
 
 // ── 独立缩略图管理（分页模式：当前页全加载，不做页内卸载）────────────────
