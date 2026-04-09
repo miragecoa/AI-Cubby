@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/updater.ps1'
+      - 'scripts/updater-beta.ps1'
   workflow_dispatch:
 
 jobs:
@@ -13,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Upload updater.ps1 to R2
+      - name: Upload updater scripts to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -21,9 +22,17 @@ jobs:
         run: |
           ENDPOINT="https://a851dc5e529a04a83d87176e91cfad51.r2.cloudflarestorage.com"
           PUBLIC_BASE="https://pub-e99883270f2047d9a6151090f7da8a5c.r2.dev"
+
           aws s3 cp scripts/updater.ps1 "s3://ai-resource-manager/updater.ps1" \
             --endpoint-url "$ENDPOINT" \
             --content-type "text/plain; charset=utf-8" \
             --cache-control "no-store" \
             --no-progress
           echo "updater.ps1 -> $PUBLIC_BASE/updater.ps1"
+
+          aws s3 cp scripts/updater-beta.ps1 "s3://ai-resource-manager/updater-beta.ps1" \
+            --endpoint-url "$ENDPOINT" \
+            --content-type "text/plain; charset=utf-8" \
+            --cache-control "no-store" \
+            --no-progress
+          echo "updater-beta.ps1 -> $PUBLIC_BASE/updater-beta.ps1"

@@ -225,10 +225,12 @@ export async function applyAndRestart(): Promise<void> {
     : join(appDir, 'AI资源管家.exe')
   const pid = process.pid
 
-  // Fetch updater script from R2. This allows updating the install logic without
-  // shipping a new app release. R2 must be reachable — no fallback.
+  // Fetch updater script from R2. Beta channel uses updater-beta.ps1 which includes
+  // migration cleanup for the core/ layout. Stable uses updater.ps1 (unchanged).
+  const isBetaChannel = getSetting('updateChannel') === 'beta'
+  const updaterScript = isBetaChannel ? 'updater-beta.ps1' : 'updater.ps1'
   const resp = await fetchWithTimeout(
-    `${R2_PUBLIC_URL}/updater.ps1?_t=${Date.now()}`,
+    `${R2_PUBLIC_URL}/${updaterScript}?_t=${Date.now()}`,
     { cache: 'no-store', headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
   )
   if (!resp.ok) throw new Error(`[Updater] Failed to fetch updater script from R2: HTTP ${resp.status}`)
