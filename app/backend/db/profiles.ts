@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { join, dirname, basename } from 'path'
+import { join, dirname } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
 import { randomUUID } from 'crypto'
 
@@ -15,14 +15,10 @@ export interface ProfileManifest {
 
 function getAppDir(): string {
   if (!app.isPackaged) return app.getAppPath()
-  // Launched via launcher stub → LAUNCHER_EXE = root\AI-Cubby.exe
-  if (process.env.LAUNCHER_EXE) return dirname(process.env.LAUNCHER_EXE)
-  // Launched directly from core\ (e.g. user double-clicked core\AI-Cubby.exe)
-  // → step up to the parent so data dirs resolve to the same root
-  const exeDir = dirname(process.execPath)
-  if (basename(exeDir).toLowerCase() === 'core') return dirname(exeDir)
-  // Legacy flat install — exe is already in the root
-  return exeDir
+  // When launched via the launcher stub, LAUNCHER_EXE points to root/AI-Cubby.exe.
+  // Use that so data directories (profiles/, covers/, etc.) resolve to the root,
+  // not to core/ where the Electron exe now lives.
+  return dirname(process.env.LAUNCHER_EXE ?? process.execPath)
 }
 
 function getManifestPath(): string {

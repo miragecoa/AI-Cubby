@@ -1,6 +1,6 @@
 import { app, BrowserWindow, WebContents } from 'electron'
 import { net } from 'electron'
-import { dirname, basename, join } from 'path'
+import { dirname, join } from 'path'
 import { existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, writeFileSync } from 'fs'
 import { spawn } from 'child_process'
 import { getSetting, setSetting } from './db/queries'
@@ -109,12 +109,7 @@ function noUpdate(currentVersion: string): UpdateInfo {
 // ── Download update ──────────────────────────────────────
 
 async function followDownload(url: string, totalSize: number, wc: WebContents | null = null): Promise<string> {
-  const _dlExeDir = dirname(process.execPath)
-  const appDir = app.isPackaged
-    ? (process.env.LAUNCHER_EXE ? dirname(process.env.LAUNCHER_EXE)
-      : basename(_dlExeDir).toLowerCase() === 'core' ? dirname(_dlExeDir)
-      : _dlExeDir)
-    : app.getAppPath()
+  const appDir = app.isPackaged ? dirname(process.env.LAUNCHER_EXE ?? process.execPath) : app.getAppPath()
   const tempDir = join(appDir, '.update-temp')
   if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true })
   const zipPath = join(tempDir, 'update.zip')
@@ -214,11 +209,8 @@ export async function applyAndRestart(): Promise<void> {
   // If running via the launcher stub, LAUNCHER_EXE points to the root launcher.
   // Use that as the app root and restart target so autostart / update paths stay correct.
   const launcherExe = process.env.LAUNCHER_EXE
-  const _exeDir  = dirname(process.execPath)
   const appDir  = app.isPackaged
-    ? (launcherExe ? dirname(launcherExe)
-      : basename(_exeDir).toLowerCase() === 'core' ? dirname(_exeDir)
-      : _exeDir)
+    ? (launcherExe ? dirname(launcherExe) : dirname(process.execPath))
     : app.getAppPath()
   const exePath = app.isPackaged
     ? (launcherExe ?? process.execPath)
