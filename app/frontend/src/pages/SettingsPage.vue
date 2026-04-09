@@ -194,6 +194,27 @@
           </div>
         </div>
 
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">{{ t('settings.hotkey.pinboard') }}</div>
+            <div class="setting-desc">{{ t('settings.hotkey.pinboardDesc') }}</div>
+          </div>
+          <div class="hotkey-input-wrap">
+            <div
+              class="hotkey-input"
+              :class="{ recording: pinboardHotkeyRecording, error: pinboardHotkeyError, 'is-unset': !pinboardHotkeyRecording && !settingsStore.hotkeyPinboard }"
+              tabindex="0"
+              @click="startPinboardRecording"
+              @keydown.prevent="onPinboardHotkeyKeydown"
+              @blur="cancelPinboardRecording"
+            >
+              {{ pinboardHotkeyRecording ? (pendingPinboardHotkey || t('settings.hotkey.recording')) : (settingsStore.hotkeyPinboard || t('settings.hotkey.notSet')) }}
+            </div>
+            <button v-if="!pinboardHotkeyRecording && settingsStore.hotkeyPinboard" class="hotkey-reset" @click="clearPinboardHotkey" :title="t('settings.hotkey.clear')">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/></svg>
+            </button>
+          </div>
+        </div>
       </section>
 
       <!-- 离线模式 -->
@@ -689,6 +710,40 @@ async function clearClipboardHotkey() {
 
 async function resetClipboardHotkey() {
   await settingsStore.setHotkeyClipboard('Alt+V')
+}
+
+// ── 快捷面板快捷键录制 ──
+const pinboardHotkeyRecording = ref(false)
+const pinboardHotkeyError = ref(false)
+const pendingPinboardHotkey = ref('')
+
+function startPinboardRecording() {
+  pinboardHotkeyRecording.value = true
+  pinboardHotkeyError.value = false
+  pendingPinboardHotkey.value = ''
+}
+
+function cancelPinboardRecording() {
+  pinboardHotkeyRecording.value = false
+  pendingPinboardHotkey.value = ''
+}
+
+async function onPinboardHotkeyKeydown(e: KeyboardEvent) {
+  if (!pinboardHotkeyRecording.value) return
+  if (e.key === 'Escape') { cancelPinboardRecording(); return }
+  const acc = electronAccelerator(e)
+  pendingPinboardHotkey.value = acc
+  if (!isComplete(e)) return
+  pinboardHotkeyRecording.value = false
+  const ok = await settingsStore.setHotkeyPinboard(acc)
+  if (!ok) {
+    pinboardHotkeyError.value = true
+    setTimeout(() => { pinboardHotkeyError.value = false }, 1500)
+  }
+}
+
+async function clearPinboardHotkey() {
+  await settingsStore.setHotkeyPinboard('')
 }
 
 const reFetchingDirTags = ref(false)

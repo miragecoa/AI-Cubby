@@ -46,6 +46,7 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE resources ADD COLUMN pinned INTEGER DEFAULT 0',
     'ALTER TABLE resource_tags ADD COLUMN assigned_at INTEGER DEFAULT 0',
     'ALTER TABLE tags ADD COLUMN last_clicked_at INTEGER DEFAULT 0',
+    'ALTER TABLE tags ADD COLUMN pinned INTEGER DEFAULT 0',
     'ALTER TABLE clipboard_items ADD COLUMN hash TEXT',
     'ALTER TABLE clipboard_items ADD COLUMN pinned INTEGER DEFAULT 0',
     'ALTER TABLE clipboard_items ADD COLUMN use_count INTEGER DEFAULT 0',

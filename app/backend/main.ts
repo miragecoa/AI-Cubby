@@ -57,6 +57,7 @@ let _clipboardPollTimer: ReturnType<typeof setInterval> | null = null
 // ── 快捷键跟踪（避免 unregisterAll 误杀其他快捷键） ──────────────
 let _wakeAccelerator = ''
 let _clipboardAccelerator = ''
+let _pinboardAccelerator = ''
 let dropImportItems: Array<{ type: string; title: string; file_path: string; meta?: string }> = []
 let masonryPaths: Array<{ path: string; title: string }> = []
 let tray: Tray | null = null
@@ -1420,7 +1421,19 @@ app.whenReady().then(() => {
 
   registerWakeShortcut(getSetting('hotkeyWake') ?? 'Alt+Space')
   registerClipboardShortcut(getSetting('hotkeyClipboard') ?? 'Alt+V')
+  registerPinboardShortcut(getSetting('hotkeyPinboard') ?? '')
   startClipboardPolling()
+
+  // 快捷面板快捷键 IPC
+  ipcMain.handle('pinboard:getHotkey', () => getSetting('hotkeyPinboard') ?? '')
+  ipcMain.handle('pinboard:setHotkey', (_e, accelerator: string) => {
+    registerPinboardShortcut(accelerator)
+    if (!accelerator || _pinboardAccelerator === accelerator) {
+      setSetting('hotkeyPinboard', accelerator)
+      return true
+    }
+    return false
+  })
 
   // 剪贴板快捷键 IPC（在 main.ts 注册，可直接调用 registerClipboardShortcut）
   ipcMain.handle('clipboard:getHotkey', () => getSetting('hotkeyClipboard') ?? 'Alt+V')
@@ -1519,5 +1532,28 @@ function registerClipboardShortcut(accelerator: string): void {
   try {
     const ok = globalShortcut.register(accelerator, toggleClipboardWindow)
     if (ok) _clipboardAccelerator = accelerator
+  } catch { /* invalid accelerator */ }
+}
+
+function registerPinboardShortcut(accelerator: string): void {
+  if (_pinboardAccelerator) { try { globalShortcut.unregister(_pinboardAccelerator) } catch { /* */ } }
+  _pinboardAccelerator = ''
+  if (!accelerator) return
+  try {
+    const ok = globalShortcut.register(accelerator, () => {
+      if (!mainWindow) return
+      if (mainWindow.isVisible() && mainWindow.isFocused()) {
+        mainWindow.hide()
+        mainWindow.setSkipTaskbar(true)
+        if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
+      } else {
+        mainWindow.setSkipTaskbar(false)
+        mainWindow.show()
+        mainWindow.focus()
+        drawerWindow?.hide()
+        mainWindow.webContents.send('window:openPinboard')
+      }
+    })
+    if (ok) _pinboardAccelerator = accelerator
   } catch { /* invalid accelerator */ }
 }

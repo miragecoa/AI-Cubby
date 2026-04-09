@@ -350,6 +350,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const showOnAutoStart = ref(false)
   const hotkeyWake = ref('Alt+Space')
   const hotkeyClipboard = ref('Alt+V')
+  const hotkeyPinboard = ref('')
   const themeVars = ref<Record<string, string>>({ ...DARK_THEME })
   const language = ref<Locale>('zh')
   const customCategories = ref<CustomCategory[]>([])
@@ -358,7 +359,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function load() {
     if (loaded.value) return
-    const [monitorVal, autostartVal, zoomVal, navVal, pageSizeVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal, hotkeyClipboardVal, langVal, consentVal, customCatVal, autoDirTagVal, themeIdVal, paletteIdVal, brightnessModeVal, brightnessLevelVal, glassEnabledVal, glassOpacityVal, cardDisplayVal, listDisplayVal, updateChannelVal] = await Promise.all([
+    const [monitorVal, autostartVal, zoomVal, navVal, pageSizeVal, resSortVal, tagSortVal, collapsedVal, fileExtVal, autoUpdateVal, viewModeByTypeVal, cardZoomByTypeVal, listColVal, appTitleVal, offlineModeVal, themeVal, showOnAutoStartVal, hotkeyWakeVal, hotkeyClipboardVal, hotkeyPinboardVal, langVal, consentVal, customCatVal, autoDirTagVal, themeIdVal, paletteIdVal, brightnessModeVal, brightnessLevelVal, glassEnabledVal, glassOpacityVal, cardDisplayVal, listDisplayVal, updateChannelVal] = await Promise.all([
       window.api.settings.get('monitorEnabled'),
       window.api.loginItem.get(),
       window.api.settings.get('zoom'),
@@ -378,6 +379,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.settings.get('showOnAutoStart'),
       window.api.hotkey.get(),
       window.api.clipboardHotkey.get(),
+      window.api.pinboardHotkey.get(),
       window.api.settings.get('language'),
       window.api.settings.get('consent_given'),
       window.api.settings.get('customCategories'),
@@ -414,6 +416,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (showOnAutoStartVal === 'true') showOnAutoStart.value = true
     if (hotkeyWakeVal !== null) hotkeyWake.value = hotkeyWakeVal
     if (hotkeyClipboardVal !== null) hotkeyClipboard.value = hotkeyClipboardVal
+    if (hotkeyPinboardVal !== null) hotkeyPinboard.value = hotkeyPinboardVal
 
     // Restore palette and brightness mode first, so theme re-generation uses correct values
     const validPalettes: PaletteId[] = ['smart', 'indigo', 'purple', 'blue', 'green', 'yellow', 'orange', 'red']
@@ -616,6 +619,12 @@ export const useSettingsStore = defineStore('settings', () => {
   async function setHotkeyClipboard(accelerator: string): Promise<boolean> {
     const ok = await window.api.clipboardHotkey.set(accelerator)
     if (ok) hotkeyClipboard.value = accelerator
+    return ok
+  }
+
+  async function setHotkeyPinboard(accelerator: string): Promise<boolean> {
+    const ok = await window.api.pinboardHotkey.set(accelerator)
+    if (ok) hotkeyPinboard.value = accelerator
     return ok
   }
 
@@ -909,5 +918,5 @@ export const useSettingsStore = defineStore('settings', () => {
     ])
   }
 
-  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, pageSize, setPageSize, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, autoDirTag, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, hotkeyClipboard, themeVars, language, customCategories, activeThemeId, isSmartTheme, paletteId, brightnessMode, brightnessLevel, glassEnabled, glassOpacity, cardDisplay, updateChannel, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setAutoDirTag, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setHotkeyClipboard, setTheme, setSmartTheme, setPaletteMode, setBrightnessLevel, setGlassEnabled, setGlassOpacity, setLanguage, addCustomCategory, renameCustomCategory, removeCustomCategory, resetToDefaults, setCardDisplay, listDisplay, setListDisplay, setUpdateChannel }
+  return { monitorEnabled, autostartEnabled, zoom, viewModeByType, cardZoomByType, sidebarNav, pageSize, setPageSize, resourceSort, tagSort, sidebarCollapsed, showFileExt, autoUpdate, autoDirTag, listColumns, appTitle, offlineMode, showOnAutoStart, hotkeyWake, hotkeyClipboard, hotkeyPinboard, themeVars, language, customCategories, activeThemeId, isSmartTheme, paletteId, brightnessMode, brightnessLevel, glassEnabled, glassOpacity, cardDisplay, updateChannel, load, setMonitor, setAutostart, setZoom, getCardZoom, setCardZoom, setResourceSort, setTagSort, setSidebarNav, setSidebarCollapsed, setShowFileExt, setAutoUpdate, setAutoDirTag, getViewMode, setViewMode, setListColumns, setAppTitle, setOfflineMode, setShowOnAutoStart, setHotkeyWake, setHotkeyClipboard, setHotkeyPinboard, setTheme, setSmartTheme, setPaletteMode, setBrightnessLevel, setGlassEnabled, setGlassOpacity, setLanguage, addCustomCategory, renameCustomCategory, removeCustomCategory, resetToDefaults, setCardDisplay, listDisplay, setListDisplay, setUpdateChannel }
 })

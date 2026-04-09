@@ -358,7 +358,10 @@ async function pickCover() {
   const imagePath = await window.api.files.pickImage()
   if (!imagePath) return
   hasEdited.value = true
-  const dataUrl = await window.api.files.readImage(imagePath)
+  const isExe = imagePath.toLowerCase().endsWith('.exe')
+  const dataUrl = isExe
+    ? await window.api.files.getAppIcon(imagePath)
+    : await window.api.files.readImage(imagePath)
   if (!dataUrl) return
   const savedPath = await window.api.files.saveCover(props.resource.id, dataUrl, true)
   if (savedPath) {

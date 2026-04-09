@@ -137,6 +137,7 @@ let unsubscribe: (() => void) | null = null
 let unsubscribeRunning: (() => void) | null = null
 let unsubscribeMaximize: (() => void) | null = null
 let unsubscribeIconChanged: (() => void) | null = null
+let unsubscribeOpenPinboard: (() => void) | null = null
 
 const winMinimize = () => window.api.win.minimize()
 const winMaximize = () => window.api.win.maximize()
@@ -153,6 +154,10 @@ function startApp() {
   })
   window.api.onReload(() => {
     store.loadAll()
+  })
+  unsubscribeOpenPinboard = window.api.onOpenPinboard(() => {
+    if (route.path !== '/library') router.push('/library')
+    settingsStore.setViewMode(store.activeType, 'pinboard')
   })
 }
 
@@ -197,6 +202,7 @@ onUnmounted(() => {
   unsubscribeRunning?.()
   unsubscribeMaximize?.()
   unsubscribeIconChanged?.()
+  unsubscribeOpenPinboard?.()
 })
 </script>
 

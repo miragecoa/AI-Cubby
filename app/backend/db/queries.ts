@@ -28,6 +28,7 @@ export interface Tag {
   id: number
   name: string
   source?: string
+  pinned?: number
 }
 
 // ── 资源查询 ────────────────────────────────────────────
@@ -312,7 +313,7 @@ export function getAllTags(): Tag[] {
 /** 按资源类型获取标签，附带该类型下的使用计数。
  *  type 为空时统计所有类型。只返回至少使用过一次的标签。
  *  sort: 'count'(默认) | 'name' | 'lastUsed' | 'lastAssigned' */
-export function getTagsForType(type?: string, sort = 'count'): Array<{ id: number; name: string; count: number }> {
+export function getTagsForType(type?: string, sort = 'count'): Array<{ id: number; name: string; count: number; pinned: number }> {
   const db = getDb()
   const ORDER_MAP: Record<string, string> = {
     count:        'count DESC, t.name ASC',
@@ -325,14 +326,26 @@ export function getTagsForType(type?: string, sort = 'count'): Array<{ id: numbe
   const typeFilter = type ? `WHERE r.type = ? ${dirFilter}` : (dirFilter ? `WHERE 1=1 ${dirFilter}` : '')
   const params = type ? [type] : []
   return db.prepare(`
-    SELECT t.id, t.name, COUNT(rt.resource_id) AS count
+    SELECT t.id, t.name, t.pinned, COUNT(rt.resource_id) AS count
     FROM tags t
     JOIN resource_tags rt ON t.id = rt.tag_id
     JOIN resources r ON rt.resource_id = r.id
     ${typeFilter}
     GROUP BY t.id
-    ORDER BY ${orderBy}
-  `).all(...params) as Array<{ id: number; name: string; count: number }>
+    ORDER BY t.pinned DESC, ${orderBy}
+  `).all(...params) as Array<{ id: number; name: string; count: number; pinned: number }>
+}
+
+export function getAllTagsForManage(): Array<{ id: number; name: string; pinned: number }> {
+  return getDb().prepare('SELECT id, name, pinned FROM tags ORDER BY pinned DESC, name ASC').all() as Array<{ id: number; name: string; pinned: number }>
+}
+
+export function updateTagName(id: number, name: string): void {
+  getDb().prepare('UPDATE tags SET name = ? WHERE id = ?').run(name.trim(), id)
+}
+
+export function setTagPinned(id: number, pinned: number): void {
+  getDb().prepare('UPDATE tags SET pinned = ? WHERE id = ?').run(pinned, id)
 }
 
 export function createTag(name: string): Tag {

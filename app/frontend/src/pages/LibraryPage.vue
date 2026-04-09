@@ -583,35 +583,82 @@
 
         <!-- 面板内容 -->
         <div class="tag-panel-inner">
-          <div class="tag-panel-header">
-            <span class="tag-panel-title">{{ t('library.tagPanel.title') }}</span>
-            <div class="tag-header-right">
-              <select class="tag-sort-select" :value="settingsStore.tagSort" @change="onTagSortChange">
-                <option value="lastUsed">{{ t('library.tagPanel.sort.lastUsed') }}</option>
-                <option value="count">{{ t('library.tagPanel.sort.count') }}</option>
-                <option value="name">{{ t('library.tagPanel.sort.name') }}</option>
-              </select>
-              <button v-if="store.activeTags.length || store.excludedTags.length" class="clear-tags-btn" @click="store.activeTags.splice(0); store.excludedTags.splice(0)">
-                {{ t('library.filterClear') }}
+          <!-- 普通筛选视图 -->
+          <template v-if="!tagManageMode">
+            <div class="tag-panel-header">
+              <span class="tag-panel-title">{{ t('library.tagPanel.title') }}</span>
+              <div class="tag-header-right">
+                <select class="tag-sort-select" :value="settingsStore.tagSort" @change="onTagSortChange">
+                  <option value="lastUsed">{{ t('library.tagPanel.sort.lastUsed') }}</option>
+                  <option value="count">{{ t('library.tagPanel.sort.count') }}</option>
+                  <option value="name">{{ t('library.tagPanel.sort.name') }}</option>
+                </select>
+                <button v-if="store.activeTags.length || store.excludedTags.length" class="clear-tags-btn" @click="store.activeTags.splice(0); store.excludedTags.splice(0)">
+                  {{ t('library.filterClear') }}
+                </button>
+                <button class="tag-manage-btn" @click="openTagManage" :title="t('library.tagPanel.manage')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+              </div>
+            </div>
+            <input v-model="tagSearch" class="tag-search-input" :placeholder="t('library.tagPanel.title')" />
+            <div v-if="availableTags.length" class="tag-list">
+              <button
+                v-for="tag in availableTags"
+                :key="tag.id"
+                class="tag-chip"
+                :class="{ active: store.activeTags.includes(tag.id), excluded: store.excludedTags.includes(tag.id), pinned: tag.pinned }"
+                @click="toggleTag(tag.id)"
+                @contextmenu.prevent="toggleExcludeTag(tag.id)"
+                :title="t('library.tagChipTitle')"
+              >
+                <svg v-if="tag.pinned" width="9" height="9" viewBox="0 0 24 24" fill="currentColor" style="opacity:.6;flex-shrink:0"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                <span class="tag-chip-name">{{ tag.name }}</span>
+                <span class="tag-chip-count">{{ tag.count }}</span>
               </button>
             </div>
-          </div>
-          <input v-model="tagSearch" class="tag-search-input" :placeholder="t('library.tagPanel.title')" />
-          <div v-if="availableTags.length" class="tag-list">
-            <button
-              v-for="tag in availableTags"
-              :key="tag.id"
-              class="tag-chip"
-              :class="{ active: store.activeTags.includes(tag.id), excluded: store.excludedTags.includes(tag.id) }"
-              @click="toggleTag(tag.id)"
-              @contextmenu.prevent="toggleExcludeTag(tag.id)"
-              :title="t('library.tagChipTitle')"
-            >
-              <span class="tag-chip-name">{{ tag.name }}</span>
-              <span class="tag-chip-count">{{ tag.count }}</span>
-            </button>
-          </div>
-          <div v-else class="no-tags">{{ t('library.noTags') }}</div>
+            <div v-else class="no-tags">{{ t('library.noTags') }}</div>
+          </template>
+
+          <!-- 标签管理视图 -->
+          <template v-else>
+            <div class="tag-panel-header">
+              <button class="tag-manage-back" @click="closeTagManage">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <span class="tag-panel-title">{{ t('library.tagPanel.manageTitle') }}</span>
+            </div>
+            <input v-model="manageTagSearch" class="tag-search-input tag-manage-search" :placeholder="t('library.tagPanel.search')" />
+            <div class="tag-manage-list">
+              <div v-if="!filteredManageTags.length" class="no-tags">{{ t('library.noTags') }}</div>
+              <div v-for="tag in filteredManageTags" :key="tag.id" class="tag-manage-row">
+                <template v-if="editingTagId === tag.id">
+                  <input
+                    class="tag-manage-edit-input"
+                    v-model="editingTagName"
+                    @keydown.enter="saveTagEdit"
+                    @keydown.escape="cancelTagEdit"
+                    @blur="saveTagEdit"
+                    :ref="el => { if (el) (el as HTMLInputElement).focus() }"
+                  />
+                </template>
+                <template v-else>
+                  <span class="tag-manage-name">{{ tag.name }}</span>
+                </template>
+                <div class="tag-manage-actions">
+                  <button class="tag-manage-action" :class="{ active: tag.pinned }" @click="toggleTagPin(tag)" :title="tag.pinned ? t('library.tagPanel.unpin') : t('library.tagPanel.pin')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                  </button>
+                  <button class="tag-manage-action" :class="{ active: editingTagId === tag.id }" @mousedown.prevent @click="editingTagId === tag.id ? saveTagEdit() : startTagEdit(tag)" :title="t('library.tagPanel.edit')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button class="tag-manage-action danger" @click="deleteManageTag(tag)" :title="t('library.tagPanel.delete')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -2575,8 +2622,96 @@ function formatTime(ts: number | null): string {
 const tagPanelCollapsed = ref(localStorage.getItem('tagPanelCollapsed') === '1')
 const tagPanelWidth = ref(212)
 const tagPanelResizing = ref(false)
-const dbTags = ref<Array<{ id: number; name: string; count: number }>>([])
+const dbTags = ref<Array<{ id: number; name: string; count: number; pinned: number }>>([])
 const tagSearch = ref('')
+
+// ── 标签管理 ──
+const tagManageMode = ref(false)
+const manageTags = ref<Array<{ id: number; name: string; pinned: number }>>([])
+const manageTagSearch = ref('')
+const filteredManageTags = computed(() => {
+  const q = manageTagSearch.value.trim().toLowerCase()
+  if (!q) return manageTags.value
+  return manageTags.value.filter(t => t.name.toLowerCase().includes(q) || pinyinMatch(t.name, q) !== null)
+})
+const editingTagId = ref<number | null>(null)
+const editingTagName = ref('')
+
+async function openTagManage() {
+  manageTags.value = await window.api.tags.getAllForManage()
+  tagManageMode.value = true
+}
+
+function closeTagManage() {
+  tagManageMode.value = false
+  editingTagId.value = null
+  manageTagSearch.value = ''
+  loadTags()
+}
+
+function startTagEdit(tag: { id: number; name: string; pinned: number }) {
+  editingTagId.value = tag.id
+  editingTagName.value = tag.name
+}
+
+function cancelTagEdit() {
+  editingTagId.value = null
+  editingTagName.value = ''
+}
+
+async function saveTagEdit() {
+  if (editingTagId.value === null) return
+  const name = editingTagName.value.trim()
+  if (!name) { cancelTagEdit(); return }
+  await window.api.tags.update(editingTagId.value, name)
+  const tag = manageTags.value.find(t => t.id === editingTagId.value)
+  if (tag) tag.name = name
+  // 同步更新 store 中所有资源的标签名
+  const id = editingTagId.value
+  store.items.forEach(r => {
+    if (r.tags) r.tags.forEach(t => { if (t.id === id) t.name = name })
+  })
+  cancelTagEdit()
+}
+
+async function toggleTagPin(tag: { id: number; name: string; pinned: number }) {
+  const newPinned = tag.pinned ? 0 : 1
+  await window.api.tags.pin(tag.id, newPinned)
+  tag.pinned = newPinned
+  manageTags.value.sort((a, b) => b.pinned - a.pinned || a.name.localeCompare(b.name))
+}
+
+async function deleteManageTag(tag: { id: number; name: string; pinned: number }) {
+  await window.api.tags.remove(tag.id)
+  manageTags.value = manageTags.value.filter(t => t.id !== tag.id)
+  // 从 store 里移除
+  store.items.forEach(r => {
+    if (r.tags) r.tags = r.tags.filter(t => t.id !== tag.id)
+  })
+  store.activeTags.splice(store.activeTags.indexOf(tag.id), 1)
+  store.excludedTags.splice(store.excludedTags.indexOf(tag.id), 1)
+}
+
+// 音乐封面 & 自动标签：每次进程会话只处理一次（后端 Set 去重）
+const _audioTaggedLocal = new Set<string>()
+watch(() => store.items, async (items) => {
+  for (const item of items) {
+    if (item.type !== 'music' || !item.file_path || _audioTaggedLocal.has(item.id)) continue
+    _audioTaggedLocal.add(item.id)
+    try {
+      const added = await window.api.music.autoTag(item.id, item.file_path)
+      if (added?.length) {
+        const existing = item.tags ?? []
+        const merged = [...existing]
+        for (const t of added) {
+          if (!merged.find(e => e.id === t.id)) merged.push(t)
+        }
+        store.addOrUpdate({ ...item, tags: merged })
+        loadTags()
+      }
+    } catch { /* 静默 */ }
+  }
+}, { immediate: true, deep: false })
 
 watch(tagPanelCollapsed, (val) => {
   // 统计面板打开时强制折叠标签，此时不保存，避免污染用户设置
@@ -5072,6 +5207,108 @@ async function deleteIgnored(filePath: string) {
 }
 
 .clear-tags-btn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+.tag-manage-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+.tag-manage-btn:hover { background: var(--surface-2); color: var(--text); }
+
+.tag-manage-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.tag-manage-back:hover { background: var(--surface-2); color: var(--text); }
+
+.tag-manage-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tag-manage-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+.tag-manage-row:hover { background: var(--surface-2); }
+
+.tag-manage-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-manage-edit-input {
+  flex: 1;
+  font-size: 12px;
+  font-family: inherit;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 2px 5px;
+  outline: none;
+  min-width: 0;
+}
+
+.tag-manage-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.tag-manage-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.tag-manage-action:hover { background: var(--surface-3); color: var(--text); }
+.tag-manage-action.active { color: var(--accent-2); }
+.tag-manage-action.danger:hover { color: #f87171; }
+
+.tag-manage-search { margin-top: 6px; }
 
 .tag-search-input {
   width: calc(100% - 16px);

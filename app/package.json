@@ -1,6 +1,6 @@
 {
   "name": "ai-cubby",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {
@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",
+    "music-metadata": "^7.14.0",
     "pinia": "^2.1.7",
     "pinyin-pro": "^3.28.0",
     "vue": "^3.4.21",

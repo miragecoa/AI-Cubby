@@ -45,7 +45,19 @@ contextBridge.exposeInMainWorld('api', {
     batchAssign: (assignments: Array<{ resourceId: string; tagNames: string[] }>, source?: string): Promise<boolean> =>
       ipcRenderer.invoke('tags:batchAssign', assignments, source),
     removeFromResource: (resourceId: string, tagId: number) =>
-      ipcRenderer.invoke('tags:removeFromResource', resourceId, tagId)
+      ipcRenderer.invoke('tags:removeFromResource', resourceId, tagId),
+    getAllForManage: (): Promise<Array<{ id: number; name: string; pinned: number }>> =>
+      ipcRenderer.invoke('tags:getAllForManage'),
+    update: (id: number, name: string): Promise<boolean> =>
+      ipcRenderer.invoke('tags:update', id, name),
+    pin: (id: number, pinned: number): Promise<boolean> =>
+      ipcRenderer.invoke('tags:pin', id, pinned),
+  },
+
+  // 音乐元数据
+  music: {
+    autoTag: (resourceId: string, filePath: string): Promise<Array<{ id: number; name: string }>> =>
+      ipcRenderer.invoke('music:autoTag', resourceId, filePath),
   },
 
   // 搜索
@@ -126,6 +138,12 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeAllListeners('window:trayWake')
   },
 
+  // 快捷面板快捷键触发
+  onOpenPinboard: (callback: () => void) => {
+    ipcRenderer.on('window:openPinboard', () => callback())
+    return () => ipcRenderer.removeAllListeners('window:openPinboard')
+  },
+
   // 监听进程运行状态变化
   onRunningChange: (callback: (event: { resourceId: string; running: boolean; startTime?: number }) => void) => {
     ipcRenderer.on('resource:running', (_event, data) => callback(data))
@@ -189,6 +207,12 @@ contextBridge.exposeInMainWorld('api', {
   clipboardHotkey: {
     get: (): Promise<string> => ipcRenderer.invoke('clipboard:getHotkey'),
     set: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('clipboard:setHotkey', accelerator),
+  },
+
+  // 快捷面板快捷键
+  pinboardHotkey: {
+    get: (): Promise<string> => ipcRenderer.invoke('pinboard:getHotkey'),
+    set: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('pinboard:setHotkey', accelerator),
   },
 
   // 窗口控制（自定义标题栏）

@@ -1,4 +1,5 @@
 import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, globalShortcut, webContents, clipboard } from 'electron'
+import * as mm from 'music-metadata'
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync, unlinkSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
 import { execFile, exec } from 'child_process'
@@ -8,7 +9,7 @@ import { isUNC } from '../utils/fs-safe'
 import {
   getAllResources, getResourceById, updateResource, removeResource,
   addManualResource, getResourceByPath, recordProcessStart, restoreResource,
-  getAllTags, getTagsForType, createTag, removeTag, touchTag, addTagToResource, removeTagFromResource,
+  getAllTags, getTagsForType, getAllTagsForManage, updateTagName, setTagPinned, createTag, removeTag, touchTag, addTagToResource, removeTagFromResource,
   searchResources, getSetting, setSetting, setShowDirTags, reFetchDirTags,
   addIgnoredPath, getAllIgnoredPaths, removeIgnoredPath, removeResourceByPath,
   batchRemoveResources, batchReplacePath,
@@ -65,6 +66,20 @@ class LRUMap<V> {
 
 const appIconCache = new LRUMap<string | null>(100)
 const thumbCache = new LRUMap<string | null>(200)
+
+const AUDIO_EXTS = new Set(['.mp3', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.ape', '.wav'])
+const _audioTagged = new Set<string>() // 本次进程会话内已导入元数据的资源
+
+async function extractAudioCover(filePath: string): Promise<string | null> {
+  try {
+    const meta = await mm.parseFile(filePath, { skipCovers: false, duration: false })
+    const pic = meta.common.picture?.[0]
+    if (!pic) return null
+    return `data:${pic.format};base64,${Buffer.from(pic.data).toString('base64')}`
+  } catch {
+    return null
+  }
+}
 
 
 // PowerShell 并发限制：避免同时 spawn 过多进程卡死系统
@@ -387,6 +402,9 @@ export function registerIpcHandlers(): void {
   // ── 标签 ──────────────────────────────────────────────
   ipcMain.handle('tags:getAll', () => getAllTags())
   ipcMain.handle('tags:getForType', (_e, type?: string, sort?: string) => getTagsForType(type, sort))
+  ipcMain.handle('tags:getAllForManage', () => getAllTagsForManage())
+  ipcMain.handle('tags:update', (_e, id: number, name: string) => { updateTagName(id, name); return true })
+  ipcMain.handle('tags:pin', (_e, id: number, pinned: number) => { setTagPinned(id, pinned); return true })
 
   ipcMain.handle('tags:create', (_e, name: string) => createTag(name))
 
@@ -429,6 +447,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('tags:removeFromResource', (_e, resourceId: string, tagId: number) => {
     removeTagFromResource(resourceId, tagId)
+    // 如果该标签已无任何资源使用，自动从 tags 表中清理
+    const still = getDb().prepare('SELECT 1 FROM resource_tags WHERE tag_id = ? LIMIT 1').get(tagId)
+    if (!still) removeTag(tagId)
     return true
   })
 
@@ -528,15 +549,43 @@ export function registerIpcHandlers(): void {
     const dim = size ?? 400
     const cacheKey = dim < 400 ? `${filePath}@${dim}` : filePath
     if (thumbCache.has(cacheKey)) return thumbCache.get(cacheKey) ?? null
+    const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase()
+    const isAudio = AUDIO_EXTS.has(ext)
     try {
       const thumb = await nativeImage.createThumbnailFromPath(filePath, { width: dim, height: dim })
-      const result = thumb.isEmpty() ? null : thumb.toDataURL()
+      let result: string | null = thumb.isEmpty() ? null : thumb.toDataURL()
+      if (!result && isAudio) result = await extractAudioCover(filePath)
       thumbCache.set(cacheKey, result)
       return result
-    } catch (e: any) {
-      console.error('[Thumb] failed:', filePath, e?.message)
-      thumbCache.set(cacheKey, null)
-      return null
+    } catch {
+      const result = isAudio ? await extractAudioCover(filePath) : null
+      thumbCache.set(cacheKey, result)
+      return result
+    }
+  })
+
+  // 从音乐文件提取元数据并自动打标签（artist / genre），每次进程会话只执行一次
+  ipcMain.handle('music:autoTag', async (_e, resourceId: string, filePath: string) => {
+    if (_audioTagged.has(resourceId)) return []
+    _audioTagged.add(resourceId)
+    try {
+      const meta = await mm.parseFile(filePath, { skipCovers: true, duration: false })
+      const names: string[] = []
+      if (meta.common.artist) names.push(meta.common.artist)
+      if (meta.common.albumartist && meta.common.albumartist !== meta.common.artist)
+        names.push(meta.common.albumartist)
+      if (meta.common.genre?.length) names.push(...meta.common.genre)
+      const added: Array<{ id: number; name: string }> = []
+      for (const raw of names) {
+        const name = raw.trim()
+        if (!name) continue
+        const tag = createTag(name)
+        addTagToResource(resourceId, tag.id, 'dir')
+        added.push({ id: tag.id, name: tag.name })
+      }
+      return added
+    } catch {
+      return []
     }
   })
 
@@ -587,7 +636,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('files:pickImage', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'ico'] }]
+      filters: [
+        { name: '图片 / 程序图标', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'ico', 'exe'] }
+      ]
     })
     return result.canceled ? null : result.filePaths[0]
   })
