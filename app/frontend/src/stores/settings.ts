@@ -15,7 +15,7 @@ export interface CardDisplayFlags {
   cardBg: boolean     // 卡片背景框
   pinRunning: boolean // 置顶运行中的程序
 }
-const DEFAULT_CARD_DISPLAY: CardDisplayFlags = { duration: true, count: true, lastUsed: true, tags: true, fileSize: false, cardBg: true, pinRunning: true }
+const DEFAULT_CARD_DISPLAY: CardDisplayFlags = { duration: false, count: false, lastUsed: false, tags: false, fileSize: false, cardBg: true, pinRunning: true }
 
 export interface ListDisplayFlags {
   size: boolean

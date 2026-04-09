@@ -4,7 +4,7 @@
  * Runs after `electron-builder` creates the flat zip.
  * Reorganizes the zip to:
  *   AI-Cubby.exe              (launcher stub, ~286 KB)
- *   [必读] Quick Start.txt
+ *   Quick Start.txt
  *   LICENSE.txt
  *   core/                     (all original Electron files)
  *     AI-Cubby.exe
@@ -36,17 +36,15 @@ if (!fs.existsSync(launcherExe)) {
 
 // README content (UTF-8 BOM for Notepad compatibility on Chinese Windows)
 const README = '\uFEFF' + [
-  '感谢使用 AI 小抽屉，本软件为纯净免安装版。',
-  '',
-  '双击运行后，软件会静默在后台待命。随时按下 Alt + Space 即可呼出面板。',
-  '',
-  '如果想开机自启或更改设置，请在呼出的面板中操作。',
+  'Thank you for using AI Cubby — no installation required.',
+  'Double-click AI-Cubby.exe to run. Press Alt + Space anytime to open your workspace.',
+  'Settings (autostart, hotkeys, etc.) are accessible from inside the panel.',
   '',
   '---',
   '',
-  'Thank you for using AI Cubby — no installation required.',
-  'Double-click to run. Press Alt + Space anytime to open your workspace.',
-  'Settings (autostart, hotkeys, etc.) are accessible from inside the panel.',
+  '感谢使用 AI 小抽屉，本软件为纯净免安装版。',
+  '双击 AI-Cubby.exe 运行后，软件会静默在后台待命。随时按下 Alt + Space 即可呼出面板。',
+  '如果想开机自启或更改设置，请在呼出的面板中操作。',
 ].join('\r\n')
 
 const LICENSE = [
@@ -90,7 +88,7 @@ Copy-Item $launcherExe (Join-Path $newDir 'AI-Cubby.exe') -Force
 $readme  = "${README.replace(/\\/g, '\\\\').replace(/"/g, '`"').replace(/\n/g, '`n').replace(/\r/g, '`r')}"
 $license = "${LICENSE.replace(/\\/g, '\\\\').replace(/"/g, '`"').replace(/\n/g, '`n').replace(/\r/g, '`r')}"
 
-[System.IO.File]::WriteAllText((Join-Path $newDir '[必读] Quick Start.txt'), $readme, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText((Join-Path $newDir 'Quick Start.txt'), $readme, [System.Text.Encoding]::UTF8)
 [System.IO.File]::WriteAllText((Join-Path $newDir 'LICENSE.txt'), $license, [System.Text.Encoding]::UTF8)
 
 # 6. Re-zip over the original zip path

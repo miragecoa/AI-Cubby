@@ -83,21 +83,21 @@
           :title="t('app.settings')"
         >
           <span class="nav-icon" v-html="settingsIcon" />
-          <span v-if="!isNarrow" class="nav-label">{{ t('app.settings') }}</span>
+          <span class="nav-label">{{ t('app.settings') }}</span>
+        </button>
+
+        <button
+          class="nav-item panel-toggle-btn"
+          @click="toggleCollapse"
+          :title="settingsStore.sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
+        >
+          <span class="nav-icon" v-html="settingsStore.sidebarCollapsed ? chevronRightSvg : chevronLeftSvg" />
+          <span class="nav-label">{{ settingsStore.sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse') }}</span>
         </button>
       </div>
     </div>
 
-    <div v-if="!settingsStore.sidebarCollapsed" class="sidebar-resize-handle" @mousedown.prevent.stop="onResizeStart" />
-
-    <button
-      v-if="!isNarrow"
-      class="panel-toggle"
-      @click="toggleCollapse"
-      :title="settingsStore.sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
-    >
-      <span v-html="settingsStore.sidebarCollapsed ? chevronRightSvg : chevronLeftSvg" />
-    </button>
+    <div v-if="!settingsStore.sidebarCollapsed && !isNarrow" class="sidebar-resize-handle" @mousedown.prevent.stop="onResizeStart" />
   </aside>
 </template>
 
@@ -282,7 +282,7 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 }
 
 .sidebar.collapsed {
-  width: 22px;
+  width: 52px;
 }
 
 .sidebar-content {
@@ -291,10 +291,6 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.sidebar.collapsed .sidebar-content {
-  display: none;
 }
 
 /* ── 拖拽调整宽度 ─────────────────────────────────────────── */
@@ -314,30 +310,10 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
   transition: none;
 }
 
-/* ── 折叠切换条 ─────────────────────────────────────────────── */
-.panel-toggle {
-  width: 22px;
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  border-left: 1px solid var(--border);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* ── 折叠切换按钮（在 footer 内） ────────────────────────────── */
+.panel-toggle-btn {
   color: var(--text-3);
-  padding: 0;
-  transition: background 0.12s, color 0.12s;
-}
-
-.panel-toggle:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.panel-toggle :deep(svg) {
-  width: 13px;
-  height: 13px;
+  border-top: 1px solid var(--border);
 }
 
 
@@ -650,12 +626,14 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 .add-cat-btn:hover { border-color: var(--accent); color: var(--accent-2); }
 .add-cat-btn :deep(svg) { width: 12px; height: 12px; }
 
-/* ── 窄模式：图标 + 竖排文字 ─────────────────────────────────── */
-.sidebar.narrow .nav-section {
+/* ── 窄模式 / 折叠模式：图标 + 竖排文字 ─────────────────────── */
+.sidebar.narrow .nav-section,
+.sidebar.collapsed .nav-section {
   padding: 4px 0;
 }
 
-.sidebar.narrow .nav-item {
+.sidebar.narrow .nav-item,
+.sidebar.collapsed .nav-item {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
@@ -665,11 +643,13 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
   white-space: normal;
 }
 
-.sidebar.narrow .nav-icon {
+.sidebar.narrow .nav-icon,
+.sidebar.collapsed .nav-icon {
   flex-shrink: 0;
 }
 
-.sidebar.narrow .nav-label {
+.sidebar.narrow .nav-label,
+.sidebar.collapsed .nav-label {
   writing-mode: vertical-rl;
   font-size: 10px;
   line-height: 1;
@@ -677,12 +657,14 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
   flex: none;
 }
 
-.sidebar.narrow.lang-en .nav-label {
+.sidebar.narrow.lang-en .nav-label,
+.sidebar.collapsed.lang-en .nav-label {
   writing-mode: vertical-lr;
   transform: rotate(180deg);
 }
 
-.sidebar.narrow .nav-count {
+.sidebar.narrow .nav-count,
+.sidebar.collapsed .nav-count {
   display: none;
 }
 
