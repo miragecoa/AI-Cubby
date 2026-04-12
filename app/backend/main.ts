@@ -953,14 +953,16 @@ app.whenReady().then(() => {
   } else {
     const userDisabled = getSetting('autoStartDisabled') === 'true'
     // Prefer the launcher exe (root AI-Cubby.exe) over the Electron exe in core/.
-    // LAUNCHER_EXE is set by the launcher stub so the correct path is always registered.
-    // Self-heal: if LAUNCHER_EXE missing but we're inside core/, infer launcher path
+    // Self-heal scenarios:
+    //   1. LAUNCHER_EXE missing (updater restart) → infer from core/ parent
+    //   2. LAUNCHER_EXE set but file doesn't exist (folder renamed) → infer from core/ parent
     let exePath = process.env.LAUNCHER_EXE ?? process.execPath
-    if (!process.env.LAUNCHER_EXE && basename(dirname(process.execPath)).toLowerCase() === 'core') {
+    const inCore = basename(dirname(process.execPath)).toLowerCase() === 'core'
+    if (inCore && (!process.env.LAUNCHER_EXE || !existsSync(exePath))) {
       const inferred = join(dirname(dirname(process.execPath)), basename(process.execPath))
       if (existsSync(inferred)) {
         exePath = inferred
-        process.env.LAUNCHER_EXE = inferred  // fix for subsequent code that reads this
+        process.env.LAUNCHER_EXE = inferred
         console.log('[AutoStart] Self-healed LAUNCHER_EXE:', inferred)
       }
     }
@@ -984,24 +986,30 @@ app.whenReady().then(() => {
       const startMenuDir = join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
       const lnkPath = join(startMenuDir, `${appTitle}.lnk`)
       const exePath = process.env.LAUNCHER_EXE ?? process.execPath
-      // 清理指向同一 exe 或旧名称的快捷方式
+      const exeName = basename(exePath).toLowerCase()
+      // 清理旧的 AI-Cubby 快捷方式（匹配 exe 名或指向不存在的目标）
       try {
         for (const f of readdirSync(startMenuDir)) {
           if (!f.endsWith('.lnk')) continue
           const fullPath = join(startMenuDir, f)
-          if (f === `${appTitle}.lnk`) continue // 跳过当前名称
+          if (f === `${appTitle}.lnk`) continue
           try {
             const detail = shell.readShortcutLink(fullPath)
-            if (detail.target === exePath) unlinkSync(fullPath)
-          } catch {} // 读取/删除单个快捷方式失败不影响其他
+            const targetName = basename(detail.target || '').toLowerCase()
+            // 删除条件：指向同名 exe（任何路径），或目标文件已不存在
+            if (targetName === exeName || (targetName && !existsSync(detail.target))) {
+              unlinkSync(fullPath)
+              console.log('[StartMenu] Removed stale shortcut:', f)
+            }
+          } catch {}
         }
-      } catch {} // readdir 失败不影响后续创建
+      } catch {}
       shell.writeShortcutLink(lnkPath, 'create', {
         target: exePath,
         description: lang === 'en' ? 'AI Cubby — Desktop Organizer & File Search' : 'AI小抽屉 — 桌面整理与文件搜索',
       })
       console.log('[StartMenu] Shortcut:', lnkPath)
-    } catch {} // 整体失败静默，不影响应用启动
+    } catch {}
   }
 
   createTray()
