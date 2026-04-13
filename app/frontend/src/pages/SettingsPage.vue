@@ -60,7 +60,6 @@
               </div>
             </div>
             <button class="profile-btn" @click="openGitHubRelease">{{ t('settings.update.btnGithub') }}</button>
-            <button class="profile-btn" @click="openDebugConsole">Debug</button>
             <div class="btn-with-menu">
               <button class="profile-btn" :class="{ 'btn-beta-active': settingsStore.updateChannel === 'beta' }" @click="forceUpdateLatest" @contextmenu.prevent="forceMenuVisible = !forceMenuVisible" :disabled="updateCheckStatus === 'downloading' || updateCheckStatus === 'force-downloading'">
                 {{ t('settings.update.btnForce') }}<span v-if="settingsStore.updateChannel === 'beta'" class="btn-beta-dot" />
@@ -68,6 +67,7 @@
               <div v-if="forceMenuVisible" class="btn-dropdown" @mouseleave="forceMenuVisible = false">
                 <div class="btn-dropdown-item" @click="selectChannel('stable', 'force')">{{ t('settings.update.channelStable') }}</div>
                 <div class="btn-dropdown-item" @click="selectChannel('beta', 'force')">{{ t('settings.update.channelBeta') }}</div>
+                <div class="btn-dropdown-item" style="border-top:1px solid rgba(255,255,255,0.06); margin-top:2px; padding-top:6px" @click="openDebugConsole">Debug Console</div>
               </div>
             </div>
           </div>

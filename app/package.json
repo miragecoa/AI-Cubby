@@ -1,6 +1,6 @@
 {
   "name": "ai-cubby",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {
@@ -50,7 +50,7 @@
       "!backend/**",
       "!frontend/**",
       "!*.ts",
-      "!node_modules/onnxruntime-node/**",
+      "!node_modules/onnxruntime-node/bin/**",
       "!node_modules/onnxruntime-web/dist/*.jsep.*",
       "!node_modules/onnxruntime-web/dist/*.jspi.*",
       "!node_modules/onnxruntime-web/dist/*.asyncify.*"
