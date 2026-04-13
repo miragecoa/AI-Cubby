@@ -1,16 +1,6 @@
 /**
  * embed-worker.ts — runs as a Node.js Worker Thread
  * Uses @huggingface/transformers with WASM backend (zero native deps)
- *
- * Message IN (from main thread):
- *   { type: 'embed', id, texts: string[] }
- *   { type: 'status' }                       ← check if model is ready
- *
- * Message OUT:
- *   { type: 'ready' }                         ← model loaded
- *   { type: 'embed', id, embeddings: number[][] }
- *   { type: 'progress', stage, percent }      ← download progress
- *   { type: 'error', id?, message }
  */
 
 import { parentPort, workerData } from 'worker_threads'
@@ -22,49 +12,69 @@ let extractor: any = null
 let modelReady = false
 let lastEmitPct = -1
 let lastEmitTime = 0
+let progressCount = 0
+
+function log(...args: any[]) { console.log('[embed-worker]', ...args) }
 
 async function loadModel() {
-  console.log('[embed-worker] starting, cacheDir:', workerData.cacheDir)
-  const { pipeline, env } = await import('@huggingface/transformers')
-  console.log('[embed-worker] transformers imported ok')
+  log('starting, cacheDir:', workerData.cacheDir)
 
-  env.backends.onnx.wasm.proxy = false
-  env.backends.onnx.wasm.numThreads = 2
-  env.cacheDir = workerData.cacheDir
-  env.remoteHost = MODEL_HOST
-  env.remotePathTemplate = '{model}/'
+  try {
+    log('importing @huggingface/transformers...')
+    const { pipeline, env } = await import('@huggingface/transformers')
+    log('imported ok')
 
-  extractor = await pipeline('feature-extraction', MODEL_ID, {
-    dtype: 'q8',
-    device: 'cpu',
-    progress_callback: (progress: any) => {
-      if (progress.status !== 'progress' && progress.status !== 'downloading') return
-      if (!progress.total) return
+    log('setting env...')
+    env.backends.onnx.wasm.proxy = false
+    env.backends.onnx.wasm.numThreads = 2
+    env.cacheDir = workerData.cacheDir
+    env.remoteHost = MODEL_HOST
+    env.remotePathTemplate = '{model}/'
+    log('env set, calling pipeline()...')
 
-      const pct = Math.round((progress.loaded / progress.total) * 100)
-      const now = Date.now()
-      if (pct === lastEmitPct || now - lastEmitTime < 300) return
-      lastEmitPct = pct
-      lastEmitTime = now
+    extractor = await pipeline('feature-extraction', MODEL_ID, {
+      dtype: 'q8',
+      device: 'cpu',
+      progress_callback: (progress: any) => {
+        progressCount++
+        // Log first 5 + every 20th callback to understand what statuses come through
+        if (progressCount <= 5 || progressCount % 20 === 0) {
+          log('progress_callback #' + progressCount, JSON.stringify({
+            status: progress.status,
+            file: progress.file,
+            name: progress.name,
+            loaded: progress.loaded,
+            total: progress.total,
+          }))
+        }
 
-      parentPort?.postMessage({ type: 'progress', stage: '下载模型', percent: pct })
-    },
-  })
+        // Emit on any status that has loaded/total
+        if (!progress.total || !progress.loaded) return
+        const pct = Math.round((progress.loaded / progress.total) * 100)
+        const now = Date.now()
+        if (pct === lastEmitPct || now - lastEmitTime < 300) return
+        lastEmitPct = pct
+        lastEmitTime = now
 
-  modelReady = true
-  parentPort?.postMessage({ type: 'ready' })
+        parentPort?.postMessage({ type: 'progress', stage: '下载模型', percent: pct })
+      },
+    })
+
+    log('pipeline() returned, model ready. Total progress callbacks:', progressCount)
+    modelReady = true
+    parentPort?.postMessage({ type: 'ready' })
+  } catch (err) {
+    log('FATAL error in loadModel:', err)
+    parentPort?.postMessage({ type: 'error', message: String(err) })
+  }
 }
 
 async function embed(texts: string[]): Promise<number[][]> {
-  // multilingual-e5 needs "query: " / "passage: " prefix for best quality
   const output = await extractor(texts, { pooling: 'mean', normalize: true })
   return output.tolist() as number[][]
 }
 
-// Start loading immediately on spawn
-loadModel().catch(err => {
-  parentPort?.postMessage({ type: 'error', message: String(err) })
-})
+loadModel()
 
 parentPort?.on('message', async (msg: any) => {
   if (msg.type === 'status') {
