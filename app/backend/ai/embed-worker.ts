@@ -24,7 +24,9 @@ let lastEmitPct = -1
 let lastEmitTime = 0
 
 async function loadModel() {
+  console.log('[embed-worker] starting, cacheDir:', workerData.cacheDir)
   const { pipeline, env } = await import('@huggingface/transformers')
+  console.log('[embed-worker] transformers imported ok')
 
   env.backends.onnx.wasm.proxy = false
   env.backends.onnx.wasm.numThreads = 2
