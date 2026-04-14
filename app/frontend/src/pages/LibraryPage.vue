@@ -121,6 +121,9 @@
 
               <!-- 操作按钮 -->
               <div class="ai-panel-actions">
+                <button v-if="aiStore.status === 'ready'" class="ai-panel-btn-icon" @click="doReindex" title="重新索引所有资源">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
                 <button v-if="aiStore.status === 'ready'" class="ai-panel-btn danger" @click="doDisableAi">
                   {{ t('library.aiPanel.disable') }}
                 </button>
@@ -1619,6 +1622,11 @@ function onInstallLocal() {
 function doDisableAi() {
   showAiPanel.value = false
   aiStore.disable()
+}
+
+async function doReindex() {
+  showAiPanel.value = false
+  await window.api.ai.reindex()
 }
 
 function onAiEngineChange() {
@@ -4119,6 +4127,14 @@ async function deleteIgnored(filePath: string) {
   transition: background 0.15s, color 0.15s;
 }
 .ai-panel-btn:hover { background: var(--surface-3, #252540); }
+.ai-panel-btn-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex-shrink: 0;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-3); cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ai-panel-btn-icon:hover { background: var(--surface-3, #252540); color: var(--text-1); }
 .ai-panel-btn.primary { background: var(--accent); color: #fff; border: none; }
 .ai-panel-btn.primary:hover { opacity: 0.85; }
 .ai-panel-btn.danger { color: #f87171; border-color: rgba(239,68,68,0.3); }

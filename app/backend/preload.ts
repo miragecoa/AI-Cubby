@@ -376,6 +376,7 @@ contextBridge.exposeInMainWorld('api', {
     getContentStatus: (resourceId: string): Promise<{ status: string; isTruncated: boolean } | null> =>
       ipcRenderer.invoke('ai:getContentStatus', resourceId),
     isModelInstalled: (): Promise<boolean> => ipcRenderer.invoke('ai:isModelInstalled'),
+    reindex: (): Promise<void> => ipcRenderer.invoke('ai:reindex'),
     pauseIndex: (): Promise<void> => ipcRenderer.invoke('ai:pauseIndex'),
     resumeIndex: (): Promise<void> => ipcRenderer.invoke('ai:resumeIndex'),
     isIndexPaused: (): Promise<boolean> => ipcRenderer.invoke('ai:isIndexPaused'),

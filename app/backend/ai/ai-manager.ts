@@ -229,12 +229,21 @@ async function ensureLlamaFiles(): Promise<{ serverPath: string; modelPath: stri
   mkdirSync(dir, { recursive: true })
 
   const serverPath = join(dir, 'llama-server.exe')
-  const modelPath = join(dir, 'e5-small-v2-q8_0.gguf')
+  const modelPath = join(dir, 'embeddinggemma-300m-qat-Q4_0.gguf')
+
+  // Clean up old models from previous versions
+  for (const old of ['e5-small-v2-q8_0.gguf', 'multilingual-e5-small-Q8_0.gguf']) {
+    const oldPath = join(dir, old)
+    if (existsSync(oldPath)) {
+      log('removing old model:', old)
+      try { require('fs').unlinkSync(oldPath) } catch {}
+    }
+  }
 
   if (!existsSync(serverPath) || !existsSync(modelPath)) {
     const zipPath = join(modelDir, LLAMA_ZIP)
     log('downloading AI module zip...')
-    await downloadFile(`${CDN}/${LLAMA_ZIP}`, zipPath, '下载 AI 模块')
+    await downloadFile(`${CDN}/${LLAMA_ZIP}?_t=${Date.now()}`, zipPath, '下载 AI 模块')
     log('extracting...')
     emitProgress({ stage: '解压 AI 模块', percent: 80 })
     // Extract using PowerShell (available on all Windows)
@@ -242,7 +251,9 @@ async function ensureLlamaFiles(): Promise<{ serverPath: string; modelPath: stri
     execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${dir}' -Force"`, { timeout: 60000 })
     // Clean up zip
     try { require('fs').unlinkSync(zipPath) } catch {}
-    log('extraction complete')
+    // Verify files exist after extraction
+    const files = readdirSync(dir)
+    log('extraction complete, files:', files.join(', '))
   }
 
   emitProgress({ stage: 'done', percent: 100 })
@@ -256,7 +267,7 @@ function startLlamaServer(serverPath: string, modelPath: string): Promise<void> 
     llamaProc = spawn(serverPath, [
       '--embedding',
       '-m', modelPath,
-      '-c', '512',
+      '-c', '2048',
       '--port', String(LLAMA_SERVER_PORT),
       '--host', '127.0.0.1',
       '-fit', 'off',
@@ -295,7 +306,7 @@ function startLlamaServer(serverPath: string, modelPath: string): Promise<void> 
     })
 
     llamaProc.on('exit', (code) => {
-      log('llama-server exited, code:', code, stderrBuf ? 'stderr: ' + stderrBuf.substring(0, 500) : '')
+      log('llama-server exited, code:', code, stderrBuf ? 'stderr: ' + stderrBuf.substring(stderrBuf.length - 1000) : '')
       llamaProc = null
       llamaReady = false
       clearInterval(poll)
@@ -313,19 +324,38 @@ function stopLlamaServer() {
   }
 }
 
-/** Call llama-server /v1/embeddings endpoint */
+/** Call llama-server /v1/embeddings endpoint.
+ *  Truncates each text to ~1600 chars to stay within 512 token context. */
 async function embedTexts(texts: string[]): Promise<number[][]> {
   if (!llamaReady) throw new Error('llama-server not ready')
 
-  const body = JSON.stringify({ input: texts })
-  const res = await fetch(`http://127.0.0.1:${LLAMA_SERVER_PORT}/v1/embeddings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-  })
-  if (!res.ok) throw new Error(`Embedding request failed: ${res.status}`)
-  const data = await res.json() as { data: Array<{ embedding: number[] }> }
-  return data.data.map(d => d.embedding)
+  // Truncate to stay within 2048 token context window (~4 chars per token)
+  const MAX_CHARS = 6000
+  const truncated = texts.map(t => t.length > MAX_CHARS ? t.substring(0, MAX_CHARS) : t)
+
+  // Send one at a time to avoid overloading the server
+  const results: number[][] = []
+  for (const text of truncated) {
+    const body = JSON.stringify({ input: [text] })
+    try {
+      const res = await fetch(`http://127.0.0.1:${LLAMA_SERVER_PORT}/v1/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
+      if (!res.ok) {
+        log('embedding 500 for text length:', text.length, '- skipping')
+        results.push([])
+        continue
+      }
+      const data = await res.json() as { data: Array<{ embedding: number[] }> }
+      results.push(data.data[0]?.embedding ?? [])
+    } catch (e: any) {
+      log('embedding error:', e?.message)
+      results.push([])
+    }
+  }
+  return results
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +369,7 @@ async function runFullIndex() {
   setStatus('indexing')
 
   // Check if embeddings need rebuild (model switch)
-  const MODEL_KEY = 'e5-small-v2-llama'
+  const MODEL_KEY = 'embeddinggemma-300m-llama'
   const lastModel = db.prepare(`SELECT value FROM settings WHERE key = 'aiEmbedModel'`).get() as any
   if (lastModel?.value !== MODEL_KEY) {
     log('model changed from', lastModel?.value, '→', MODEL_KEY, '— clearing all embeddings')
@@ -410,6 +440,7 @@ async function indexMetadataEmbedding(resourceId: string) {
   if (!metaText.trim()) return
 
   const embeddings = await embedTexts([`passage: ${metaText}`])
+  if (!embeddings[0] || embeddings[0].length === 0) return
   const buf = Buffer.from(new Float32Array(embeddings[0]).buffer)
   db.prepare(`
     INSERT OR REPLACE INTO resource_embeddings (resource_id, chunk_index, embedding, chunk_text)
@@ -433,7 +464,7 @@ async function indexResourceEmbeddings(resourceId: string, text: string) {
       insert.run(resourceId, r.i, buf, r.chunk)
     }
   })
-  insertMany(chunks.map((chunk, i) => ({ chunk, emb: embeddings[i], i })))
+  insertMany(chunks.map((chunk, i) => ({ chunk, emb: embeddings[i], i })).filter(r => r.emb.length > 0))
 }
 
 // ---------------------------------------------------------------------------
@@ -488,8 +519,16 @@ export function getAiStatus(): AiStatus { return status }
 export function isModelInstalled(): boolean {
   try {
     const dir = join(process.env.LOCALAPPDATA || modelDir, 'ai-cubby-llama')
-    return existsSync(join(dir, 'llama-server.exe')) && existsSync(join(dir, 'e5-small-v2-q8_0.gguf'))
+    return existsSync(join(dir, 'llama-server.exe')) && existsSync(join(dir, 'embeddinggemma-300m-qat-Q4_0.gguf'))
   } catch { return false }
+}
+
+export function forceReindex() {
+  if (!db || !llamaReady) return
+  log('force reindex: clearing all embeddings + content')
+  db.prepare('DELETE FROM resource_embeddings').run()
+  db.prepare('DELETE FROM resource_content').run()
+  runFullIndex()
 }
 
 export function pauseIndex() { indexPaused = true }

@@ -38,7 +38,7 @@ import { startMonitor, flushRunningSessions } from './monitor/recent-files'
 import type { RunningEvent } from './monitor/recent-files'
 import { initAutoUpdater } from './updater'
 import { initHeartbeat, flushAndStop, incShortcutMain, incShortcutClip, incWakeCount, incDrawerWake } from './heartbeat'
-import { initAiManager, enableAi, disableAi, getAiStatus, isModelInstalled, semanticSearch, queueResourceContent, onStatusChange, onProgress, pauseIndex, resumeIndex, isIndexPaused } from './ai/ai-manager'
+import { initAiManager, enableAi, disableAi, getAiStatus, isModelInstalled, semanticSearch, queueResourceContent, onStatusChange, onProgress, forceReindex, pauseIndex, resumeIndex, isIndexPaused } from './ai/ai-manager'
 
 let mainWindow: BrowserWindow | null = null
 let masonryWindow: BrowserWindow | null = null
@@ -980,6 +980,7 @@ app.whenReady().then(() => {
         contentChunks: chunks.cnt,
       }
     })
+    ipcMain.handle('ai:reindex', () => forceReindex())
     ipcMain.handle('ai:pauseIndex', () => pauseIndex())
     ipcMain.handle('ai:resumeIndex', () => resumeIndex())
     ipcMain.handle('ai:isIndexPaused', () => isIndexPaused())

@@ -1,6 +1,6 @@
 {
   "name": "ai-cubby",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {

@@ -43,15 +43,39 @@ async function extractFromHtml(html: string, url: string): Promise<string> {
 }
 
 async function fetchUrl(url: string): Promise<{ text: string; status: 'done' | 'login_required' | 'failed' }> {
+  const TIMEOUT = 15000
+  const MAX_BODY = 50000 // Only read first 50KB of HTML, enough for Readability
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Cubby/1.0)' },
-      signal: AbortSignal.timeout(8000),
-    })
-    const html = await res.text()
-    const text = await extractFromHtml(html, url)
-    if (isLoginWall(text, res.status)) return { text: '', status: 'login_required' }
-    return { text, status: 'done' }
+    const result = await Promise.race([
+      (async () => {
+        const controller = new AbortController()
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Cubby/1.0)' },
+          signal: controller.signal,
+        })
+        // Stream body, stop after MAX_BODY bytes
+        const reader = res.body?.getReader()
+        if (!reader) return { text: '', status: 'failed' as const }
+        const chunks: Uint8Array[] = []
+        let totalBytes = 0
+        while (totalBytes < MAX_BODY) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+          totalBytes += value.byteLength
+        }
+        reader.cancel().catch(() => {})
+        controller.abort() // Stop downloading the rest
+        const html = new TextDecoder().decode(Buffer.concat(chunks)).substring(0, MAX_BODY)
+        const text = await extractFromHtml(html, url)
+        if (isLoginWall(text, res.status)) return { text: '', status: 'login_required' as const }
+        return { text, status: 'done' as const }
+      })(),
+      new Promise<{ text: string; status: 'failed' }>((resolve) =>
+        setTimeout(() => { console.log('[content-worker] timeout:', url.substring(0, 80)); resolve({ text: '', status: 'failed' }) }, TIMEOUT)
+      ),
+    ])
+    return result
   } catch {
     return { text: '', status: 'failed' }
   }
