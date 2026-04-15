@@ -13,7 +13,7 @@
 
 import { app } from 'electron'
 import { join } from 'path'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { randomUUID } from 'crypto'
 
 const ENDPOINT = 'https://aicubby.app/api/heartbeat'
@@ -48,15 +48,41 @@ export function incPanelAdd(n = 1): void  { _pendingPanelAdds += n }
 /** Set the total resource count snapshot once at startup. */
 export function setResourceCount(n: number): void { _resourceCount = n }
 
-/** Returns the persisted install_id, creating one on first run. */
+/** Returns the persisted install_id, creating one on first run.
+ *  Uses a fixed path (%APPDATA%\ai-cubby\) to avoid ID changes when
+ *  app.setName() or productName changes across versions. */
 function getInstallId(): string {
-  const file = join(app.getPath('userData'), 'install.json')
+  const appData = process.env.APPDATA || app.getPath('userData')
+  const fixedDir = join(appData, 'ai-cubby')
+  try { mkdirSync(fixedDir, { recursive: true }) } catch {}
+  const file = join(fixedDir, 'install.json')
+
+  // Check fixed path first
   try {
     if (existsSync(file)) {
       const data = JSON.parse(readFileSync(file, 'utf8'))
       if (typeof data?.id === 'string' && data.id.length === 36) return data.id
     }
   } catch { /* corrupt file — regenerate */ }
+
+  // Migrate from old paths (productName changes, custom app name, etc.)
+  const searchPaths = [
+    join(appData, 'AI-Cubby', 'install.json'),
+    join(appData, 'AI-Resource-Manager', 'install.json'),
+    join(appData, 'ai-resource-manager', 'install.json'),
+    join(app.getPath('userData'), 'install.json'), // current userData (may differ due to app.setName)
+  ]
+  for (const oldFile of searchPaths) {
+    try {
+      if (oldFile !== file && existsSync(oldFile)) {
+        const data = JSON.parse(readFileSync(oldFile, 'utf8'))
+        if (typeof data?.id === 'string' && data.id.length === 36) {
+          try { writeFileSync(file, JSON.stringify({ id: data.id }), 'utf8') } catch {}
+          return data.id
+        }
+      }
+    } catch {}
+  }
 
   const id = randomUUID()
   try { writeFileSync(file, JSON.stringify({ id }), 'utf8') } catch { /* non-critical */ }
