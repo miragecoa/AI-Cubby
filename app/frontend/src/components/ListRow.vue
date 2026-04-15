@@ -27,6 +27,10 @@
       <input v-if="batchMode" type="checkbox" :checked="batchSelected" class="lr-checkbox" />
       {{ resource.title }}
       <svg v-if="resource.is_private" class="lr-private-icon" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" :title="t('resource.private')"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+      <span v-if="aiMatch" class="lr-ai-badge">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z" fill="currentColor"/><path d="M19 13l.75 2.25L22 16l-2.25.75L19 19l-.75-2.25L16 16l2.25-.75L19 13z" fill="currentColor" opacity=".6"/></svg>
+        AI
+      </span>
     </span>
     <span v-if="showSize" class="lr-size">{{ fmtSize }}</span>
     <template v-if="showType">
@@ -81,6 +85,7 @@ const props = defineProps<{
   showDate: boolean
   showCount: boolean
   showTags: boolean
+  aiMatch?: string
 }>()
 
 defineEmits<{
@@ -212,3 +217,23 @@ const countLabel = computed(() => t('resource.stats.count', { n: props.resource.
 const typeIcon = computed(() => TYPE_ICONS[props.resource.type] ?? TYPE_ICONS.app)
 const displayTags = computed(() => (props.resource.tags || []).slice(0, 3))
 </script>
+
+<style scoped>
+.lr-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px 0 3px;
+  margin-left: 4px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  color: color-mix(in srgb, var(--accent) 80%, #fff);
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  line-height: 1;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+</style>

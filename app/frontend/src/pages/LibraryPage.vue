@@ -673,6 +673,7 @@
                 :show-date="settingsStore.listDisplay.date"
                 :show-count="settingsStore.listDisplay.count"
                 :show-tags="settingsStore.listDisplay.tags"
+                :ai-match="aiMatchMap.get(item.id)"
                 @click="onListRowClick($event, item)"
                 @dblclick="openResource(item)"
                 @contextmenu="openListMenu($event, item)"
@@ -747,6 +748,10 @@
                   <span v-if="listTooltip.item.tags.length > 4" class="lt-tt-tag-more">+{{ listTooltip.item.tags.length - 4 }}</span>
                 </div>
                 <div v-if="listTooltip.item.note" class="lt-tt-note">{{ listTooltip.item.note }}</div>
+                <div v-if="aiMatchMap.get(listTooltip.item.id)" class="lt-tt-ai">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--accent)"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z"/><path d="M19 13l.75 2.25L22 16l-2.25.75L19 19l-.75-2.25L16 16l2.25-.75L19 13z" opacity=".6"/></svg>
+                  <span v-html="highlightAiSnippet(aiMatchMap.get(listTooltip.item.id)!, 100)" />
+                </div>
               </div>
             </Teleport>
             <!-- 滚动到最底部才显示的导入按钮 -->
@@ -1646,6 +1651,27 @@ function onAiEngineChange() {
 
 function onAiSettingChange() {
   // Settings are reactive, consumed directly by the search watcher
+}
+
+function highlightAiSnippet(text: string, maxLen: number): string {
+  const truncated = text.length > maxLen ? text.substring(0, maxLen) + '...' : text
+  const q = store.searchQuery.trim()
+  if (!q) return escHtml(truncated)
+  const tokens: string[] = []
+  let i = 0
+  while (i < q.length) {
+    const cjk = q.slice(i).match(/^[\u4e00-\u9fff\u3400-\u4dbf]+/)
+    if (cjk) { for (const ch of cjk[0]) tokens.push(ch); i += cjk[0].length; continue }
+    const lat = q.slice(i).match(/^[a-z]{2,}/i)
+    if (lat) { tokens.push(lat[0]); i += lat[0].length; continue }
+    i++
+  }
+  if (!tokens.length) return escHtml(truncated)
+  const pattern = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  return escHtml(truncated).replace(new RegExp(`(${pattern})`, 'gi'), '<mark class="ai-hl">$1</mark>')
+}
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 function clampMaxResults() {
@@ -7093,4 +7119,18 @@ async function deleteIgnored(filePath: string) {
 .lt-tt-tag { font-size: 10px; background: var(--surface-3); color: var(--accent-2); padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(99,102,241,0.15); }
 .lt-tt-tag-more { font-size: 10px; color: var(--text-3); padding: 1px 3px; }
 .lt-tt-note { font-size: 11px; color: var(--text-3); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; border-top: 1px solid var(--border); padding-top: 4px; margin-top: 1px; }
+.lt-tt-ai {
+  display: flex; align-items: flex-start; gap: 4px;
+  font-size: 10px; color: color-mix(in srgb, var(--accent) 70%, var(--text-3));
+  line-height: 1.4; border-top: 1px solid var(--border); padding-top: 4px; margin-top: 1px;
+}
+.lt-tt-ai svg { flex-shrink: 0; margin-top: 1px; }
+.lt-tt-ai span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lt-tt-ai .ai-hl, .ai-hl {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+}
 </style>
