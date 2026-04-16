@@ -379,7 +379,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
         MoveFileW(self, selfOld);
     }
 
-    /* 7. Extract */
+    /* 7. Extract (tar may return non-zero for minor warnings, check core/ exists after) */
     setStep(T(L"Installing update...", L"\x6b63\x5728\x5b89\x88c5\x66f4\x65b0..."));
     setProgress(50);
     {
@@ -390,8 +390,14 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
         lstrcatW(cmd, L"\" -C \"");
         lstrcatW(cmd, rootDir);
         lstrcatW(cmd, L"\"");
-        DWORD code = runHidden(cmd);
-        if (code != 0)
+        runHidden(cmd);
+
+        /* Verify extraction by checking core\ directory exists */
+        wchar_t coreDir[MAX_PATH];
+        memset(coreDir, 0, sizeof(coreDir));
+        lstrcpynW(coreDir, rootDir, MAX_PATH);
+        PathAppendW(coreDir, L"core");
+        if (!PathFileExistsW(coreDir))
             fatal(T(L"Extraction failed.", L"\x89e3\x538b\x5931\x8d25\x3002"));
     }
     setProgress(100);
