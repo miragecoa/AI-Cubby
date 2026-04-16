@@ -187,8 +187,9 @@ static int httpGetBuf(const wchar_t *host, const wchar_t *path, BYTE *buf, DWORD
     if (!ses) return 0;
     HINTERNET con = WinHttpConnect(ses, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
     if (!con) { WinHttpCloseHandle(ses); return 0; }
-    HINTERNET req = WinHttpOpenRequest(con, L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    HINTERNET req = WinHttpOpenRequest(con, L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE | WINHTTP_FLAG_REFRESH);
     if (!req) { WinHttpCloseHandle(con); WinHttpCloseHandle(ses); return 0; }
+    WinHttpAddRequestHeaders(req, L"Cache-Control: no-cache\r\nPragma: no-cache", (DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD);
     if (!WinHttpSendRequest(req, NULL, 0, NULL, 0, 0, 0) || !WinHttpReceiveResponse(req, NULL)) {
         WinHttpCloseHandle(req); WinHttpCloseHandle(con); WinHttpCloseHandle(ses); return 0;
     }
@@ -208,8 +209,9 @@ static int httpGetFileProgress(const wchar_t *host, const wchar_t *path, const w
     if (!ses) return 0;
     HINTERNET con = WinHttpConnect(ses, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
     if (!con) { WinHttpCloseHandle(ses); return 0; }
-    HINTERNET req = WinHttpOpenRequest(con, L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    HINTERNET req = WinHttpOpenRequest(con, L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE | WINHTTP_FLAG_REFRESH);
     if (!req) { WinHttpCloseHandle(con); WinHttpCloseHandle(ses); return 0; }
+    WinHttpAddRequestHeaders(req, L"Cache-Control: no-cache\r\nPragma: no-cache", (DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD);
     if (!WinHttpSendRequest(req, NULL, 0, NULL, 0, 0, 0) || !WinHttpReceiveResponse(req, NULL)) {
         WinHttpCloseHandle(req); WinHttpCloseHandle(con); WinHttpCloseHandle(ses); return 0;
     }

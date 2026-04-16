@@ -122,7 +122,8 @@ async function followDownload(url: string, totalSize: number, wc: WebContents | 
 
   // Use Electron net.fetch which respects system proxy settings (VPN/global proxy)
   // Timeout: 5 minutes for large downloads
-  const resp = await fetchWithTimeout(url, {
+  const resp = await fetchWithTimeout(`${url}?_t=${Date.now()}`, {
+    cache: 'no-store',
     headers: { 'User-Agent': 'AI-Resource-Manager-Updater' },
     timeout: 5 * 60 * 1000,
   })
