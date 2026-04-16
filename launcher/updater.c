@@ -43,7 +43,56 @@ static const wchar_t *appTitle(void) {
     return T(L"AI Cubby Updater", L"AI \x5c0f\x62bd\x5c49 \x66f4\x65b0\x5668");
 }
 
+/* ── Logging ────────────────────────────────────────────────────────── */
+
+static HANDLE hLog = INVALID_HANDLE_VALUE;
+
+static void logOpen(const wchar_t *rootDir) {
+    wchar_t path[MAX_PATH];
+    memset(path, 0, sizeof(path));
+    lstrcpynW(path, rootDir, MAX_PATH);
+    PathAppendW(path, L"update.log");
+    hLog = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+}
+
+static void logMsg(const char *msg) {
+    if (hLog == INVALID_HANDLE_VALUE) return;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char buf[1024];
+    /* manual sprintf: [HH:MM:SS] msg\r\n */
+    char timeBuf[16];
+    int i = 0;
+    timeBuf[i++] = '[';
+    timeBuf[i++] = '0' + (char)(st.wHour / 10);
+    timeBuf[i++] = '0' + (char)(st.wHour % 10);
+    timeBuf[i++] = ':';
+    timeBuf[i++] = '0' + (char)(st.wMinute / 10);
+    timeBuf[i++] = '0' + (char)(st.wMinute % 10);
+    timeBuf[i++] = ':';
+    timeBuf[i++] = '0' + (char)(st.wSecond / 10);
+    timeBuf[i++] = '0' + (char)(st.wSecond % 10);
+    timeBuf[i++] = ']';
+    timeBuf[i++] = ' ';
+    timeBuf[i] = 0;
+    lstrcpynA(buf, timeBuf, 1024);
+    lstrcatA(buf, msg);
+    lstrcatA(buf, "\r\n");
+    DWORD w;
+    WriteFile(hLog, buf, (DWORD)lstrlenA(buf), &w, NULL);
+}
+
+static void logMsgW(const wchar_t *msg) {
+    if (hLog == INVALID_HANDLE_VALUE) return;
+    char narrow[512];
+    WideCharToMultiByte(65001, 0, msg, -1, narrow, 512, NULL, NULL);
+    logMsg(narrow);
+}
+
 static void fatal(const wchar_t *msg) {
+    logMsg("FATAL:");
+    logMsgW(msg);
+    if (hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
     MessageBoxW(NULL, msg, appTitle(), MB_OK | MB_ICONERROR);
     ExitProcess(1);
 }
@@ -280,6 +329,11 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
     GetModuleFileNameW(NULL, rootDir, MAX_PATH);
     PathRemoveFileSpecW(rootDir);
 
+    logOpen(rootDir);
+    logMsg("Updater started");
+    logMsg("Root:");
+    logMsgW(rootDir);
+
     /* 1. Fetch manifest (with cache-busting timestamp) */
     DWORD tick = GetTickCount();
     wchar_t tickStr[16];
@@ -292,6 +346,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
     memset(manifestPath, 0, sizeof(manifestPath));
     lstrcpynW(manifestPath, L"/latest.json?_t=", 64);
     lstrcatW(manifestPath, tickStr);
+    logMsg("Fetching manifest...");
     if (!httpGetBuf(L"download.aicubby.app", manifestPath, manifest, sizeof(manifest) - 1, &mLen))
         fatal(T(L"Cannot check for updates.\nCheck your network.",
                 L"\x65e0\x6cd5\x68c0\x67e5\x66f4\x65b0\x3002\n\x8bf7\x68c0\x67e5\x7f51\x7edc\x3002"));
@@ -304,6 +359,12 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
     jsonGet((char*)manifest, "tag", tag, 32);
     jsonGet((char*)manifest, "filename", fname, 128);
     DWORD totalSize = jsonGetInt((char*)manifest, "size");
+
+    logMsg("Manifest:");
+    logMsg((char*)manifest);
+    logMsg("Version:"); logMsgW(ver);
+    logMsg("Tag:"); logMsgW(tag);
+    logMsg("Filename:"); logMsgW(fname);
 
     if (!ver[0] || !fname[0])
         fatal(T(L"Invalid update info.",
@@ -354,10 +415,13 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
     lstrcatW(urlPath, L"?_t=");
     lstrcatW(urlPath, tickStr);
 
+    logMsg("Downloading:"); logMsgW(urlPath);
     if (!httpGetFileProgress(L"download.aicubby.app", urlPath, zipPath, totalSize))
         fatal(T(L"Download failed.", L"\x4e0b\x8f7d\x5931\x8d25\x3002"));
+    logMsg("Download complete");
 
     /* 5. Close AI Cubby */
+    logMsg("Killing AI-Cubby.exe");
     setStep(T(L"Closing AI Cubby...", L"\x6b63\x5728\x5173\x95ed AI \x5c0f\x62bd\x5c49..."));
     setDetail(L"");
     setProgress(0);
@@ -368,6 +432,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
     }
 
     /* 6. Rename self so tar can overwrite update.exe */
+    logMsg("Renaming self to .old");
     {
         wchar_t self[MAX_PATH], selfOld[MAX_PATH];
         memset(self, 0, sizeof(self));
@@ -380,6 +445,10 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
     }
 
     /* 7. Extract (tar may return non-zero for minor warnings, check core/ exists after) */
+    logMsg("Extracting:");
+    logMsgW(zipPath);
+    logMsg("To:");
+    logMsgW(rootDir);
     setStep(T(L"Installing update...", L"\x6b63\x5728\x5b89\x88c5\x66f4\x65b0..."));
     setProgress(50);
     {
@@ -390,7 +459,16 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
         lstrcatW(cmd, L"\" -C \"");
         lstrcatW(cmd, rootDir);
         lstrcatW(cmd, L"\"");
-        runHidden(cmd);
+        DWORD tarCode = runHidden(cmd);
+        {
+            char codeBuf[32] = "tar exit code: ";
+            wchar_t codeStr[8];
+            intToStr(tarCode, codeStr, 8);
+            char codeNarrow[8];
+            WideCharToMultiByte(65001, 0, codeStr, -1, codeNarrow, 8, NULL, NULL);
+            lstrcatA(codeBuf, codeNarrow);
+            logMsg(codeBuf);
+        }
 
         /* Verify extraction by checking core\ directory exists */
         wchar_t coreDir[MAX_PATH];
@@ -399,6 +477,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
         PathAppendW(coreDir, L"core");
         if (!PathFileExistsW(coreDir))
             fatal(T(L"Extraction failed.", L"\x89e3\x538b\x5931\x8d25\x3002"));
+        logMsg("Extraction verified (core/ exists)");
     }
     setProgress(100);
 
@@ -414,6 +493,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
         DeleteFileW(selfOld);
     }
 
+    logMsg("Restarting app");
     /* 9. Restart app */
     setStep(T(L"Restarting AI Cubby...", L"\x6b63\x5728\x91cd\x542f AI \x5c0f\x62bd\x5c49..."));
     {
@@ -426,6 +506,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
     }
 
     DestroyWindow(hWnd);
+    logMsg("Update complete");
+    if (hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
     MessageBoxW(NULL,
         T(L"Update complete!", L"\x66f4\x65b0\x5b8c\x6210\xff01"),
         appTitle(), MB_OK | MB_ICONINFORMATION);
