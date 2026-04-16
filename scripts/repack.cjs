@@ -84,7 +84,7 @@ Get-ChildItem -Path $srcDir | ForEach-Object {
 
 # 5. Place launcher, updater, README, LICENSE at root
 Copy-Item $launcherExe (Join-Path $newDir 'AI-Cubby.exe') -Force
-$updaterExe = Join-Path (Split-Path $launcherExe) 'updater\update.exe'
+$updaterExe = Join-Path (Split-Path $launcherExe) 'update.exe'
 if (Test-Path $updaterExe) { Copy-Item $updaterExe (Join-Path $newDir 'update.exe') -Force }
 
 $readme  = "${README.replace(/\\/g, '\\\\').replace(/"/g, '`"').replace(/\n/g, '`n').replace(/\r/g, '`r')}"
