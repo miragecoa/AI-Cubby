@@ -1024,23 +1024,24 @@ app.whenReady().then(() => {
     }
     // 清理所有旧的 electron.app.* 启动项
     // Electron 用 "electron.app.{productName}" 作为注册表 key，改名后旧项会残留
-    // 用 PowerShell + .NET 读注册表，避免 reg.exe 的 GBK 编码问题
+    // 用 reg.exe 查询+删除，避免 PowerShell 兼容性问题
     try {
       const { execSync } = require('child_process')
-      const ps = `
-        $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\\Microsoft\\Windows\\CurrentVersion\\Run', $true)
-        if ($k) {
-          $k.GetValueNames() | Where-Object { $_ -like 'electron.app.*' } | ForEach-Object {
-            $k.DeleteValue($_)
-            Write-Output "Removed: $_"
-          }
-          $k.Close()
+      const regKey = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+      const out = execSync(`reg query "${regKey}" 2>nul`, { encoding: 'utf8', timeout: 5000 })
+      const lines = out.split('\n')
+      for (const line of lines) {
+        const match = line.match(/^\s+(electron\.app\.\S+)\s+REG_SZ/i)
+        if (match) {
+          try {
+            execSync(`reg delete "${regKey}" /v "${match[1]}" /f 2>nul`, { timeout: 3000 })
+            console.log('[AutoStart] Removed:', match[1])
+          } catch {}
         }
-      `.replace(/\n/g, ' ')
-      const out = execSync(`powershell.exe -NoProfile -Command "${ps}"`, { encoding: 'utf8', timeout: 5000 })
-      if (out.trim()) console.log('[AutoStart]', out.trim())
-    } catch (e) {
-      console.error('[AutoStart] Registry cleanup failed:', e)
+      }
+    } catch (e: any) {
+      // reg query returns error code 1 if key has no values — not a real error
+      if (e?.status !== 1) console.error('[AutoStart] Registry cleanup failed:', e?.message)
     }
 
     if (!userDisabled) {

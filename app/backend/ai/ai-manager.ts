@@ -246,9 +246,9 @@ async function ensureLlamaFiles(): Promise<{ serverPath: string; modelPath: stri
     await downloadFile(`${CDN}/${LLAMA_ZIP}?_t=${Date.now()}`, zipPath, '下载 AI 模块')
     log('extracting...')
     emitProgress({ stage: '解压 AI 模块', percent: 80 })
-    // Extract using PowerShell (available on all Windows)
+    // Extract using tar (built into Windows 10+, no PowerShell dependency)
     const { execSync } = require('child_process')
-    execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${dir}' -Force"`, { timeout: 60000 })
+    execSync(`tar -xf "${zipPath}" -C "${dir}"`, { timeout: 120000 })
     // Clean up zip
     try { require('fs').unlinkSync(zipPath) } catch {}
     // Verify files exist after extraction

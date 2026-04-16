@@ -225,45 +225,50 @@ export async function applyAndRestart(): Promise<void> {
     : join(appDir, 'AI资源管家.exe')
   const pid = process.pid
 
-  // Fetch updater script from R2. Beta channel uses updater-beta.ps1 which includes
-  // migration cleanup for the core/ layout. Stable uses updater.ps1 (unchanged).
-  const isBetaChannel = getSetting('updateChannel') === 'beta'
-  const updaterScript = isBetaChannel ? 'updater-beta.ps1' : 'updater.ps1'
-  const resp = await fetchWithTimeout(
-    `${R2_PUBLIC_URL}/${updaterScript}?_t=${Date.now()}`,
-    { cache: 'no-store', headers: { 'User-Agent': 'AI-Resource-Manager-Updater' } }
-  )
-  if (!resp.ok) throw new Error(`[Updater] Failed to fetch updater script from R2: HTTP ${resp.status}`)
-
-  const template = await resp.text()
-  const script = template
-    .replace(/__ZIP_PATH__/g, downloadedZipPath)
-    .replace(/__APP_DIR__/g, appDir)
-    .replace(/__EXE_PATH__/g, exePath)
-    .replace(/__PID__/g, String(pid))
-
-  // Write PS1 to disk with UTF-8 BOM (required for PowerShell 5.1 with non-ASCII paths).
-  // Previously this was Base64-encoded into a single -EncodedCommand line inside the .cmd,
-  // which can silently fail on Win11 when the encoded string exceeds cmd.exe's 8191-char limit.
+  // Write updater .cmd that uses only built-in Windows commands (no PowerShell).
+  // Uses tar (built into Win10+) for zip extraction and tasklist for process wait.
   const tempDir = dirname(downloadedZipPath)
-  const psPath = join(tempDir, 'update.ps1')
-  writeFileSync(psPath, '\uFEFF' + script, 'utf8')
-
   const batPath = join(tempDir, 'update.cmd')
 
-  // IMPORTANT: the .cmd file content must be pure ASCII.
-  // cmd.exe reads .cmd files using the OEM code page (e.g. GBK on Chinese Windows),
-  // so any non-ASCII bytes written as UTF-8 would be garbled.
-  // Use %~dp0 (the .cmd's own directory, resolved by cmd.exe via wide-char API)
-  // to reference sibling files — this avoids embedding the appDir path (which may
-  // contain Chinese/special characters) anywhere in the .cmd content.
+  // Write helper files: zip path and app dir path (avoids embedding non-ASCII in .cmd)
+  writeFileSync(join(tempDir, 'update_zip.txt'), downloadedZipPath, 'utf8')
+  writeFileSync(join(tempDir, 'update_app.txt'), appDir, 'utf8')
+  writeFileSync(join(tempDir, 'update_exe.txt'), exePath, 'utf8')
+
+  // .cmd content is pure ASCII — uses %~dp0 and reads paths from helper files
   writeFileSync(batPath, [
     '@echo off',
     'echo [%date% %time%] Updater started > "%~dp0update.log"',
-    'echo [%date% %time%] Running extraction >> "%~dp0update.log"',
-    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" >> "%~dp0update.log" 2>&1',
-    'echo [%date% %time%] PowerShell exited with code %ERRORLEVEL% >> "%~dp0update.log"',
-    'if %ERRORLEVEL% neq 0 pause',
+    '',
+    `echo [%%date%% %%time%%] Waiting for PID ${pid} >> "%~dp0update.log"`,
+    `:waitloop`,
+    `tasklist /FI "PID eq ${pid}" 2>nul | find "${pid}" >nul`,
+    `if not errorlevel 1 (`,
+    `  timeout /t 1 /nobreak >nul`,
+    `  goto waitloop`,
+    `)`,
+    'echo [%date% %time%] Process exited >> "%~dp0update.log"',
+    '',
+    'echo [%date% %time%] Extracting update >> "%~dp0update.log"',
+    'set /p ZIPPATH=<"%~dp0update_zip.txt"',
+    'set /p APPDIR=<"%~dp0update_app.txt"',
+    'set /p EXEPATH=<"%~dp0update_exe.txt"',
+    'tar -xf "%ZIPPATH%" -C "%APPDIR%" >> "%~dp0update.log" 2>&1',
+    'echo [%date% %time%] tar exited with code %ERRORLEVEL% >> "%~dp0update.log"',
+    'if %ERRORLEVEL% neq 0 (',
+    '  echo [%date% %time%] Extraction failed >> "%~dp0update.log"',
+    '  pause',
+    '  exit /b 1',
+    ')',
+    '',
+    'echo [%date% %time%] Restarting app >> "%~dp0update.log"',
+    'start "" "%EXEPATH%" --hidden',
+    'echo [%date% %time%] Done >> "%~dp0update.log"',
+    '',
+    'del "%ZIPPATH%" 2>nul',
+    'del "%~dp0update_zip.txt" 2>nul',
+    'del "%~dp0update_app.txt" 2>nul',
+    'del "%~dp0update_exe.txt" 2>nul',
   ].join('\r\n') + '\r\n')
 
   try {
