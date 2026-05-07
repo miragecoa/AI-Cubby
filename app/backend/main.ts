@@ -754,16 +754,11 @@ function createWindow(): void {
     // 页面加载完成后重新应用保存的标题（防止 HTML <title> 覆盖）
     mainWindow?.setTitle(savedAppTitle)
     const showOnAutoStart = getSetting('showOnAutoStart') === 'true'
-    const _bootMsg = `[Boot] launchedHidden=${launchedHidden} showOnAutoStart=${showOnAutoStart} argv=${JSON.stringify(process.argv)}`
-    console.log(_bootMsg)
-    try {
-      const _logDir = dirname(process.env.LAUNCHER_EXE ?? process.execPath)
-      writeFileSync(join(_logDir, 'boot_debug.log'), _bootMsg + '\r\n', { flag: 'a' })
-    } catch { /* ignore */ }
+    // 无论是否隐藏启动，都先恢复最大化状态，确保后续 show() 时窗口尺寸正确
+    if (wasMaximized) mainWindow?.maximize()
     if (!launchedHidden || showOnAutoStart) {
       console.log('[Boot] SHOWING window')
       mainWindow?.setSkipTaskbar(false)
-      if (wasMaximized) mainWindow?.maximize()
       mainWindow?.show()
       drawerWindow?.hide()
     } else {
