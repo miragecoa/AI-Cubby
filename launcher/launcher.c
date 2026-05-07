@@ -86,13 +86,30 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmd
     /* ── 6. Launch core\AI-Cubby.exe via CreateProcessW ─────────────────
        Use CreateProcessW instead of ShellExecuteExW so the launcher process
        exits immediately — ShellExecuteExW with SEE_MASK_NOASYNC can block.   */
+    /* Parse args from GetCommandLineW() — lpCmdLine from wWinMain is NULL
+       on x64 when compiled with /ENTRY:wWinMain /NODEFAULTLIB (no CRT startup
+       code to populate the WinMain parameters).  GetCommandLineW() is always
+       reliable regardless of CRT linkage. */
+    LPWSTR fullCmd = GetCommandLineW();
+    LPWSTR args = fullCmd;
+    /* Skip the launcher exe path (may be quoted) */
+    if (args && args[0] == L'"') {
+        args++; /* skip opening quote */
+        while (*args && *args != L'"') args++;
+        if (*args) args++; /* skip closing quote */
+    } else if (args) {
+        while (*args && *args != L' ') args++;
+    }
+    /* Skip whitespace between exe and first arg */
+    while (args && *args == L' ') args++;
+
     wchar_t cmdLine[MAX_PATH * 2] = {0};
     lstrcpynW(cmdLine, L"\"", MAX_PATH * 2);
     lstrcatW(cmdLine, target);
     lstrcatW(cmdLine, L"\"");
-    if (lpCmdLine && lpCmdLine[0]) {
+    if (args && args[0]) {
         lstrcatW(cmdLine, L" ");
-        lstrcatW(cmdLine, lpCmdLine);
+        lstrcatW(cmdLine, args);
     }
 
     STARTUPINFOW si = {0};
