@@ -830,7 +830,10 @@ if (!gotLock) {
   // 导致 globalShortcut 在 app ready 之前被调用而崩溃
   process.exit(0)
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, commandLine) => {
+    // If the second instance was also launched hidden (e.g., duplicate autostart entries
+    // firing at boot), do NOT show the window — just let the first instance stay hidden.
+    if (commandLine?.includes('--hidden')) return
     if (mainWindow) {
       incWakeCount()
       mainWindow.setSkipTaskbar(false)
@@ -1031,8 +1034,8 @@ app.whenReady().then(() => {
       const out = execSync(`reg query "${REG_KEY}" 2>nul`, { encoding: 'utf8', timeout: 5000 })
       const lines = out.split('\n')
       for (const line of lines) {
-        // Delete legacy electron.app.* entries AND our custom key (self-heal on name change)
-        const match = line.match(/^\s+((?:electron\.app\.\S+|AI-Cubby))\s+REG_SZ/i)
+        // Delete legacy electron.app.*, com.squirrel.*AI-Cubby, and our custom key
+        const match = line.match(/^\s+((?:electron\.app\.\S+|com\.squirrel\.\S*AI-Cubby\S*|AI-Cubby))\s+REG_SZ/i)
         if (match) {
           try {
             execSync(`reg delete "${REG_KEY}" /v "${match[1]}" /f 2>nul`, { timeout: 3000 })
