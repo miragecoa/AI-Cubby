@@ -236,10 +236,13 @@ export async function applyAndRestart(): Promise<void> {
   writeFileSync(join(tempDir, 'update_app.txt'), appDir, 'utf8')
   writeFileSync(join(tempDir, 'update_exe.txt'), exePath, 'utf8')
 
-  // .cmd content is pure ASCII — uses %~dp0 and reads paths from helper files
+  // .cmd content is pure ASCII — uses %~dp0 and reads paths from helper files.
+  // chcp 65001 switches cmd to UTF-8 so set /p correctly reads UTF-8 helper files
+  // (default system code page on Chinese Windows is GBK, which mangles UTF-8 paths).
   writeFileSync(batPath, [
     '@echo off',
     'echo [%date% %time%] Updater started > "%~dp0update.log"',
+    'chcp 65001 >nul 2>&1',
     '',
     `echo [%%date%% %%time%%] Waiting for PID ${pid} >> "%~dp0update.log"`,
     `:waitloop`,
