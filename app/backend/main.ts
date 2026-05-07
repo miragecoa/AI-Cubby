@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, NativeImag
 import { join, dirname, extname, basename } from 'path'
 import { createHash } from 'crypto'
 import { deflateSync } from 'zlib'
-import { existsSync, createReadStream, statSync, copyFileSync, unlinkSync, readFileSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, createReadStream, statSync, copyFileSync, unlinkSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { writeFile } from 'fs/promises'
 // import { pathToFileURL } from './utils/fs-safe'
 import { execFile } from 'child_process'
@@ -754,12 +754,20 @@ function createWindow(): void {
     // 页面加载完成后重新应用保存的标题（防止 HTML <title> 覆盖）
     mainWindow?.setTitle(savedAppTitle)
     const showOnAutoStart = getSetting('showOnAutoStart') === 'true'
+    const _bootMsg = `[Boot] launchedHidden=${launchedHidden} showOnAutoStart=${showOnAutoStart} argv=${JSON.stringify(process.argv)}`
+    console.log(_bootMsg)
+    try {
+      const _logDir = dirname(process.env.LAUNCHER_EXE ?? process.execPath)
+      writeFileSync(join(_logDir, 'boot_debug.log'), _bootMsg + '\r\n', { flag: 'a' })
+    } catch { /* ignore */ }
     if (!launchedHidden || showOnAutoStart) {
+      console.log('[Boot] SHOWING window')
       mainWindow?.setSkipTaskbar(false)
       if (wasMaximized) mainWindow?.maximize()
       mainWindow?.show()
       drawerWindow?.hide()
     } else {
+      console.log('[Boot] HIDING window (autostart silent mode)')
       // 自动启动隐藏模式：任务栏不显示，tray + 悬浮窗为入口
       mainWindow?.setSkipTaskbar(true)
       if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
