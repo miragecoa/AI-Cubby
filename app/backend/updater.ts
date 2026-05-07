@@ -266,7 +266,7 @@ export async function applyAndRestart(): Promise<void> {
     ')',
     '',
     'echo [%date% %time%] Restarting app >> "%~dp0update.log"',
-    'start "" "%EXEPATH%" --hidden',
+    'start "" "%EXEPATH%"',
     'echo [%date% %time%] Done >> "%~dp0update.log"',
     '',
     'del "%ZIPPATH%" 2>nul',
