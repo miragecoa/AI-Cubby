@@ -1025,27 +1025,22 @@ app.whenReady().then(() => {
         console.log('[AutoStart] Self-healed LAUNCHER_EXE:', inferred)
       }
     }
-    // 清理所有旧的 electron.app.* 和 AI-Cubby 启动项
-    // setLoginItemSettings 在自定义 path 时不可靠（args 可能被丢弃），改用 reg.exe 直写
+    // 清理所有旧的 electron.app.* / com.squirrel.*AI-Cubby* / AI-Cubby 启动项
+    // 必须用 PowerShell .NET Registry API，reg.exe 输出为系统 code page（中文 Windows = GBK），
+    // 含中文的 key 名读取后乱码，reg delete 找不到条目。
     const REG_NAME = 'AI-Cubby'
     const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
     try {
-      const { execSync } = require('child_process')
-      const out = execSync(`reg query "${REG_KEY}" 2>nul`, { encoding: 'utf8', timeout: 5000 })
-      const lines = out.split('\n')
-      for (const line of lines) {
-        // Delete legacy electron.app.*, com.squirrel.*AI-Cubby, and our custom key
-        const match = line.match(/^\s+((?:electron\.app\.\S+|com\.squirrel\.\S*AI-Cubby\S*|AI-Cubby))\s+REG_SZ/i)
-        if (match) {
-          try {
-            execSync(`reg delete "${REG_KEY}" /v "${match[1]}" /f 2>nul`, { timeout: 3000 })
-            console.log('[AutoStart] Removed:', match[1])
-          } catch {}
-        }
-      }
+      const { execFileSync } = require('child_process')
+      const ps = [
+        `$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run',$true)`,
+        `if($k){$k.GetValueNames()|Where-Object{$_ -like 'electron.app.*' -or $_ -like 'com.squirrel.*AI-Cubby*' -or $_ -eq 'AI-Cubby'}|ForEach-Object{try{$k.DeleteValue($_);Write-Host "Removed: $_"}catch{}};$k.Close()}`,
+      ].join(';')
+      const out = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps],
+        { encoding: 'utf8', timeout: 8000 })
+      if (out.trim()) console.log('[AutoStart] Cleanup:', out.trim())
     } catch (e: any) {
-      // reg query returns error code 1 if key has no values — not a real error
-      if (e?.status !== 1) console.error('[AutoStart] Registry cleanup failed:', e?.message)
+      console.error('[AutoStart] Registry cleanup failed:', e?.message)
     }
 
     if (!userDisabled) {
