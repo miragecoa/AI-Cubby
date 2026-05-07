@@ -1022,19 +1022,20 @@ app.whenReady().then(() => {
         console.log('[AutoStart] Self-healed LAUNCHER_EXE:', inferred)
       }
     }
-    // 清理所有旧的 electron.app.* 启动项
-    // Electron 用 "electron.app.{productName}" 作为注册表 key，改名后旧项会残留
-    // 用 reg.exe 查询+删除，避免 PowerShell 兼容性问题
+    // 清理所有旧的 electron.app.* 和 AI-Cubby 启动项
+    // setLoginItemSettings 在自定义 path 时不可靠（args 可能被丢弃），改用 reg.exe 直写
+    const REG_NAME = 'AI-Cubby'
+    const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
     try {
       const { execSync } = require('child_process')
-      const regKey = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-      const out = execSync(`reg query "${regKey}" 2>nul`, { encoding: 'utf8', timeout: 5000 })
+      const out = execSync(`reg query "${REG_KEY}" 2>nul`, { encoding: 'utf8', timeout: 5000 })
       const lines = out.split('\n')
       for (const line of lines) {
-        const match = line.match(/^\s+(electron\.app\.\S+)\s+REG_SZ/i)
+        // Delete legacy electron.app.* entries AND our custom key (self-heal on name change)
+        const match = line.match(/^\s+((?:electron\.app\.\S+|AI-Cubby))\s+REG_SZ/i)
         if (match) {
           try {
-            execSync(`reg delete "${regKey}" /v "${match[1]}" /f 2>nul`, { timeout: 3000 })
+            execSync(`reg delete "${REG_KEY}" /v "${match[1]}" /f 2>nul`, { timeout: 3000 })
             console.log('[AutoStart] Removed:', match[1])
           } catch {}
         }
@@ -1045,12 +1046,23 @@ app.whenReady().then(() => {
     }
 
     if (!userDisabled) {
-      app.setLoginItemSettings({ openAtLogin: true, path: exePath, args: ['--hidden'] })
-      setSetting('autoStartInitialized', 'true')
-      console.log('[AutoStart] Registered, exe:', exePath)
+      // Write directly via reg.exe to guarantee --hidden arg is preserved.
+      // setLoginItemSettings with custom path silently drops args on some Windows configurations.
+      // Use execFileSync (not execSync) to avoid shell quoting issues with paths containing spaces.
+      try {
+        const { execFileSync } = require('child_process')
+        // Registry value stored as: "C:\...\AI-Cubby.exe" --hidden
+        const regValue = `"${exePath}" --hidden`
+        execFileSync('reg', ['add', REG_KEY, '/v', REG_NAME, '/t', 'REG_SZ', '/d', regValue, '/f'], { timeout: 5000 })
+        setSetting('autoStartInitialized', 'true')
+        console.log('[AutoStart] Registered via reg.exe, exe:', exePath)
+      } catch (e: any) {
+        console.error('[AutoStart] reg add failed:', e?.message)
+        // Fallback to setLoginItemSettings
+        app.setLoginItemSettings({ openAtLogin: true, path: exePath, args: ['--hidden'] })
+      }
     } else {
       console.log('[AutoStart] Skipped (User disabled)')
-      app.setLoginItemSettings({ openAtLogin: false, path: exePath })
     }
   }
 

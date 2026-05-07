@@ -832,7 +832,20 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('loginItem:set', (_e, enable: boolean) => {
     if (app.isPackaged) {
       const exePath = process.env.LAUNCHER_EXE ?? process.execPath
-      app.setLoginItemSettings({ openAtLogin: enable, path: exePath, args: ['--hidden'] })
+      const REG_NAME = 'AI-Cubby'
+      const REG_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+      try {
+        const { execFileSync } = require('child_process')
+        if (enable) {
+          const regValue = `"${exePath}" --hidden`
+          execFileSync('reg', ['add', REG_KEY, '/v', REG_NAME, '/t', 'REG_SZ', '/d', regValue, '/f'], { timeout: 5000 })
+        } else {
+          execFileSync('reg', ['delete', REG_KEY, '/v', REG_NAME, '/f'], { timeout: 3000, stdio: 'ignore' })
+        }
+      } catch (e: any) {
+        console.error('[AutoStart] loginItem:set reg failed:', e?.message)
+        app.setLoginItemSettings({ openAtLogin: enable, path: exePath, args: enable ? ['--hidden'] : [] })
+      }
     }
     // 记录用户的手动选择，防止自动修正逻辑覆盖
     setSetting('autoStartDisabled', enable ? 'false' : 'true')

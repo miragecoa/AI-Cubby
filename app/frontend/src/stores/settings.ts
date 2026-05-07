@@ -461,8 +461,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // Glass mode: restore saved preference; default ON for new users
     const shouldGlass = glassEnabledVal === 'true' || glassEnabledVal === null
+    glassEnabled.value = shouldGlass
     if (shouldGlass) {
-      glassEnabled.value = true
       document.documentElement.classList.add('glass-mode')
       _applyGlassVars(glassOpacity.value)
     }
