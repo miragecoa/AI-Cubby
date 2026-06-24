@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Shared image/icon cache with LRU eviction + concurrency-limited loading.
  *
  * Replaces the unbounded module-level Maps in ResourceCard.vue and
  * the separate listThumbCache in LibraryPage.vue.
  */
 
-// ── LRU Cache ────────────────────────────────────────────────────────────────
+// 鈹€鈹€ LRU Cache 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 class LRUCache<V> {
   private map = new Map<string, V>()
@@ -40,13 +40,15 @@ class LRUCache<V> {
   forEach(fn: (key: string, value: V) => void): void { this.map.forEach((v, k) => fn(k, v)) }
 }
 
-// ── Concurrency-limited queue ────────────────────────────────────────────────
+// 鈹€鈹€ Concurrency-limited queue 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type LoadFn = () => Promise<string | null>
 interface QueueItem { key: string; fn: LoadFn; resolve: (v: string | null) => void }
 
-const MAX_CONCURRENT = 3  // IPC 并发数，后端有独立队列限制实际 native 调用数
+const MAX_CONCURRENT = 2
 let _running = 0
+export const DEFAULT_GRID_THUMB_SIZE = 64
+let _gridThumbSize = DEFAULT_GRID_THUMB_SIZE
 const _queue: QueueItem[] = []
 let _paused = false
 let _onIdleCallback: (() => void) | null = null
@@ -114,9 +116,9 @@ function flush() {
   }
 }
 
-// ── Shared caches ────────────────────────────────────────────────────────────
+// 鈹€鈹€ Shared caches 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-let _imgCache = new LRUCache<string | null>(300)  // 动态调整：pageSize + 100
+let _imgCache = new LRUCache<string | null>(300)  // 鍔ㄦ€佽皟鏁达細pageSize + 100
 
 /** Resize the image cache (call when pageSize changes). */
 export function resizeImageCache(pageSize: number): void {
@@ -124,20 +126,33 @@ export function resizeImageCache(pageSize: number): void {
   if (newSize === _imgCache.capacity) return
   const old = _imgCache
   _imgCache = new LRUCache<string | null>(newSize)
-  // 迁移旧缓存
-  old.forEach((k, v) => _imgCache.set(k, v))
+  // 杩佺Щ鏃х紦瀛?  old.forEach((k, v) => _imgCache.set(k, v))
 }
 const _iconCache = new LRUCache<string | null>(100)
 const _savedCovers = new Set<string>()
+
+function normalizeThumbSize(size: number): number {
+  return Math.min(512, Math.max(64, Math.round(size)))
+}
+
+export function getGridThumbSize(): number {
+  return _gridThumbSize
+}
+
+export function setGridThumbSize(size: number): void {
+  const next = normalizeThumbSize(size)
+  if (next === _gridThumbSize) return
+  _gridThumbSize = next
+}
 
 /** Get a cached image (cover, thumbnail). Returns undefined if not cached. */
 export function getCached(path: string): string | null | undefined {
   return _imgCache.get(path)
 }
 
-/** Get cached image at any size (400px or 64px). Returns undefined if not cached. */
+/** Get cached image at any size (grid thumbnail, legacy full-size, or 64px). Returns undefined if not cached. */
 export function getCachedAnySize(path: string): string | null | undefined {
-  return _imgCache.get(path) ?? _imgCache.get(`${path}@64`)
+  return _imgCache.get(`${path}@${_gridThumbSize}`) ?? _imgCache.get(path) ?? _imgCache.get(`${path}@64`) ?? _imgCache.get(`${path}@256`)
 }
 
 /** Check if path is already cached or loading. */
@@ -147,11 +162,13 @@ export function isCached(path: string): boolean {
 
 /** Load an image via IPC, with concurrency limiting and LRU caching. */
 export function loadImage(path: string): Promise<string | null> {
-  if (_imgCache.has(path)) return Promise.resolve(_imgCache.get(path) ?? null)
-  return enqueue(path, () => window.api.files.readImage(path))
+  const size = _gridThumbSize
+  const key = `${path}@${size}`
+  if (_imgCache.has(key)) return Promise.resolve(_imgCache.get(key) ?? null)
+  return enqueue(key, () => window.api.files.readImage(path, size))
 }
 
-/** Load a small thumbnail (64px) for list view — ~10x less IPC data than full 400px. */
+/** Load a small thumbnail (64px) for list view 鈥?~10x less IPC data than full 400px. */
 export function loadImageSmall(path: string): Promise<string | null> {
   const key = `${path}@64`
   if (_imgCache.has(key)) return Promise.resolve(_imgCache.get(key) ?? null)
@@ -177,7 +194,7 @@ export function getCachedIcon(path: string): string | null | undefined {
 export function hasSavedCover(id: string): boolean { return _savedCovers.has(id) }
 export function markCoverSaved(id: string): void { _savedCovers.add(id) }
 
-/** Cancel pending loads but keep cached images (for view switching — preserves preloaded data). */
+/** Cancel pending loads but keep cached images (for view switching 鈥?preserves preloaded data). */
 export function cancelPendingLoads(): void {
   while (_queue.length > 0) {
     const item = _queue.shift()!
@@ -211,7 +228,7 @@ export function cacheStats() {
 const dlog = (...args: unknown[]) => { try { (window as any).__debugLog?.(...args) } catch {} }
 
 
-// ── Visible index range (managed by LibraryPage scroll tracking) ─────────────
+// 鈹€鈹€ Visible index range (managed by LibraryPage scroll tracking) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 let _visStart = 0
 let _visEnd = 200

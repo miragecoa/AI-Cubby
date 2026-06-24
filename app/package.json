@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "test": "node scripts/test-default.mjs",
+    "perf:app-tab": "npm run build && node scripts/perf-app-tab.mjs",
+    "visual:smoke": "npm run build && node scripts/visual-smoke.mjs",
+    "visual:open": "npm run build && node scripts/visual-open.mjs",
     "package": "electron-vite build && electron-builder && node ../scripts/repack.cjs",
     "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
@@ -16,6 +20,7 @@
     "electron": "^29.1.0",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.3.0",
+    "playwright-core": "^1.61.0",
     "typescript": "^5.4.2",
     "vite": "^5.2.0",
     "vue-tsc": "^2.0.11"

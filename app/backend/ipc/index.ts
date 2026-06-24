@@ -71,7 +71,8 @@ const thumbCache = new LRUMap<string | null>(200)
 // 不限制会阻塞 Electron 主进程导致 UI 卡顿
 let _thumbRunning = 0
 const _thumbQueue: Array<{ resolve: (v: string | null) => void; fn: () => Promise<string | null> }> = []
-const THUMB_MAX_CONCURRENT = 3
+const THUMB_MAX_CONCURRENT = 2
+const DEFAULT_THUMB_SIZE = 64
 
 function enqueueThumb(fn: () => Promise<string | null>): Promise<string | null> {
   return new Promise<string | null>(resolve => {
@@ -109,7 +110,7 @@ async function extractAudioCover(filePath: string): Promise<string | null> {
 // PowerShell 并发限制：避免同时 spawn 过多进程卡死系统
 let _psRunning = 0
 const _psQueue: Array<{ resolve: (v: string | null) => void; filePath: string }> = []
-const PS_MAX_CONCURRENT = 2
+const PS_MAX_CONCURRENT = 1
 
 function getIconViaShellItemFactory(filePath: string): Promise<string | null> {
   return new Promise<string | null>((resolve) => {
@@ -584,8 +585,8 @@ export function registerIpcHandlers(): void {
 
   // 生成缩略图（用系统缓存，对中文路径完全兼容，返回 PNG data URL）
   ipcMain.handle('files:readImage', async (_e, filePath: string, size?: number) => {
-    const dim = size ?? 400
-    const cacheKey = dim < 400 ? `${filePath}@${dim}` : filePath
+    const dim = size ?? DEFAULT_THUMB_SIZE
+    const cacheKey = `${filePath}@${dim}`
     if (thumbCache.has(cacheKey)) return thumbCache.get(cacheKey) ?? null
     const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase()
     const isAudio = AUDIO_EXTS.has(ext)

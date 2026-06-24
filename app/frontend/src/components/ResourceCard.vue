@@ -193,7 +193,7 @@
 <script setup lang="ts">
 import { ref, computed, watchEffect, watch, nextTick, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getCached, getCachedAnySize, isCached, loadImage, loadIcon, getCachedIcon, hasSavedCover, markCoverSaved, cancelQueued, isIndexVisible, getVisVersion } from '../utils/image-cache'
+import { getCached, getCachedAnySize, loadImage, loadIcon, getCachedIcon, hasSavedCover, markCoverSaved } from '../utils/image-cache'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
@@ -286,15 +286,6 @@ const settingsStore = useSettingsStore()
 const showKillConfirm = ref(false)
 const showIgnoreWarn = ref(false)
 const cardRef = ref<HTMLElement | null>(null)
-
-// ── 可见性追踪：基于滚动位置的 index 范围判断 ────────────────
-const _visCheck = ref(0)  // 用于触发响应式更新
-const isNearViewport = computed(() => { void _visCheck.value; return isIndexVisible(props.itemIndex) })
-
-// 定期同步全局可见版本号 → 触发 isNearViewport 重新计算
-let _visTimer: ReturnType<typeof setInterval> | null = null
-_visTimer = setInterval(() => { _visCheck.value = getVisVersion() }, 300)
-onUnmounted(() => { if (_visTimer) clearInterval(_visTimer) })
 
 // ── micro 悬浮提示 ──────────────────────────────────────────────────
 const showMicroTooltip = ref(false)

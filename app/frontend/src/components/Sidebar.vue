@@ -688,6 +688,9 @@ const plusIcon        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 
 /* ── 底部设置按钮 ─────────────────────────────────────────────── */
 .sidebar-footer {
+  position: relative;
+  z-index: 2;
+  background: var(--surface);
   border-top: 1px solid var(--border);
   padding: 4px 0;
 }

@@ -259,6 +259,7 @@ export default {
     displayFileSize: 'File size',
     displayPinRunning: 'Pin running apps',
     pageSize: 'Per page',
+    thumbnailSize: 'Thumbnail px',
     displayCardBg: 'Card background',
     sortLastUsed: 'Last used',
     sortRecentlyAdded: 'Recently added',

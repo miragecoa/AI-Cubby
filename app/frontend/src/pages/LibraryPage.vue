@@ -513,10 +513,23 @@
                   <div class="page-size-row">
                     <span class="tfi-label">{{ t('library.pageSize') }}</span>
                     <select class="page-size-select" :value="settingsStore.pageSize" @change="onPageSizeChange">
+                      <option :value="50">50</option>
                       <option :value="100">100</option>
                       <option :value="200">200</option>
                       <option :value="500">500</option>
                     </select>
+                  </div>
+                  <div class="page-size-row">
+                    <span class="tfi-label">{{ t('library.thumbnailSize') }}</span>
+                    <input
+                      class="thumb-size-input"
+                      type="number"
+                      min="64"
+                      max="512"
+                      step="32"
+                      :value="settingsStore.thumbnailSize"
+                      @change="onThumbnailSizeChange"
+                    />
                   </div>
                 </div>
               </div>
@@ -3268,6 +3281,11 @@ onMounted(async () => {
   resizeImageCache(settingsStore.pageSize)
   // settings 异步加载完后 pageSize 可能变化，自动 resize
   watch(() => settingsStore.pageSize, (size) => resizeImageCache(size))
+  setGridThumbSize(settingsStore.thumbnailSize)
+  watch(() => settingsStore.thumbnailSize, (size) => {
+    setGridThumbSize(size)
+    clearImageCache()
+  })
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('dragover', onDocDragOver)
   document.addEventListener('click', onDocCloseTypeFilter)
@@ -3343,22 +3361,8 @@ onMounted(async () => {
     setTimeout(tryAutoFavicons, 75_000)
   }, 15_000)
 
-  // 启动后静默补齐所有没有封面的应用/游戏图标（user_modified=0 表示自动生成，可安全重取）
-  // 5s 后开始，每项间隔 200ms，避免阻塞启动
-  setTimeout(async () => {
-    const missing = store.items.filter(r => (r.type === 'app' || r.type === 'game') && !r.cover_path && !r.user_modified)
-    for (const resource of missing) {
-      try {
-        const icon = await window.api.files.getAppIcon(resource.file_path)
-        if (!icon) continue
-        const coverPath = await window.api.files.saveCover(resource.id, icon)
-        if (!coverPath) continue
-        const current = store.items.find(r => r.id === resource.id)
-        store.addOrUpdate({ ...(current || resource), cover_path: coverPath })
-      } catch { /* ignore */ }
-      await new Promise(r => setTimeout(r, 200))
-    }
-  }, 5_000)
+  // App/game icons are generated lazily by visible cards and rows.
+  // Avoid a whole-library icon backfill on launch; it is expensive on low-end PCs.
 })
 
 const unsubWake = window.api.onWake(() => {
@@ -3428,7 +3432,7 @@ function preloadOtherView() {
         if (p) loadImageSmall(p)
       }
     } else {
-      // 当前列表(64px) → 预加载网格的 400px 版本
+      // 当前列表(64px) → 预加载网格的默认缩略图版本
       const p = r.cover_path || ((r.type === 'image' || r.type === 'video') ? r.file_path : '')
       if (p) loadImage(p)
     }
@@ -3439,6 +3443,18 @@ function onPageSizeChange(e: Event) {
   const val = parseInt((e.target as HTMLSelectElement).value)
   settingsStore.setPageSize(val)
   resizeImageCache(val)
+  currentPage.value = 1
+  clearImageCache()
+  if (gridScrollRef.value) gridScrollRef.value.scrollTop = 0
+}
+
+function onThumbnailSizeChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const raw = parseInt(input.value, 10)
+  const val = Math.min(512, Math.max(64, isNaN(raw) ? 64 : raw))
+  input.value = String(val)
+  settingsStore.setThumbnailSize(val)
+  setGridThumbSize(val)
   currentPage.value = 1
   clearImageCache()
   if (gridScrollRef.value) gridScrollRef.value.scrollTop = 0
@@ -3608,7 +3624,7 @@ function onColResizeEnd() {
 }
 
 // ListRow 组件自行管理缩略图（同 ResourceCard），此处只需 preload/clearImageCache
-import { getCached, loadImage, loadImageSmall, preload, clearImageCache, cancelPendingLoads, cancelQueued, reverseQueue, onQueueIdle, resizeImageCache, setPaused } from '../utils/image-cache'
+import { getCached, loadImage, loadImageSmall, preload, clearImageCache, cancelPendingLoads, cancelQueued, reverseQueue, onQueueIdle, resizeImageCache, setGridThumbSize, setPaused } from '../utils/image-cache'
 
 // 切换视图时：回到顶部、重置渲染窗口、清理上一模式资源
 watch(() => viewMode.value, (mode) => {
@@ -5141,6 +5157,7 @@ async function deleteIgnored(filePath: string) {
   overflow: hidden;
   min-width: 0;
   position: relative;
+  z-index: 0;
 }
 
 .drop-overlay {
@@ -5196,6 +5213,7 @@ async function deleteIgnored(filePath: string) {
 
 .grid-scroll {
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -5562,7 +5580,10 @@ async function deleteIgnored(filePath: string) {
 .page-input { width: 28px; text-align: center; background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 3px; color: var(--text); font-size: 11px; padding: 1px 2px; font-variant-numeric: tabular-nums; outline: none; }
 .page-input:focus { border-color: var(--accent); }
 .page-size-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; }
-.page-size-select { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 4px; font-size: 11px; cursor: pointer; }
+.page-size-select,
+.thumb-size-input { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
+.page-size-select { cursor: pointer; }
+.thumb-size-input { width: 58px; }
 .sort-bar-spacer { flex: 1; }
 .sort-bar-right {
   display: flex;
@@ -5874,9 +5895,12 @@ async function deleteIgnored(filePath: string) {
   display: flex;
   flex-direction: row;
   flex-shrink: 0;
+  position: relative;
+  z-index: 5;
   width: 212px;      /* 22px toggle + 190px content */
   border-left: 1px solid var(--border);
   background: var(--surface);
+  box-shadow: -1px 0 0 rgba(255,255,255,0.04);
   transition: width 0.22s ease;
   overflow: hidden;
 }
@@ -5921,6 +5945,7 @@ async function deleteIgnored(filePath: string) {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  background: var(--surface);
   overflow: hidden;
 }
 

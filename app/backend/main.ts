@@ -63,6 +63,13 @@ let dropImportItems: Array<{ type: string; title: string; file_path: string; met
 let masonryPaths: Array<{ path: string; title: string }> = []
 let tray: Tray | null = null
 let willQuit = false
+const isSmokeTest = process.env.AI_CUBBY_SMOKE === '1'
+if (!app.isPackaged) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8'))
+    if (pkg?.version) app.setVersion(pkg.version)
+  } catch { /* best effort for dev and visual smoke runs */ }
+}
 // 开机自启时 Windows 会传入 --hidden，此时不弹窗口
 const launchedHidden = process.argv.includes('--hidden')
 
@@ -1642,10 +1649,10 @@ ipcRenderer.on('debug:log',(_,l)=>addLine(l));
   )
 
   // 自动更新检查
-  initAutoUpdater(mainWindow!)
+  if (!isSmokeTest) initAutoUpdater(mainWindow!)
 
   // 匿名日活心跳（静默，不影响用户体验）
-  initHeartbeat()
+  if (!isSmokeTest) initHeartbeat()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -1,5 +1,6 @@
 # Internal notes (local only, not for public repo)
 notes/
+AGENTS.md
 
 # Claude Code tooling (local only)
 .claude/
@@ -17,6 +18,7 @@ app/frontend/dist/
 app/dist/
 app/dist-build/
 release/
+artifacts/
 
 # User data (never commit)
 app/data/

@@ -14,6 +14,7 @@ export interface ProfileManifest {
 }
 
 function getAppDir(): string {
+  if (process.env.AI_CUBBY_PROFILE_ROOT) return process.env.AI_CUBBY_PROFILE_ROOT
   if (!app.isPackaged) return app.getAppPath()
   // Launched via launcher stub → LAUNCHER_EXE = root\AI-Cubby.exe
   if (process.env.LAUNCHER_EXE) return dirname(process.env.LAUNCHER_EXE)
