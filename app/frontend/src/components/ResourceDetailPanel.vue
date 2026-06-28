@@ -253,7 +253,7 @@ import { useSettingsStore } from '../stores/settings'
 const { t, locale } = useI18n()
 
 const props = defineProps<{ resource: Resource; showHint?: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; open: [resource: Resource] }>()
 
 const store = useResourceStore()
 const settingsStore = useSettingsStore()
@@ -480,7 +480,7 @@ async function removeTag(tagId: number) {
 }
 
 // ─── File actions ──────────────────────────────────────────────────
-function openFile() { window.api.files.openPath(props.resource.file_path) }
+function openFile() { emit('open', props.resource) }
 function showInFolder() { window.api.files.openInExplorer(props.resource.file_path) }
 function savePath() {
   const val = editPath.value.trim()

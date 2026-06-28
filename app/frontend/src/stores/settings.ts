@@ -320,6 +320,24 @@ export interface SidebarNavConfig {
 }
 
 const DEFAULT_SIDEBAR_NAV: SidebarNavConfig[] = NAV_ITEM_DEFS.map(d => ({ type: d.type, visible: d.defaultVisible !== false }))
+const LEGACY_SIDEBAR_BUILTIN_ORDER = ['all', 'game', 'app', 'image', 'video', 'comic', 'music', 'novel', 'folder', 'document', 'webpage', 'other']
+
+function migrateSidebarNavOrder(nav: SidebarNavConfig[]): { nav: SidebarNavConfig[]; changed: boolean } {
+  const builtinTypes = new Set(DEFAULT_SIDEBAR_NAV.map(x => x.type))
+  const builtinOrder = nav.filter(x => builtinTypes.has(x.type)).map(x => x.type)
+  const isLegacyOrder = builtinOrder.length === LEGACY_SIDEBAR_BUILTIN_ORDER.length
+    && builtinOrder.every((type, index) => type === LEGACY_SIDEBAR_BUILTIN_ORDER[index])
+  if (!isLegacyOrder) return { nav, changed: false }
+
+  const migrated = nav.map(x => ({ ...x }))
+  const appIndex = migrated.findIndex(x => x.type === 'app')
+  const docIndex = migrated.findIndex(x => x.type === 'document')
+  if (appIndex < 0 || docIndex < 0 || docIndex < appIndex) return { nav, changed: false }
+
+  const [doc] = migrated.splice(docIndex, 1)
+  migrated.splice(appIndex, 0, doc)
+  return { nav: migrated, changed: true }
+}
 
 export const useSettingsStore = defineStore('settings', () => {
   const monitorEnabled = ref(true)
@@ -341,7 +359,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const paletteId = ref<PaletteId>('indigo')
   const brightnessMode = ref<BrightnessMode>('neutral')
   const brightnessLevel = ref(50)  // 0=dark … 100=light, continuous
-  const glassEnabled = ref(true)
+  const glassEnabled = ref(false)
   const glassOpacity = ref(1.0)  // 0 = fully transparent, 1 = fully opaque
   const listColumns = ref<Record<string, number>>({ name: 300, size: 80, type: 70, date: 130, count: 70, tags: 200 })
   const appTitle = ref('AI小抽屉')
@@ -462,12 +480,14 @@ export const useSettingsStore = defineStore('settings', () => {
       if (!isNaN(parsed)) glassOpacity.value = Math.min(1, Math.max(0, parsed))
     }
 
-    // Glass mode: restore saved preference; default ON for new users
-    const shouldGlass = glassEnabledVal === 'true' || glassEnabledVal === null
+    // Glass mode: restore saved preference; default OFF for new users
+    const shouldGlass = glassEnabledVal === 'true'
     glassEnabled.value = shouldGlass
     if (shouldGlass) {
       document.documentElement.classList.add('glass-mode')
       _applyGlassVars(glassOpacity.value)
+    } else {
+      document.documentElement.classList.remove('glass-mode')
     }
 
     // Language: use saved value, or auto-detect for new users, default zh for existing
@@ -501,7 +521,11 @@ export const useSettingsStore = defineStore('settings', () => {
         for (const def of DEFAULT_SIDEBAR_NAV) {
           if (!knownTypes.has(def.type)) merged.push({ ...def })
         }
-        sidebarNav.value = merged
+        const migrated = migrateSidebarNavOrder(merged)
+        sidebarNav.value = migrated.nav
+        if (migrated.changed) {
+          await window.api.settings.set('sidebarNav', JSON.stringify(sidebarNav.value))
+        }
       } catch { /* keep default */ }
     }
 
@@ -914,8 +938,10 @@ export const useSettingsStore = defineStore('settings', () => {
     resourceSort.value = 'lastUsed'
     tagSort.value = 'lastUsed'
     offlineMode.value = false
+    glassEnabled.value = false
     sidebarNav.value = DEFAULT_SIDEBAR_NAV.map(x => ({ ...x }))
     applyThemeToRoot(themeVars.value)
+    document.documentElement.classList.remove('glass-mode')
     window.api.app.setZoom(zoom.value)
     await window.api.hotkey.set('Alt+Space')
     await Promise.all([
@@ -932,6 +958,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.settings.set('resourceSort', 'lastUsed'),
       window.api.settings.set('tagSort', 'lastUsed'),
       window.api.settings.set('offlineMode', 'false'),
+      window.api.settings.set('glassEnabled', 'false'),
       window.api.settings.set('sidebarNav', JSON.stringify(DEFAULT_SIDEBAR_NAV)),
     ])
   }

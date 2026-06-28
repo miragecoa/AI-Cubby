@@ -3,7 +3,7 @@ import * as mm from 'music-metadata'
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync, unlinkSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
 import { execFile, exec } from 'child_process'
-import { join, dirname, extname, basename } from 'path'
+import { join, dirname, extname, basename, normalize, relative } from 'path'
 import { domainToASCII } from 'url'
 import { isUNC } from '../utils/fs-safe'
 import {
@@ -20,7 +20,7 @@ import { dbPath, dataDir, getDb, clipboardGetItems, clipboardDeleteItem, clipboa
 import { getQuickPanelResources, setQuickPanel, batchSetQuickPanel, batchSetPinOrder, getAllPinGroups, createPinGroup, renamePinGroup, removePinGroup,
   setPinGroupForResource, setPinGroupOrder, setPinGroupCollapsed } from '../db/queries'
 import { checkForUpdate, downloadUpdate, applyAndRestart, skipUpdate, forceUpdate, getChangelog, getPendingUpdate } from '../updater'
-import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest } from '../db/profiles'
+import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest, getProfileDir } from '../db/profiles'
 import { listDrives, diskScan, isGuiExe, type DiskScanSignal } from '../disk-scan'
 import { incLaunchCount, incSearchCount, incTagUseCount, incPanelAdd, setResourceCount } from '../heartbeat'
 
@@ -93,6 +93,160 @@ function flushThumbQueue() {
 }
 
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.ape', '.wav'])
+
+type DocumentKind = 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'
+const DOCUMENT_KIND_EXT: Record<DocumentKind, string> = {
+  note: '.md',
+  txt: '.txt',
+  md: '.md',
+  csv: '.csv',
+  docx: '.docx',
+  xlsx: '.xlsx',
+  pptx: '.pptx',
+}
+
+function activeProfileDocumentsDir(kind: DocumentKind): string {
+  const manifest = loadManifest()
+  const base = join(getProfileDir(manifest.active), 'documents')
+  return join(base, kind === 'note' ? 'notes' : 'files')
+}
+
+function sanitizeDocumentTitle(input: string, fallback: string): string {
+  const cleaned = input
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 80)
+    .trim()
+  return cleaned || fallback
+}
+
+function uniqueDocumentPath(dir: string, title: string, ext: string): string {
+  let candidate = join(dir, `${title}${ext}`)
+  let index = 2
+  while (existsSync(candidate)) {
+    candidate = join(dir, `${title} ${index}${ext}`)
+    index += 1
+  }
+  return candidate
+}
+
+function crc32(buf: Buffer): number {
+  let c = ~0
+  for (const byte of buf) {
+    c ^= byte
+    for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xedb88320 & -(c & 1))
+  }
+  return ~c >>> 0
+}
+
+function zipStore(entries: Array<{ name: string; content: string }>): Buffer {
+  const localParts: Buffer[] = []
+  const centralParts: Buffer[] = []
+  let offset = 0
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, 'utf8')
+    const data = Buffer.from(entry.content, 'utf8')
+    const crc = crc32(data)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(0x0800, 6)
+    local.writeUInt16LE(0, 8)
+    local.writeUInt32LE(0, 10)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(name.length, 26)
+    local.writeUInt16LE(0, 28)
+    localParts.push(local, name, data)
+
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(20, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt16LE(0x0800, 8)
+    central.writeUInt16LE(0, 10)
+    central.writeUInt32LE(0, 12)
+    central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(data.length, 20)
+    central.writeUInt32LE(data.length, 24)
+    central.writeUInt16LE(name.length, 28)
+    central.writeUInt16LE(0, 30)
+    central.writeUInt16LE(0, 32)
+    central.writeUInt16LE(0, 34)
+    central.writeUInt16LE(0, 36)
+    central.writeUInt32LE(0, 38)
+    central.writeUInt32LE(offset, 42)
+    centralParts.push(central, name)
+    offset += local.length + name.length + data.length
+  }
+  const centralSize = centralParts.reduce((sum, b) => sum + b.length, 0)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(0, 4)
+  end.writeUInt16LE(0, 6)
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(centralSize, 12)
+  end.writeUInt32LE(offset, 16)
+  end.writeUInt16LE(0, 20)
+  return Buffer.concat([...localParts, ...centralParts, end])
+}
+
+function writeOfficeDocument(filePath: string, kind: 'docx' | 'xlsx' | 'pptx'): void {
+  if (kind === 'docx') {
+    writeFileSync(filePath, zipStore([
+      { name: '[Content_Types].xml', content: '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+      { name: '_rels/.rels', content: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+      { name: 'word/document.xml', content: '<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>' },
+    ]))
+    return
+  }
+  if (kind === 'xlsx') {
+    writeFileSync(filePath, zipStore([
+      { name: '[Content_Types].xml', content: '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>' },
+      { name: '_rels/.rels', content: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: 'xl/_rels/workbook.xml.rels', content: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>' },
+      { name: 'xl/workbook.xml', content: '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+      { name: 'xl/worksheets/sheet1.xml', content: '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>' },
+    ]))
+    return
+  }
+  writeFileSync(filePath, zipStore([
+    { name: '[Content_Types].xml', content: '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>' },
+    { name: '_rels/.rels', content: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>' },
+    { name: 'ppt/presentation.xml', content: '<?xml version="1.0" encoding="UTF-8"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst/><p:sldIdLst/><p:sldSz cx="9144000" cy="6858000" type="screen4x3"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>' },
+  ]))
+}
+
+function createManagedDocument(kind: DocumentKind, rawTitle: string): { filePath: string; title: string; meta: string } {
+  const title = sanitizeDocumentTitle(rawTitle, kind === 'note' ? '新建笔记' : '新建文档')
+  const ext = DOCUMENT_KIND_EXT[kind]
+  const dir = activeProfileDocumentsDir(kind)
+  mkdirSync(dir, { recursive: true })
+  const filePath = uniqueDocumentPath(dir, title, ext)
+  if (kind === 'note') {
+    writeFileSync(filePath, `# ${title}\n\n`, 'utf8')
+  } else if (kind === 'txt' || kind === 'md' || kind === 'csv') {
+    writeFileSync(filePath, '', 'utf8')
+  } else {
+    writeOfficeDocument(filePath, kind)
+  }
+  return {
+    filePath,
+    title,
+    meta: JSON.stringify({ created_by: 'ai-cubby', document_kind: kind, managed_note: kind === 'note' }),
+  }
+}
+
+function isProfileDocumentPath(filePath: string): boolean {
+  const manifest = loadManifest()
+  const root = normalize(join(getProfileDir(manifest.active), 'documents'))
+  const target = normalize(filePath)
+  const rel = relative(root, target)
+  return !!rel && !rel.startsWith('..') && !rel.includes(':')
+}
 const _audioTagged = new Set<string>() // 本次进程会话内已导入元数据的资源
 
 async function extractAudioCover(filePath: string): Promise<string | null> {
@@ -392,6 +546,40 @@ export function registerIpcHandlers(): void {
   })
 
   // ── 预设常用工具 ──────────────────────────────────────
+  ipcMain.handle('documents:create', (_e, request: { kind: DocumentKind; title: string }) => {
+    const kind = request.kind
+    if (!Object.prototype.hasOwnProperty.call(DOCUMENT_KIND_EXT, kind)) {
+      throw new Error(`Unsupported document kind: ${String(kind)}`)
+    }
+    const doc = createManagedDocument(kind, request.title)
+    return addManualResource({
+      type: 'document',
+      title: doc.title,
+      file_path: doc.filePath,
+      meta: doc.meta,
+    })
+  })
+
+  ipcMain.handle('documents:readText', (_e, filePath: string) => {
+    if (!isProfileDocumentPath(filePath)) throw new Error('Document is outside the active profile')
+    const ext = extname(filePath).toLowerCase()
+    if (ext !== '.md' && ext !== '.txt') throw new Error('Only text documents can be edited in app')
+    return readFileSync(filePath, 'utf8')
+  })
+
+  ipcMain.handle('documents:writeText', (_e, filePath: string, content: string) => {
+    if (!isProfileDocumentPath(filePath)) throw new Error('Document is outside the active profile')
+    const ext = extname(filePath).toLowerCase()
+    if (ext !== '.md' && ext !== '.txt') throw new Error('Only text documents can be edited in app')
+    writeFileSync(filePath, content, 'utf8')
+    const existing = getResourceByPath(filePath)
+    if (existing) {
+      updateResource(existing.id, { file_size: Buffer.byteLength(content, 'utf8') } as any)
+      return getResourceById(existing.id)
+    }
+    return null
+  })
+
   ipcMain.handle('resources:getPresetApps', () => {
     const S32 = 'C:\\Windows\\System32'
     const isEn = (getSetting('language') ?? 'zh') === 'en'

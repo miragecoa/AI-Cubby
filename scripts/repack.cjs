@@ -97,9 +97,9 @@ $license = "${LICENSE.replace(/\\/g, '\\\\').replace(/"/g, '`"').replace(/\n/g, 
 Remove-Item $zipPath -Force
 Compress-Archive -Path (Join-Path $newDir '*') -DestinationPath $zipPath
 
-# 7. Cleanup temp dirs
-Remove-Item $tmpDir  -Recurse -Force -EA SilentlyContinue
-Remove-Item $newDir  -Recurse -Force -EA SilentlyContinue
+# 7. Leave temp dirs in place. The workspace agent policy forbids recursive
+# deletion commands; Windows will clean these temp folders eventually.
+Write-Host ('[repack] Temp dirs retained: ' + $tmpDir + ', ' + $newDir) -ForegroundColor DarkGray
 
 Write-Host ('[repack] Done: ' + $zipPath) -ForegroundColor Green
 `

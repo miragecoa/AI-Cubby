@@ -34,6 +34,14 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   // 标签
+  documents: {
+    create: (request: { kind: 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'; title: string }): Promise<{ resource: any; existed: boolean }> =>
+      ipcRenderer.invoke('documents:create', request),
+    readText: (filePath: string): Promise<string> => ipcRenderer.invoke('documents:readText', filePath),
+    writeText: (filePath: string, content: string): Promise<any | null> =>
+      ipcRenderer.invoke('documents:writeText', filePath, content),
+  },
+
   tags: {
     getAll: () => ipcRenderer.invoke('tags:getAll'),
     getForType: (type?: string, sort?: string) => ipcRenderer.invoke('tags:getForType', type, sort),

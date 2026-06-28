@@ -18,6 +18,11 @@ declare global {
         batchAdd: (items: Array<{ type: string; title: string; file_path: string; meta?: string }>) => Promise<{ added: import('../stores/resources').Resource[]; existing: import('../stores/resources').Resource[] }>
         getPresetApps: () => Promise<Array<{ type: string; title: string; file_path: string; tags: string[] }>>
       }
+      documents: {
+        create: (request: { kind: 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'; title: string }) => Promise<{ resource: import('../stores/resources').Resource; existed: boolean }>
+        readText: (filePath: string) => Promise<string>
+        writeText: (filePath: string, content: string) => Promise<import('../stores/resources').Resource | null>
+      }
       tags: {
         getAll: () => Promise<Array<{ id: number; name: string }>>
         getForType: (type?: string, sort?: string) => Promise<Array<{ id: number; name: string; count: number }>>

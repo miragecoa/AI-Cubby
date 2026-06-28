@@ -521,15 +521,24 @@
                   </div>
                   <div class="page-size-row">
                     <span class="tfi-label">{{ t('library.thumbnailSize') }}</span>
-                    <input
-                      class="thumb-size-input"
-                      type="number"
-                      min="64"
-                      max="512"
-                      step="32"
-                      :value="settingsStore.thumbnailSize"
-                      @change="onThumbnailSizeChange"
-                    />
+                    <div class="thumb-quality-wrap">
+                      <button class="thumb-quality-trigger" @click.stop="showThumbQualityDropdown = !showThumbQualityDropdown">
+                        {{ thumbnailQualityLabel }}
+                        <span class="type-filter-caret" v-html="chevronDownSvg" :class="{ open: showThumbQualityDropdown }" />
+                      </button>
+                      <div v-if="showThumbQualityDropdown" class="thumb-quality-menu" @click.stop>
+                        <button
+                          v-for="option in thumbQualityOptions"
+                          :key="option.key"
+                          class="thumb-quality-option"
+                          :class="{ active: activeThumbnailQuality === option.key }"
+                          @click="setThumbnailQuality(option.size)"
+                        >
+                          <span>{{ option.label }}</span>
+                          <span class="thumb-quality-size">{{ option.size }}px</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -567,7 +576,7 @@
             <div class="spinner" />
           </div>
 
-          <div v-else-if="store.filtered.length === 0" class="empty-state">
+          <div v-else-if="store.filtered.length === 0 && !showDocumentCreateEntry" class="empty-state">
             <span class="empty-icon" v-html="emptyIcon" />
             <div class="empty-text">{{ t('library.empty') }}</div>
             <div v-if="store.activeType === 'webpage'" class="empty-hint">
@@ -593,6 +602,18 @@
             <PinBoard ref="pinBoardRef" v-if="viewMode === 'pinboard'" :zoom="cardZoom" :batch-mode="batchMode" :selected-ids="selectedIds" @open="openResource" @refresh="() => {}" />
 
             <div v-else-if="viewMode !== 'list'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
+                <button
+                  v-if="showDocumentCreateEntry"
+                  class="doc-create-card"
+                  type="button"
+                  :style="{ '--zoom': cardZoom }"
+                  @click.stop="openDocumentCreateModal()"
+                  @mousedown.stop
+                >
+                  <span class="doc-create-plus">+</span>
+                  <span class="doc-create-title">{{ t('library.documents.createCard') }}</span>
+                  <span class="doc-create-sub">{{ t('library.documents.createCardHint') }}</span>
+                </button>
                 <ResourceCard
                   v-for="(item, idx) in visibleItems"
                   :key="item.id"
@@ -996,8 +1017,75 @@
       v-if="selectedResource"
       :resource="selectedResource"
       :show-hint="detailShowHint"
+      @open="openResource"
       @close="selectedId = null; detailShowHint = false"
     />
+
+    <Teleport to="body">
+      <div v-if="showDocumentCreateModal" class="modal-overlay" @mousedown.self="showDocumentCreateModal = false">
+        <div class="doc-create-modal">
+          <div class="batch-modal-title">{{ t('library.documents.modalTitle') }}</div>
+          <div class="doc-create-types">
+            <button
+              v-for="opt in documentCreateOptions"
+              :key="opt.kind"
+              class="doc-type-opt"
+              :class="{ active: documentCreateKind === opt.kind }"
+              @click="documentCreateKind = opt.kind"
+            >
+              <span class="doc-type-icon" v-html="opt.icon" />
+              <span class="doc-type-main">{{ opt.label }}</span>
+              <span class="doc-type-sub">{{ opt.desc }}</span>
+            </button>
+          </div>
+          <input
+            v-model="documentCreateTitle"
+            class="doc-create-input"
+            :placeholder="t('library.documents.titlePlaceholder')"
+            @keydown.enter.prevent="createDocumentResource"
+          />
+          <div class="batch-modal-actions">
+            <button class="bm-cancel" @click="showDocumentCreateModal = false">{{ t('library.cancelBtn') }}</button>
+            <button class="bm-confirm" :disabled="documentCreating" @click="createDocumentResource">
+              {{ documentCreating ? t('library.documents.creating') : t('library.confirmBtn') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="noteEditor.show" class="modal-overlay note-editor-overlay" @mousedown.self="closeNoteEditor">
+        <div class="note-editor-modal">
+          <div class="note-editor-head">
+            <div class="note-editor-title">{{ noteEditor.title }}</div>
+            <div class="note-editor-actions">
+              <button
+                v-if="noteEditor.dirty"
+                class="note-editor-dirty"
+                type="button"
+                :disabled="noteEditor.saving"
+                @click="saveLocalNote"
+              >{{ t('library.documents.unsaved') }}</button>
+              <button class="bm-cancel" @click="closeNoteEditor">{{ t('library.cancelBtn') }}</button>
+              <button class="bm-confirm" :disabled="noteEditor.saving" @click="saveAndCloseLocalNote">
+                {{ noteEditor.saving ? t('library.documents.saving') : t('library.documents.saveAndClose') }}
+              </button>
+            </div>
+          </div>
+          <textarea
+            :key="noteEditor.resource?.file_path || 'note-editor'"
+            ref="noteTextAreaRef"
+            v-model="noteEditor.content"
+            class="note-editor-textarea"
+            spellcheck="false"
+            @input="noteEditor.dirty = true"
+            @keydown.ctrl.s.prevent="saveLocalNote"
+            @keydown.meta.s.prevent="saveLocalNote"
+          />
+        </div>
+      </div>
+    </Teleport>
 
     <!-- 框选矩形 -->
     <Teleport to="body">
@@ -1618,6 +1706,32 @@ const showAiSearchComingSoon = ref(false)
 const showAiInstallModal = ref(false)
 const showAiPanel = ref(false)
 const aiDiscovered = ref(localStorage.getItem('ai_discovered') === '1')
+type DocumentCreateKind = 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'
+const showDocumentCreateModal = ref(false)
+const documentCreateKind = ref<DocumentCreateKind>('note')
+const documentCreateTitle = ref('')
+const documentCreating = ref(false)
+const docIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></svg>'
+const noteIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>'
+const sheetIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 3h16v18H4z"/><path d="M4 9h16M4 15h16M10 3v18M16 3v18"/></svg>'
+const slideIconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16v12H4z"/><path d="M9 21h6M12 17v4"/><path d="M8 9h8M8 12h5"/></svg>'
+const documentCreateOptions = computed(() => [
+  { kind: 'note' as const, label: t('library.documents.localNote'), desc: t('library.documents.localNoteDesc'), icon: noteIconSvg },
+  { kind: 'txt' as const, label: '.txt', desc: t('library.documents.textDesc'), icon: docIconSvg },
+  { kind: 'docx' as const, label: '.docx', desc: t('library.documents.wordDesc'), icon: docIconSvg },
+  { kind: 'xlsx' as const, label: '.xlsx', desc: t('library.documents.excelDesc'), icon: sheetIconSvg },
+  { kind: 'pptx' as const, label: '.pptx', desc: t('library.documents.pptDesc'), icon: slideIconSvg },
+  { kind: 'csv' as const, label: '.csv', desc: t('library.documents.csvDesc'), icon: sheetIconSvg },
+])
+const noteEditor = reactive({
+  show: false,
+  resource: null as Resource | null,
+  title: '',
+  content: '',
+  dirty: false,
+  saving: false,
+})
+const noteTextAreaRef = ref<HTMLTextAreaElement | null>(null)
 
 function onAiPanelToggle() {
   showAiPanel.value = !showAiPanel.value
@@ -2199,7 +2313,7 @@ function toggleTypeFilter(e: MouseEvent) {
   showTypeFilter.value = true
 }
 
-function onDocCloseTypeFilter() { showTypeFilter.value = false; showQfDropdown.value = false; showDisplayDropdown.value = false }
+function onDocCloseTypeFilter() { showTypeFilter.value = false; showQfDropdown.value = false; showDisplayDropdown.value = false; showThumbQualityDropdown.value = false }
 function onVisibilityChange() { setPaused(document.hidden) }
 
 // 滚动时更新可见 index 范围（用于卡片图片释放/加载）
@@ -2239,6 +2353,19 @@ function onContentScroll() {
 }
 
 const showDisplayDropdown = ref(false)
+const showThumbQualityDropdown = ref(false)
+const THUMB_QUALITY_OPTIONS = [
+  { key: 'smooth', size: 64, labelKey: 'library.thumbnailSmooth' },
+  { key: 'sharp', size: 256, labelKey: 'library.thumbnailSharp' }
+] as const
+const thumbQualityOptions = computed(() => THUMB_QUALITY_OPTIONS.map(option => ({
+  ...option,
+  label: t(option.labelKey)
+})))
+const activeThumbnailQuality = computed(() => settingsStore.thumbnailSize >= 160 ? 'sharp' : 'smooth')
+const thumbnailQualityLabel = computed(() => {
+  return thumbQualityOptions.value.find(option => option.key === activeThumbnailQuality.value)?.label || t('library.thumbnailSmooth')
+})
 const displayHasHidden = computed(() => {
   const d = settingsStore.cardDisplay
   return !d.duration || !d.count || !d.lastUsed || !d.tags || d.fileSize || !d.cardBg
@@ -3403,6 +3530,7 @@ onUnmounted(() => {
 
 // Per-type view mode and card zoom (derived from active category)
 const viewMode = computed(() => settingsStore.getViewMode(store.activeType))
+const showDocumentCreateEntry = computed(() => store.activeType === 'document' && viewMode.value !== 'list' && viewMode.value !== 'pinboard')
 
 // ── 分页（必须在 viewMode / listSortedFiltered 之后）───────────────────
 const totalPages = computed(() => Math.max(1, Math.ceil(listSortedFiltered.value.length / settingsStore.pageSize)))
@@ -3448,16 +3576,13 @@ function onPageSizeChange(e: Event) {
   if (gridScrollRef.value) gridScrollRef.value.scrollTop = 0
 }
 
-function onThumbnailSizeChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const raw = parseInt(input.value, 10)
-  const val = Math.min(512, Math.max(64, isNaN(raw) ? 64 : raw))
-  input.value = String(val)
-  settingsStore.setThumbnailSize(val)
-  setGridThumbSize(val)
+function setThumbnailQuality(size: number) {
+  settingsStore.setThumbnailSize(size)
+  setGridThumbSize(size)
   currentPage.value = 1
   clearImageCache()
   if (gridScrollRef.value) gridScrollRef.value.scrollTop = 0
+  showThumbQualityDropdown.value = false
 }
 
 function onPageInputBlur(e: Event) {
@@ -3835,7 +3960,94 @@ function dismissUpdate() {
   showUpdateModal.value = false
 }
 
+function openDocumentCreateModal(kind: DocumentCreateKind = 'note') {
+  documentCreateKind.value = kind
+  documentCreateTitle.value = ''
+  showDocumentCreateModal.value = true
+}
+
+function isManagedLocalNote(resource: Resource): boolean {
+  if (!resource.meta) return false
+  try {
+    const meta = JSON.parse(resource.meta)
+    return meta?.created_by === 'ai-cubby' && meta?.managed_note === true
+  } catch {
+    return false
+  }
+}
+
+async function createDocumentResource() {
+  if (documentCreating.value) return
+  documentCreating.value = true
+  try {
+    const result = await window.api.documents.create({
+      kind: documentCreateKind.value,
+      title: documentCreateTitle.value,
+    })
+    if (result?.resource) {
+      store.addOrUpdate(result.resource)
+      showDocumentCreateModal.value = false
+      if (documentCreateKind.value === 'note') {
+        await openLocalNote(result.resource)
+      } else {
+        await openResource(result.resource)
+      }
+    }
+  } catch (e: any) {
+    alert(t('library.documents.createFailed', { msg: e?.message ?? '' }))
+  } finally {
+    documentCreating.value = false
+  }
+}
+
+async function openLocalNote(resource: Resource) {
+  noteEditor.show = true
+  noteEditor.resource = resource
+  noteEditor.title = resource.title
+  noteEditor.saving = false
+  noteEditor.content = await window.api.documents.readText(resource.file_path)
+  noteEditor.dirty = false
+  await nextTick()
+  noteTextAreaRef.value?.focus()
+}
+
+function closeNoteEditor() {
+  if (noteEditor.dirty && !confirm(t('library.documents.discardConfirm'))) return
+  noteEditor.show = false
+  noteEditor.resource = null
+  noteEditor.content = ''
+  noteEditor.dirty = false
+}
+
+async function saveLocalNote() {
+  if (!noteEditor.resource || noteEditor.saving) return
+  noteEditor.saving = true
+  try {
+    const updated = await window.api.documents.writeText(noteEditor.resource.file_path, noteEditor.content)
+    if (updated) {
+      store.addOrUpdate(updated)
+      noteEditor.resource = updated
+    }
+    noteEditor.dirty = false
+  } finally {
+    noteEditor.saving = false
+  }
+}
+
+async function saveAndCloseLocalNote() {
+  await saveLocalNote()
+  if (!noteEditor.saving && !noteEditor.dirty) {
+    noteEditor.show = false
+    noteEditor.resource = null
+    noteEditor.content = ''
+  }
+}
+
 async function openResource(resource: Resource) {
+  if (isManagedLocalNote(resource)) {
+    await openLocalNote(resource)
+    return
+  }
   const updated = await window.api.files.openPath(resource.file_path, resource.meta)
   if (updated) store.addOrUpdate(updated)
 }
@@ -5235,6 +5447,216 @@ async function deleteIgnored(filePath: string) {
   align-content: start;
 }
 
+.doc-create-card {
+  min-height: clamp(78px, calc(var(--card-min-width, 225px) * 1.08), 260px);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(3px, calc(var(--zoom, 0.75) * 8px), 8px);
+  padding: clamp(6px, calc(var(--zoom, 0.75) * 14px), 14px);
+  cursor: pointer;
+  font-family: inherit;
+  overflow: hidden;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.doc-create-card:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  transform: translateY(-1px);
+}
+.doc-create-plus {
+  width: clamp(24px, calc(var(--zoom, 0.75) * 46px), 44px);
+  height: clamp(24px, calc(var(--zoom, 0.75) * 46px), 44px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  font-size: clamp(18px, calc(var(--zoom, 0.75) * 32px), 30px);
+  line-height: 1;
+  flex-shrink: 0;
+}
+.doc-create-title {
+  font-size: clamp(11px, calc(var(--zoom, 0.75) * 16px), 14px);
+  font-weight: 700;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-create-sub {
+  max-width: min(150px, 100%);
+  font-size: clamp(9px, calc(var(--zoom, 0.75) * 13px), 12px);
+  color: var(--text-3);
+  line-height: 1.35;
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.doc-create-modal {
+  width: min(560px, calc(100vw - 32px));
+  padding: 18px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+}
+.doc-create-types {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+.doc-type-opt {
+  min-height: 76px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 9px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 10px;
+  text-align: left;
+  min-width: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.doc-type-opt.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+.doc-type-icon {
+  grid-row: 1 / 3;
+  width: 26px;
+  height: 26px;
+  color: var(--accent-2);
+  display: flex;
+}
+.doc-type-icon :deep(svg) {
+  width: 26px;
+  height: 26px;
+}
+.doc-type-main {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-type-sub {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-create-input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0 10px;
+  font-family: inherit;
+  outline: none;
+}
+.doc-create-input:focus {
+  border-color: var(--accent);
+}
+.note-editor-overlay {
+  align-items: stretch;
+}
+.note-editor-modal {
+  width: min(920px, calc(100vw - 48px));
+  height: min(720px, calc(100vh - 48px));
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.38);
+}
+.note-editor-head {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.note-editor-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+}
+.note-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: max-content;
+}
+.note-editor-dirty {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--accent-2);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.note-editor-dirty:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.note-editor-dirty:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.note-editor-actions .bm-cancel,
+.note-editor-actions .bm-confirm {
+  width: auto;
+  min-width: 92px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.note-editor-textarea {
+  flex: 1;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 18px;
+  color: var(--text);
+  background: var(--bg);
+  font: 14px/1.7 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
 .grid-sentinel {
   height: 1px;
   grid-column: 1 / -1;
@@ -5579,11 +6001,61 @@ async function deleteIgnored(filePath: string) {
 .page-indicator { font-size: 11px; color: var(--text-2); padding: 0 6px; user-select: none; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 3px; }
 .page-input { width: 28px; text-align: center; background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 3px; color: var(--text); font-size: 11px; padding: 1px 2px; font-variant-numeric: tabular-nums; outline: none; }
 .page-input:focus { border-color: var(--accent); }
-.page-size-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; }
-.page-size-select,
-.thumb-size-input { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
+.page-size-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; }
+.page-size-select { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
 .page-size-select { cursor: pointer; }
-.thumb-size-input { width: 58px; }
+.thumb-quality-wrap { position: relative; display: flex; justify-content: flex-end; flex-shrink: 0; }
+.thumb-quality-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 64px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.thumb-quality-trigger:hover { border-color: var(--accent); color: var(--text); }
+.thumb-quality-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 320;
+  min-width: 118px;
+  padding: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgba(0,0,0,.35);
+}
+.thumb-quality-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.thumb-quality-option:hover,
+.thumb-quality-option.active { background: var(--surface-2); color: var(--text); }
+.thumb-quality-size { color: var(--text-3); font-variant-numeric: tabular-nums; }
 .sort-bar-spacer { flex: 1; }
 .sort-bar-right {
   display: flex;
@@ -6890,6 +7362,14 @@ async function deleteIgnored(filePath: string) {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.batch-modal-actions .bm-cancel,
+.batch-modal-actions .bm-confirm {
+  width: auto;
+  min-width: 88px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .bm-cancel,
