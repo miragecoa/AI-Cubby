@@ -65,6 +65,15 @@ test('image and icon loading stays concurrency limited', () => {
   assert.match(ipc, /const PS_MAX_CONCURRENT = 1\b/)
 })
 
+test('updater compares beta semver versions correctly', () => {
+  const updater = read('backend/updater.ts')
+  assert.match(updater, /function parseVersion\(version: string\)/)
+  assert.match(updater, /normalized\.split\('-', 2\)/)
+  assert.match(updater, /prereleasePart\.split\(\/\[\.-\]\/\)/)
+  assert.doesNotMatch(updater, /a\.split\('\.'\)\.map\(Number\)/)
+  assert.doesNotMatch(updater, /const na = pa\[i\] \|\| 0/)
+})
+
 test('default sidebar places documents above applications', () => {
   const navItems = read('frontend/src/config/navItems.ts')
   const settings = read('frontend/src/stores/settings.ts')

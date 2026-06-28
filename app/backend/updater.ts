@@ -39,14 +39,44 @@ let downloadedZipPath: string | null = null
 
 // ── Version compare ──────────────────────────────────────
 
+function parseVersion(version: string): { core: number[]; prerelease: Array<string | number> } {
+  const normalized = version.replace(/^v/i, '')
+  const [corePart, prereleasePart = ''] = normalized.split('-', 2)
+  const core = corePart.split('.').slice(0, 3).map(part => {
+    const parsed = parseInt(part, 10)
+    return Number.isFinite(parsed) ? parsed : 0
+  })
+  while (core.length < 3) core.push(0)
+  const prerelease = prereleasePart
+    ? prereleasePart.split(/[.-]/).filter(Boolean).map(part => {
+      const parsed = parseInt(part, 10)
+      return /^\d+$/.test(part) && Number.isFinite(parsed) ? parsed : part
+    })
+    : []
+  return { core, prerelease }
+}
+
 function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0
-    const nb = pb[i] || 0
-    if (na > nb) return 1
-    if (na < nb) return -1
+  const pa = parseVersion(a)
+  const pb = parseVersion(b)
+  for (let i = 0; i < 3; i++) {
+    if (pa.core[i] > pb.core[i]) return 1
+    if (pa.core[i] < pb.core[i]) return -1
+  }
+  if (!pa.prerelease.length && pb.prerelease.length) return 1
+  if (pa.prerelease.length && !pb.prerelease.length) return -1
+  for (let i = 0; i < Math.max(pa.prerelease.length, pb.prerelease.length); i++) {
+    const av = pa.prerelease[i]
+    const bv = pb.prerelease[i]
+    if (av === undefined) return -1
+    if (bv === undefined) return 1
+    if (typeof av === 'number' && typeof bv === 'number') {
+      if (av > bv) return 1
+      if (av < bv) return -1
+    } else {
+      const cmp = String(av).localeCompare(String(bv))
+      if (cmp !== 0) return cmp > 0 ? 1 : -1
+    }
   }
   return 0
 }
