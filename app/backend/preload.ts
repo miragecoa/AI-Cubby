@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('api', {
     readText: (filePath: string): Promise<string> => ipcRenderer.invoke('documents:readText', filePath),
     writeText: (filePath: string, content: string): Promise<any | null> =>
       ipcRenderer.invoke('documents:writeText', filePath, content),
+    touch: (resourceId: string): Promise<any | null> => ipcRenderer.invoke('documents:touch', resourceId),
   },
 
   tags: {

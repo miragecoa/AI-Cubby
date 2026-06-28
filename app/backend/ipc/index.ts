@@ -378,6 +378,15 @@ function _doGetIcon(filePath: string): Promise<string | null> {
   })
 }
 
+function touchResourceUsage(resourceId: string) {
+  return recordProcessStart(resourceId)
+}
+
+function touchResourceUsageResult<T extends { resource: any; existed: boolean }>(result: T): T {
+  const touched = touchResourceUsage(result.resource.id)
+  return { ...result, resource: touched ?? result.resource }
+}
+
 export function resolveDroppedPaths(paths: string[]): Array<{ type: string; title: string; file_path: string; meta?: string }> {
   const results: Array<{ type: string; title: string; file_path: string; meta?: string }> = []
   for (const p of paths) {
@@ -508,7 +517,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('resources:add', (_e, data: { type: string; title: string; file_path: string; note?: string }) => {
-    return addManualResource(data)
+    return touchResourceUsageResult(addManualResource(data))
   })
 
   // ── 批量操作 ──────────────────────────────────────────
@@ -538,7 +547,7 @@ export function registerIpcHandlers(): void {
     const added: any[] = []
     const existing: any[] = []
     for (const item of items) {
-      const result = addManualResource(item)
+      const result = touchResourceUsageResult(addManualResource(item))
       if (!result.existed) added.push(result.resource)
       else existing.push(result.resource)
     }
@@ -552,12 +561,13 @@ export function registerIpcHandlers(): void {
       throw new Error(`Unsupported document kind: ${String(kind)}`)
     }
     const doc = createManagedDocument(kind, request.title)
-    return addManualResource({
+    const result = addManualResource({
       type: 'document',
       title: doc.title,
       file_path: doc.filePath,
       meta: doc.meta,
     })
+    return touchResourceUsageResult(result)
   })
 
   ipcMain.handle('documents:readText', (_e, filePath: string) => {
@@ -578,6 +588,10 @@ export function registerIpcHandlers(): void {
       return getResourceById(existing.id)
     }
     return null
+  })
+
+  ipcMain.handle('documents:touch', (_e, resourceId: string) => {
+    return touchResourceUsage(resourceId)
   })
 
   ipcMain.handle('resources:getPresetApps', () => {
@@ -732,12 +746,8 @@ export function registerIpcHandlers(): void {
     } else {
       shell.openPath(filePath).catch(() => { })
     }
-    // 非 exe 资源（图片/视频/漫画/音乐/小说等）WMI 无法追踪进程，直接在此计次
-    if (!filePath.toLowerCase().endsWith('.exe')) {
-      const resource = getResourceByPath(filePath)
-      if (resource) return recordProcessStart(resource.id)
-    }
-    return null
+    const resource = getResourceByPath(filePath)
+    return resource ? touchResourceUsage(resource.id) : null
   })
   ipcMain.handle('files:openInExplorer', (_e, filePath: string) => {
     incLaunchCount()

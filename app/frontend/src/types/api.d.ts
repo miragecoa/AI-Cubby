@@ -22,6 +22,7 @@ declare global {
         create: (request: { kind: 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'; title: string }) => Promise<{ resource: import('../stores/resources').Resource; existed: boolean }>
         readText: (filePath: string) => Promise<string>
         writeText: (filePath: string, content: string) => Promise<import('../stores/resources').Resource | null>
+        touch: (resourceId: string) => Promise<import('../stores/resources').Resource | null>
       }
       tags: {
         getAll: () => Promise<Array<{ id: number; name: string }>>

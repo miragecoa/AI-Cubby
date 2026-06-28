@@ -3988,7 +3988,7 @@ async function createDocumentResource() {
       store.addOrUpdate(result.resource)
       showDocumentCreateModal.value = false
       if (documentCreateKind.value === 'note') {
-        await openLocalNote(result.resource)
+        await openLocalNote(result.resource, false)
       } else {
         await openResource(result.resource)
       }
@@ -4000,12 +4000,20 @@ async function createDocumentResource() {
   }
 }
 
-async function openLocalNote(resource: Resource) {
+async function openLocalNote(resource: Resource, touchUsage = true) {
+  let current = resource
+  if (touchUsage) {
+    const touched = await window.api.documents.touch(resource.id)
+    if (touched) {
+      current = touched
+      store.addOrUpdate(touched)
+    }
+  }
   noteEditor.show = true
-  noteEditor.resource = resource
-  noteEditor.title = resource.title
+  noteEditor.resource = current
+  noteEditor.title = current.title
   noteEditor.saving = false
-  noteEditor.content = await window.api.documents.readText(resource.file_path)
+  noteEditor.content = await window.api.documents.readText(current.file_path)
   noteEditor.dirty = false
   await nextTick()
   noteTextAreaRef.value?.focus()
