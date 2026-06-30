@@ -91,6 +91,7 @@
       <div v-if="ctxMenu.show" class="pb-ctx-backdrop" @mousedown="ctxMenu.show = false" />
       <div v-if="ctxMenu.show" class="pb-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }">
         <template v-if="ctxMenu.isGroup">
+          <button @click="openGroupItems()">{{ t('pinboard.openAll') }}</button>
           <button @click="startRenameGroup()">{{ t('pinboard.renameGroup') }}</button>
           <button @click="deleteGroup()">{{ t('pinboard.deleteGroup') }}</button>
         </template>
@@ -114,7 +115,7 @@ import { loadImage, loadIcon } from '../utils/image-cache'
 const { t } = useI18n()
 const store = useResourceStore()
 const props = defineProps<{ zoom?: number; batchMode?: boolean; selectedIds?: Set<string> }>()
-const emit = defineEmits<{ open: [resource: Resource]; refresh: [] }>()
+const emit = defineEmits<{ open: [resource: Resource]; openMany: [resources: Resource[]]; refresh: [] }>()
 
 const iconSize = computed(() => Math.round(56 * (props.zoom ?? 0.75) / 0.75))
 const cellWidth = computed(() => iconSize.value + 32)
@@ -464,6 +465,12 @@ const ctxMenu = ref({ show: false, x: 0, y: 0, item: null as BoardItem | null, i
 function onCtxMenu(item: BoardItem, e: MouseEvent) { ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, item, isGroup: item.isGroup, inGroup: false, resource: item.resource ?? null } }
 function onCtxMenuChild(child: Resource, e: MouseEvent) { ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, item: null, isGroup: false, inGroup: true, resource: child } }
 function openCtxItem() { if (ctxMenu.value.resource) emit('open', ctxMenu.value.resource); ctxMenu.value.show = false }
+function openGroupItems() {
+  const children = ctxMenu.value.item?.children ?? []
+  if (children.length) emit('openMany', children)
+  ctxMenu.value.show = false
+  expandedGroup.value = null
+}
 async function unpinCtxItem() { if (ctxMenu.value.resource) { await window.api.pinboard.remove(ctxMenu.value.resource.id); store.addOrUpdate({ ...ctxMenu.value.resource, in_quickpanel: 0 }); await reload() }; ctxMenu.value.show = false }
 async function removeFromGroup() { if (ctxMenu.value.resource) { await window.api.pinboard.setGroupFor(ctxMenu.value.resource.id, null); await reload() }; ctxMenu.value.show = false; expandedGroup.value = null }
 function startRenameGroup() { if (ctxMenu.value.item?.groupData) expandedGroup.value = ctxMenu.value.item.groupData; ctxMenu.value.show = false }

@@ -223,6 +223,18 @@
       <Transition name="tray-hint">
         <div v-if="trayHintVisible" class="tray-hint-bar" @click="trayHintVisible = false" v-html="trayHintText" />
       </Transition>
+      <Transition name="tray-hint">
+        <div v-if="iconWarmupVisible" class="icon-warmup-bar">
+          <div class="icon-warmup-text">
+            <strong>{{ t('library.iconWarmup.title') }}</strong>
+            <span>{{ t('library.iconWarmup.desc') }}</span>
+          </div>
+          <div class="icon-warmup-progress" :aria-label="`${iconWarmupDone} / ${iconWarmupTotal}`">
+            <span :style="{ width: iconWarmupPercent + '%' }" />
+          </div>
+          <div class="icon-warmup-count">{{ iconWarmupDone }} / {{ iconWarmupTotal }}</div>
+        </div>
+      </Transition>
 
     </div>
 
@@ -599,7 +611,7 @@
           <div v-else ref="gridScrollRef" class="grid-scroll" @mousedown="onGridMousedown" @scroll="onContentScroll" @wheel="onContentWheel">
             <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
             <!-- Pin Board -->
-            <PinBoard ref="pinBoardRef" v-if="viewMode === 'pinboard'" :zoom="cardZoom" :batch-mode="batchMode" :selected-ids="selectedIds" @open="openResource" @refresh="() => {}" />
+            <PinBoard ref="pinBoardRef" v-if="viewMode === 'pinboard'" :zoom="cardZoom" :batch-mode="batchMode" :selected-ids="selectedIds" @open="openResource" @open-many="openResourcesSequentially" @refresh="() => {}" />
 
             <div v-else-if="viewMode !== 'list'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
                 <button
@@ -1732,6 +1744,13 @@ const noteEditor = reactive({
   saving: false,
 })
 const noteTextAreaRef = ref<HTMLTextAreaElement | null>(null)
+const iconWarmupVisible = ref(false)
+const iconWarmupDone = ref(0)
+const iconWarmupTotal = ref(0)
+const iconWarmupPercent = computed(() => iconWarmupTotal.value > 0 ? Math.round((iconWarmupDone.value / iconWarmupTotal.value) * 100) : 0)
+const iconWarmupAttempted = new Set<string>()
+let iconWarmupRunning = false
+let iconWarmupTimer: ReturnType<typeof setTimeout> | null = null
 
 function onAiPanelToggle() {
   showAiPanel.value = !showAiPanel.value
@@ -2241,17 +2260,7 @@ async function addPresetApps() {
     await store.loadAll()
     importToastMsg.value = existing.length ? t('library.presetAdded', { n: added.length, e: existing.length }) : t('library.presetAddedOnly', { n: added.length })
     importToastVisible.value = true
-    // 后台获取图标（仅新增）
-    for (const r of added) {
-      window.api.files.getAppIcon(r.file_path).then(async icon => {
-        if (!icon) return
-        const coverPath = await window.api.files.saveCover(r.id, icon)
-        if (coverPath) {
-          const current = store.items.find(i => i.id === r.id)
-          store.addOrUpdate({ ...(current || r), cover_path: coverPath })
-        }
-      }).catch(() => {})
-    }
+    scheduleInitialIconWarmup(300)
   } catch (e: any) {
     alert(t('library.presetFailed', { msg: e?.message ?? '' }))
   } finally {
@@ -3393,11 +3402,59 @@ watch([typeFilterArr, extFilterArr, typeSortDir, listSortCol, listSortDesc, quic
 
 let unsubDrawerImport: (() => void) | null = null
 
+function scheduleInitialIconWarmup(delay = 1200) {
+  if (iconWarmupRunning || iconWarmupTimer) return
+  iconWarmupTimer = setTimeout(() => {
+    iconWarmupTimer = null
+    runInitialIconWarmup()
+  }, delay)
+}
+
+async function runInitialIconWarmup() {
+  if (iconWarmupRunning) return
+  const candidates = store.items.filter(r =>
+    (r.type === 'app' || r.type === 'game') &&
+    !r.cover_path &&
+    !r.user_modified &&
+    !iconWarmupAttempted.has(r.id)
+  )
+  if (!candidates.length) return
+
+  iconWarmupRunning = true
+  iconWarmupVisible.value = true
+  iconWarmupDone.value = 0
+  iconWarmupTotal.value = candidates.length
+
+  try {
+    for (const resource of candidates) {
+      iconWarmupAttempted.add(resource.id)
+      try {
+        const icon = await window.api.files.getAppIcon(resource.file_path)
+        if (icon) {
+          const coverPath = await window.api.files.saveCover(resource.id, icon)
+          if (coverPath) {
+            const current = store.items.find(r => r.id === resource.id)
+            store.addOrUpdate({ ...(current || resource), cover_path: coverPath })
+          }
+        }
+      } catch { /* keep warming the rest */ }
+      iconWarmupDone.value++
+      await new Promise(resolve => setTimeout(resolve, 120))
+    }
+  } finally {
+    iconWarmupRunning = false
+    setTimeout(() => { iconWarmupVisible.value = false }, 1600)
+  }
+}
+
+watch(() => store.items.length, () => scheduleInitialIconWarmup(1800))
+
 // 每次启动只跑一次的标志（LibraryPage 生命周期内）
 let _autoFaviconDone = false
 
 onMounted(async () => {
   settingsStore.load()
+  scheduleInitialIconWarmup()
   // 首次加载：数据加载完成、组件渲染后 reverse 队列（从上往下加载）
   const stopLoadWatch = watch(() => store.loading, (loading) => {
     if (!loading) {
@@ -3488,8 +3545,7 @@ onMounted(async () => {
     setTimeout(tryAutoFavicons, 75_000)
   }, 15_000)
 
-  // App/game icons are generated lazily by visible cards and rows.
-  // Avoid a whole-library icon backfill on launch; it is expensive on low-end PCs.
+  // App/game icons are warmed slowly with a visible first-use notice.
 })
 
 const unsubWake = window.api.onWake(() => {
@@ -3526,6 +3582,7 @@ onUnmounted(() => {
   unsubWake?.()
   unsubTrayWake?.()
   if (_trayHintTimer) clearTimeout(_trayHintTimer)
+  if (iconWarmupTimer) clearTimeout(iconWarmupTimer)
 })
 
 // Per-type view mode and card zoom (derived from active category)
@@ -4060,6 +4117,13 @@ async function openResource(resource: Resource) {
   if (updated) store.addOrUpdate(updated)
 }
 
+async function openResourcesSequentially(resources: Resource[]) {
+  for (const resource of resources) {
+    await openResource(resource)
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+}
+
 function removeResource(resource: Resource) {
   store.remove(resource.id)
 }
@@ -4139,6 +4203,58 @@ async function deleteIgnored(filePath: string) {
   border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
   border-radius: 4px;
   color: var(--accent-2);
+}
+.icon-warmup-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px auto;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.icon-warmup-text {
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.icon-warmup-text strong {
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.icon-warmup-text span {
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-warmup-progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.icon-warmup-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.icon-warmup-count {
+  min-width: 48px;
+  text-align: right;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 720px) {
+  .icon-warmup-bar { grid-template-columns: 1fr; gap: 6px; }
+  .icon-warmup-text { flex-direction: column; gap: 2px; }
+  .icon-warmup-count { text-align: left; }
 }
 @keyframes tray-hint-pulse {
   0%, 100% { opacity: 1; }

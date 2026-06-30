@@ -262,6 +262,10 @@ export default {
     thumbnailSize: 'Thumbnail',
     thumbnailSmooth: 'Smooth',
     thumbnailSharp: 'Sharp',
+    iconWarmup: {
+      title: 'First use: reading app icons',
+      desc: 'Low-end PCs may briefly stutter. Please wait a moment.',
+    },
     documents: {
       createCard: 'New',
       createCardHint: 'Note or document',
@@ -787,6 +791,7 @@ export default {
   },
   pinboard: {
     newGroup: 'New Folder',
+    openAll: 'Open all',
     renameGroup: 'Rename',
     deleteGroup: 'Delete Group',
     removeFromGroup: 'Remove from Group',

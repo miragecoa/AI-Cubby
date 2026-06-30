@@ -262,6 +262,10 @@ export default {
     thumbnailSize: '\u7f29\u7565\u56fe',
     thumbnailSmooth: '\u6d41\u7545',
     thumbnailSharp: '\u9ad8\u6e05',
+    iconWarmup: {
+      title: '\u9996\u6b21\u4f7f\u7528\uff1a\u6b63\u5728\u8bfb\u53d6\u8f6f\u4ef6\u56fe\u6807',
+      desc: '\u4f4e\u6027\u80fd\u7535\u8111\u53ef\u80fd\u4f1a\u77ed\u6682\u5361\u987f\uff0c\u8bf7\u8010\u5fc3\u7b49\u5f85\u4e00\u4f1a\u3002',
+    },
     documents: {
       createCard: '新建',
       createCardHint: '笔记或文档',
@@ -787,6 +791,7 @@ export default {
   },
   pinboard: {
     newGroup: '新文件夹',
+    openAll: '\u4e00\u952e\u542f\u52a8',
     renameGroup: '重命名',
     deleteGroup: '删除分组',
     removeFromGroup: '移出分组',

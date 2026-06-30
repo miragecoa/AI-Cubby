@@ -73,6 +73,24 @@ if (!app.isPackaged) {
 // 开机自启时 Windows 会传入 --hidden，此时不弹窗口
 const launchedHidden = process.argv.includes('--hidden')
 
+function showMainWindow(reason = 'user'): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.setSkipTaskbar(false)
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  try { mainWindow.moveTop() } catch { /* noop */ }
+  drawerWindow?.hide()
+  if (reason === 'pinboard') mainWindow.webContents.send('window:openPinboard')
+}
+
+function hideMainToDrawer(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.hide()
+  mainWindow.setSkipTaskbar(true)
+  if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
+}
+
 // 点击 X 时隐藏到托盘，而非退出
 app.on('before-quit', (event) => {
   if (willQuit) return  // 已经在退出流程中（由下方 app.quit() 触发的第二次调用）
@@ -382,7 +400,7 @@ function buildTrayMenu(): Electron.Menu {
     ? { show: 'Show Window', clipboard: 'Clipboard History', hideDrawer: 'Hide Floating Drawer', showDrawer: 'Show Floating Drawer', recall: 'Recall Drawer to Center', quit: 'Quit' }
     : { show: '显示窗口', clipboard: '剪贴板历史', hideDrawer: '隐藏悬浮窗', showDrawer: '显示悬浮窗', recall: '召回悬浮窗到屏幕中央', quit: '退出' }
   return Menu.buildFromTemplate([
-    { label: L.show, click: () => { mainWindow?.setSkipTaskbar(false); mainWindow?.show() } },
+    { label: L.show, click: () => showMainWindow('tray-menu') },
     { label: L.clipboard, click: () => showClipboardWindow() },
     {
       label: drawerVisible ? L.hideDrawer : L.showDrawer,
@@ -422,10 +440,7 @@ function createTray(): void {
     tray.on('click', () => {
       if (!mainWindow) return
       incWakeCount()
-      mainWindow.setSkipTaskbar(false)
-      mainWindow.show()
-      mainWindow.focus()
-      drawerWindow?.hide()
+      showMainWindow('tray')
       mainWindow.webContents.send('window:trayWake')
     })
   } catch (e) {
@@ -434,7 +449,7 @@ function createTray(): void {
     try {
       tray = new Tray(nativeImage.createFromBuffer(makeSolidPng(0x63, 0x66, 0xF1)))
       tray.setToolTip('AI Cubby')
-      tray.on('click', () => { mainWindow?.show(); mainWindow?.focus() })
+      tray.on('click', () => showMainWindow('tray-fallback'))
     } catch (e2) {
       console.error('[Tray] Fallback also failed:', e2)
     }
@@ -765,9 +780,7 @@ function createWindow(): void {
     if (wasMaximized) mainWindow?.maximize()
     if (!launchedHidden || showOnAutoStart) {
       console.log('[Boot] SHOWING window')
-      mainWindow?.setSkipTaskbar(false)
-      mainWindow?.show()
-      drawerWindow?.hide()
+      showMainWindow('boot')
     } else {
       console.log('[Boot] HIDING window (autostart silent mode)')
       // 自动启动隐藏模式：任务栏不显示，tray + 悬浮窗为入口
@@ -778,11 +791,19 @@ function createWindow(): void {
 
   // 最小化 → 保留任务栏图标，不隐藏窗口
   mainWindow.on('minimize', () => {
+    mainWindow?.webContents.send('window:wake')
     if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
   })
 
   // 从最小化还原 → 隐藏抽屉
   mainWindow.on('restore', () => {
+    mainWindow?.setSkipTaskbar(false)
+    drawerWindow?.hide()
+  })
+  mainWindow.on('show', () => {
+    drawerWindow?.hide()
+  })
+  mainWindow.on('focus', () => {
     drawerWindow?.hide()
   })
 
@@ -813,9 +834,7 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     if (!willQuit) {
       event.preventDefault()
-      mainWindow?.hide()
-      mainWindow?.setSkipTaskbar(true)
-      if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
+      hideMainToDrawer()
     }
   })
 
@@ -846,10 +865,7 @@ if (!gotLock) {
     if (commandLine?.includes('--hidden')) return
     if (mainWindow) {
       incWakeCount()
-      mainWindow.setSkipTaskbar(false)
-      mainWindow.show()
-      mainWindow.focus()
-      drawerWindow?.hide()
+      showMainWindow('second-instance')
     }
   })
 }
@@ -1255,25 +1271,18 @@ ipcRenderer.on('debug:log',(_,l)=>addLine(l));
 
   // 悬浮小抽屉 IPC
   ipcMain.handle('drawer:openMain', () => {
-    mainWindow?.setSkipTaskbar(false)
-    mainWindow?.show()
-    mainWindow?.focus()
+    showMainWindow('drawer')
   })
   ipcMain.handle('drawer:toggleMain', () => {
     if (mainWindow && mainWindow.isVisible()) {
       // 隐藏主窗口 → 抽屉模式
-      mainWindow.hide()
-      mainWindow.setSkipTaskbar(true)
-      if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
+      hideMainToDrawer()
     } else {
       // 显示主窗口 → 任务栏可见，隐藏抽屉（用户主动双击悬浮抽屉）
       incDrawerWake()
-      mainWindow?.setSkipTaskbar(false)
       mainWindow?.setAlwaysOnTop(true)
-      mainWindow?.show()
-      mainWindow?.focus()
+      showMainWindow('drawer-toggle')
       mainWindow?.setAlwaysOnTop(false)
-      drawerWindow?.hide()
     }
   })
   ipcMain.handle('drawer:filesDropped', async (_e, paths: string[]) => {
@@ -1529,9 +1538,7 @@ ipcRenderer.on('debug:log',(_,l)=>addLine(l));
     drawerWindow.setResizable(false)
   })
   ipcMain.handle('drawerSettings:openMain', () => {
-    mainWindow?.setSkipTaskbar(false)
-    mainWindow?.show()
-    mainWindow?.focus()
+    showMainWindow('drawer-settings')
     drawerSettingsWindow?.close()
   })
   ipcMain.handle('drawerSettings:hideDrawer', () => {
@@ -1656,6 +1663,7 @@ ipcRenderer.on('debug:log',(_,l)=>addLine(l));
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else showMainWindow('activate')
   })
 })
 
@@ -1671,16 +1679,11 @@ function registerWakeShortcut(accelerator: string): void {
     const ok = globalShortcut.register(accelerator, () => {
       if (!mainWindow) return
       if (mainWindow.isVisible() && mainWindow.isFocused()) {
-        mainWindow.hide()
-        mainWindow.setSkipTaskbar(true)
-        if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
+        hideMainToDrawer()
       } else {
         incShortcutMain()
         incWakeCount()
-        mainWindow.setSkipTaskbar(false)
-        mainWindow.show()
-        mainWindow.focus()
-        drawerWindow?.hide()
+        showMainWindow('wake-shortcut')
         mainWindow.webContents.send('window:wake')  // 通知渲染层聚焦搜索框
       }
     })
@@ -1706,15 +1709,9 @@ function registerPinboardShortcut(accelerator: string): void {
     const ok = globalShortcut.register(accelerator, () => {
       if (!mainWindow) return
       if (mainWindow.isVisible() && mainWindow.isFocused()) {
-        mainWindow.hide()
-        mainWindow.setSkipTaskbar(true)
-        if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
+        hideMainToDrawer()
       } else {
-        mainWindow.setSkipTaskbar(false)
-        mainWindow.show()
-        mainWindow.focus()
-        drawerWindow?.hide()
-        mainWindow.webContents.send('window:openPinboard')
+        showMainWindow('pinboard')
       }
     })
     if (ok) _pinboardAccelerator = accelerator

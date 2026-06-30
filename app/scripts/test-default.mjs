@@ -51,10 +51,45 @@ test('resource cards do not create one timer per card for visibility polling', (
   assert.doesNotMatch(source, /\bisIndexVisible\b/)
 })
 
-test('app and game icons are generated lazily instead of whole-library backfill', () => {
+test('first-use app and game icon warmup is visible and throttled', () => {
   const source = read('frontend/src/pages/LibraryPage.vue')
-  assert.doesNotMatch(source, /store\.items\.filter\(r\s*=>\s*\(r\.type\s*===\s*['"]app['"]\s*\|\|\s*r\.type\s*===\s*['"]game['"]\)\s*&&\s*!r\.cover_path\s*&&\s*!r\.user_modified\)/)
-  assert.match(source, /App\/game icons are generated lazily/)
+  assert.match(source, /iconWarmupVisible/)
+  assert.match(source, /runInitialIconWarmup/)
+  assert.match(source, /window\.api\.files\.getAppIcon\(resource\.file_path\)/)
+  assert.match(source, /window\.api\.files\.saveCover\(resource\.id, icon\)/)
+  assert.match(source, /iconWarmupDone\.value\+\+/)
+  assert.match(source, /setTimeout\(resolve, 120\)/)
+  assert.match(source, /t\('library\.iconWarmup\.title'\)/)
+  assert.match(source, /scheduleInitialIconWarmup\(300\)/)
+  assert.doesNotMatch(source, /for \(const r of added\) \{\s+window\.api\.files\.getAppIcon/)
+})
+
+test('main window wake paths hide the drawer through a single helper', () => {
+  const main = read('backend/main.ts')
+  assert.match(main, /function showMainWindow\(reason = 'user'\)/)
+  assert.match(main, /if \(mainWindow\.isMinimized\(\)\) mainWindow\.restore\(\)/)
+  assert.match(main, /drawerWindow\?\.hide\(\)/)
+  assert.match(main, /function hideMainToDrawer\(\)/)
+  assert.match(main, /ipcMain\.handle\('drawer:openMain', \(\) => \{\s+showMainWindow\('drawer'\)/)
+  assert.match(main, /showMainWindow\('second-instance'\)/)
+  assert.match(main, /showMainWindow\('activate'\)/)
+  assert.match(main, /mainWindow\.on\('focus', \(\) => \{\s+drawerWindow\?\.hide\(\)/)
+  assert.match(main, /mainWindow\.on\('minimize', \(\) => \{\s+mainWindow\?\.webContents\.send\('window:wake'\)/)
+})
+
+test('quick panel groups can open all resources sequentially', () => {
+  const pinboard = read('frontend/src/components/PinBoard.vue')
+  const library = read('frontend/src/pages/LibraryPage.vue')
+  const zh = read('frontend/src/i18n/locales/zh.ts')
+  const en = read('frontend/src/i18n/locales/en.ts')
+  assert.match(pinboard, /openMany: \[resources: Resource\[\]\]/)
+  assert.match(pinboard, /function openGroupItems\(\)/)
+  assert.match(pinboard, /emit\('openMany', children\)/)
+  assert.match(library, /@open-many="openResourcesSequentially"/)
+  assert.match(library, /async function openResourcesSequentially\(resources: Resource\[\]\)/)
+  assert.match(library, /setTimeout\(resolve, 250\)/)
+  assert.match(zh, /openAll: '\\u4e00\\u952e\\u542f\\u52a8'/)
+  assert.match(en, /openAll: 'Open all'/)
 })
 
 test('image and icon loading stays concurrency limited', () => {
