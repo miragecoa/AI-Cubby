@@ -100,6 +100,15 @@ declare global {
         setZoom: (factor: number) => void
         getZoom: () => number
         getDbPath: () => Promise<string>
+        getDataLocation: () => Promise<{
+          rootDir: string
+          portableDir: string
+          profileDir: string
+          dbPath: string
+          manifestPath: string
+          storageMode: 'portable' | 'userData'
+          migratedFromPortable: boolean
+        }>
         getVersion: () => Promise<string>
         openUrl: (url: string) => Promise<void>
       }

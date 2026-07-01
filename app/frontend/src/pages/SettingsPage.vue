@@ -477,7 +477,33 @@
         <div class="setting-row">
           <div class="setting-info">
             <div class="setting-label">{{ t('settings.data.dbPath') }}</div>
-            <div class="setting-desc mono">{{ dbPath }}</div>
+            <div class="data-location-card">
+              <div class="data-location-line">
+                <span class="data-location-key">当前使用</span>
+                <span class="data-location-badge" :class="{ migrated: dataLocation?.migratedFromPortable }">
+                  {{ dataLocation?.storageMode === 'userData' ? '用户数据目录（已从软件目录复制）' : '软件目录（便携）' }}
+                </span>
+              </div>
+              <div class="data-location-line">
+                <span class="data-location-key">数据根目录</span>
+                <span class="setting-desc mono">{{ dataLocation?.rootDir || '—' }}</span>
+              </div>
+              <div class="data-location-line">
+                <span class="data-location-key">当前配置目录</span>
+                <span class="setting-desc mono">{{ dataLocation?.profileDir || '—' }}</span>
+              </div>
+              <div class="data-location-line">
+                <span class="data-location-key">当前数据库</span>
+                <span class="setting-desc mono">{{ dataLocation?.dbPath || dbPath }}</span>
+              </div>
+              <div v-if="dataLocation?.migratedFromPortable" class="data-location-line">
+                <span class="data-location-key">原便携目录</span>
+                <span class="setting-desc mono">{{ dataLocation.portableDir }}</span>
+              </div>
+              <div v-if="dataLocation?.migratedFromPortable" class="setting-desc data-location-note">
+                旧数据只会复制到新位置，不会从软件目录删除。
+              </div>
+            </div>
           </div>
         </div>
 
@@ -757,6 +783,7 @@ async function reFetchDirTags() {
 }
 
 const dbPath = ref('')
+const dataLocation = ref<Awaited<ReturnType<typeof window.api.app.getDataLocation>> | null>(null)
 const confirmReset = ref(false)
 async function doResetDefaults() {
   await settingsStore.resetToDefaults()
@@ -900,6 +927,7 @@ onUnmounted(() => { unsubProgress(); _unsubDlDone?.(); _unsubDlError?.() })
 onMounted(async () => {
   await settingsStore.load()
   dbPath.value = await window.api.app.getDbPath()
+  dataLocation.value = await window.api.app.getDataLocation()
   appVersion.value = await window.api.app.getVersion()
   const ts = await window.api.settings.get('update_lastAssetTimestamp')
   if (ts) {
@@ -1168,6 +1196,54 @@ function onColorChange(key: string, e: Event) {
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: 12px;
   color: var(--accent-2);
+  word-break: break-all;
+}
+
+.data-location-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  max-width: 100%;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.data-location-line {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.data-location-key {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.data-location-badge {
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.data-location-badge.migrated {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.28);
+}
+
+.data-location-note {
+  margin-top: 2px;
+  color: var(--text-3);
 }
 
 /* Toggle switch */

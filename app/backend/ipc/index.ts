@@ -20,7 +20,7 @@ import { dbPath, dataDir, getDb, clipboardGetItems, clipboardDeleteItem, clipboa
 import { getQuickPanelResources, setQuickPanel, batchSetQuickPanel, batchSetPinOrder, getAllPinGroups, createPinGroup, renamePinGroup, removePinGroup,
   setPinGroupForResource, setPinGroupOrder, setPinGroupCollapsed } from '../db/queries'
 import { checkForUpdate, downloadUpdate, applyAndRestart, skipUpdate, forceUpdate, getChangelog, getPendingUpdate } from '../updater'
-import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest, getProfileDir } from '../db/profiles'
+import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest, getProfileDir, getProfileDataLocation } from '../db/profiles'
 import { listDrives, diskScan, isGuiExe, type DiskScanSignal } from '../disk-scan'
 import { incLaunchCount, incSearchCount, incTagUseCount, incPanelAdd, setResourceCount } from '../heartbeat'
 
@@ -1164,6 +1164,7 @@ public class WH { [DllImport("user32.dll")] public static extern bool SetWindowP
   // ── 应用控制 ──────────────────────────────────────────
   ipcMain.handle('app:quit', () => app.quit())
   ipcMain.handle('app:getDbPath', () => dbPath)
+  ipcMain.handle('app:getDataLocation', () => getProfileDataLocation())
   ipcMain.handle('app:getVersion', () => app.getVersion())
   ipcMain.handle('app:openUrl', (_e, url: string) => shell.openExternal(url))
 

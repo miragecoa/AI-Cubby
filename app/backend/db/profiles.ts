@@ -13,6 +13,16 @@ export interface ProfileManifest {
   profiles: Profile[]
 }
 
+export interface ProfileDataLocation {
+  rootDir: string
+  portableDir: string
+  profileDir: string
+  dbPath: string
+  manifestPath: string
+  storageMode: 'portable' | 'userData'
+  migratedFromPortable: boolean
+}
+
 let cachedAppDir: string | null = null
 
 function getPortableDir(): string {
@@ -94,6 +104,22 @@ function getAppDir(): string {
   cachedAppDir = fallbackDir
   console.warn(`[profiles] Portable directory is not writable, using ${fallbackDir}`)
   return cachedAppDir
+}
+
+export function getProfileDataLocation(): ProfileDataLocation {
+  const portableDir = getPortableDir()
+  const rootDir = getAppDir()
+  const manifest = loadManifest()
+  const profileDir = join(rootDir, 'profiles', manifest.active || 'default')
+  return {
+    rootDir,
+    portableDir,
+    profileDir,
+    dbPath: join(profileDir, 'resources.db'),
+    manifestPath: join(rootDir, 'profiles.json'),
+    storageMode: rootDir === portableDir ? 'portable' : 'userData',
+    migratedFromPortable: rootDir !== portableDir
+  }
 }
 
 function getManifestPath(): string {

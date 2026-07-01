@@ -259,6 +259,15 @@ contextBridge.exposeInMainWorld('api', {
     setZoom: (factor: number): void => webFrame.setZoomFactor(factor),
     getZoom: (): number => webFrame.getZoomFactor(),
     getDbPath: (): Promise<string> => ipcRenderer.invoke('app:getDbPath'),
+    getDataLocation: (): Promise<{
+      rootDir: string
+      portableDir: string
+      profileDir: string
+      dbPath: string
+      manifestPath: string
+      storageMode: 'portable' | 'userData'
+      migratedFromPortable: boolean
+    }> => ipcRenderer.invoke('app:getDataLocation'),
     getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
     openUrl: (url: string): Promise<void> => ipcRenderer.invoke('app:openUrl', url),
     setTitle: (title: string): Promise<void> => ipcRenderer.invoke('app:setTitle', title),
