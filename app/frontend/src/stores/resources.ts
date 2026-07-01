@@ -300,7 +300,7 @@ export const useResourceStore = defineStore('resources', () => {
   }
 
   async function ignore(filePath: string, id: string) {
-    await window.api.resources.ignore(filePath)
+    await window.api.resources.ignore(filePath, id)
     items.value = items.value.filter((r) => r.id !== id)
     runningMap.value.delete(id)
   }

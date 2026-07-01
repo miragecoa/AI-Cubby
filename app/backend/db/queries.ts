@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { basename, extname } from 'path'
-import { statSync } from 'fs'
 import { getDb } from './index'
+import { getPathSize } from '../utils/path-size'
 
 export interface Resource {
   id: string
@@ -69,11 +69,12 @@ export function upsertResource(
     ? 'DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at WHERE resources.title != excluded.title'
     : 'DO NOTHING'
 
+  const fileSize = getPathSize(data.file_path)
   const info = db.prepare(`
-    INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at)
-    VALUES (@id, @type, @title, @file_path, @cover_path, @rating, @note, @meta, @added_at, @updated_at)
+    INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, file_size)
+    VALUES (@id, @type, @title, @file_path, @cover_path, @rating, @note, @meta, @added_at, @updated_at, @file_size)
     ON CONFLICT(file_path) ${onConflict}
-  `).run({ cover_path: null, note: null, meta: null, ...data, id, added_at: now, updated_at: now })
+  `).run({ cover_path: null, note: null, meta: null, ...data, id, added_at: now, updated_at: now, file_size: fileSize })
 
   // changes=0 且 DO NOTHING：说明已存在且未变更，返回 null 让调用方跳过 onNewEntry
   if (info.changes === 0) return null
@@ -135,8 +136,7 @@ export function addManualResource(data: {
   }
   const id = randomUUID()
   const now = Date.now()
-  let fileSize = 0
-  try { fileSize = statSync(data.file_path).size } catch { /* file gone or inaccessible */ }
+  const fileSize = getPathSize(data.file_path)
   db.prepare(`
     INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, file_size)
     VALUES (@id, @type, @title, @file_path, NULL, 0, @note, @meta, @added_at, @updated_at, @file_size)
@@ -157,19 +157,20 @@ export function restoreResource(resource: Resource): Resource | null {
   // 则通过 UPDATE 按 file_path 还原快照数据，避免 INSERT OR REPLACE 的级联删除风险。
   const info = db.prepare(`
     INSERT OR IGNORE INTO resources
-      (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, open_count, total_run_time, last_run_at)
+      (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, open_count, total_run_time, last_run_at, file_size)
     VALUES
-      (@id, @type, @title, @file_path, @cover_path, @rating, @note, @meta, @added_at, @updated_at, @open_count, @total_run_time, @last_run_at)
-  `).run(resource)
+      (@id, @type, @title, @file_path, @cover_path, @rating, @note, @meta, @added_at, @updated_at, @open_count, @total_run_time, @last_run_at, @file_size)
+  `).run({ ...resource, file_size: resource.file_size ?? getPathSize(resource.file_path) })
   if (info.changes === 0) {
     // 行已存在（监视器抢先插入）：UPDATE 还原快照，保留 resource_tags 不动（避免级联删除）
     db.prepare(`
       UPDATE resources SET
         id=@id, type=@type, title=@title, cover_path=@cover_path, rating=@rating,
         note=@note, meta=@meta, added_at=@added_at, updated_at=@updated_at,
-        open_count=@open_count, total_run_time=@total_run_time, last_run_at=@last_run_at
+        open_count=@open_count, total_run_time=@total_run_time, last_run_at=@last_run_at,
+        file_size=@file_size
       WHERE file_path=@file_path
-    `).run(resource)
+    `).run({ ...resource, file_size: resource.file_size ?? getPathSize(resource.file_path) })
   }
   if (Array.isArray((resource as any).tags)) {
     for (const tag of (resource as any).tags as Array<{ id: number; name: string; source?: string }>) {

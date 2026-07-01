@@ -2710,7 +2710,7 @@ function openListMenu(e: MouseEvent, item: Resource) {
 async function listMenuAdminRun() {
   if (!listMenu.item) return
   listMenu.show = false
-  const updated = await window.api.files.openAsAdmin(listMenu.item.file_path)
+  const updated = await window.api.files.openAsAdmin(listMenu.item.file_path, listMenu.item.id)
   if (updated) store.addOrUpdate(updated)
 }
 
@@ -2742,7 +2742,7 @@ function openHeatMenu(e: MouseEvent, item: Resource) {
 async function heatMenuAdminRun() {
   if (!heatMenu.item) return
   heatMenu.show = false
-  const updated = await window.api.files.openAsAdmin(heatMenu.item.file_path)
+  const updated = await window.api.files.openAsAdmin(heatMenu.item.file_path, heatMenu.item.id)
   if (updated) store.addOrUpdate(updated)
 }
 
@@ -4113,7 +4113,7 @@ async function openResource(resource: Resource) {
     await openLocalNote(resource)
     return
   }
-  const updated = await window.api.files.openPath(resource.file_path, resource.meta)
+  const updated = await window.api.files.openPath(resource.file_path, resource.meta, resource.id)
   if (updated) store.addOrUpdate(updated)
 }
 

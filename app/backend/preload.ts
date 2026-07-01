@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('api', {
     update: (id: string, data: object) => ipcRenderer.invoke('resources:update', id, data),
     remove: (id: string) => ipcRenderer.invoke('resources:remove', id),
     restore: (resource: object) => ipcRenderer.invoke('resources:restore', resource),
-    ignore: (filePath: string) => ipcRenderer.invoke('resources:ignore', filePath),
+    ignore: (filePath: string, resourceId?: string) => ipcRenderer.invoke('resources:ignore', filePath, resourceId),
     add: (data: object) => ipcRenderer.invoke('resources:add', data),
     batchRemove: (ids: string[]): Promise<number> => ipcRenderer.invoke('resources:batchRemove', ids),
     batchUpdate: (ids: string[], data: object): Promise<any[]> => ipcRenderer.invoke('resources:batchUpdate', ids, data),
@@ -99,8 +99,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // 文件操作
   files: {
-    openPath: (filePath: string, meta?: string) => ipcRenderer.invoke('files:openPath', filePath, meta),
-    openAsAdmin: (filePath: string) => ipcRenderer.invoke('files:openAsAdmin', filePath),
+    openPath: (filePath: string, meta?: string, resourceId?: string) => ipcRenderer.invoke('files:openPath', filePath, meta, resourceId),
+    openAsAdmin: (filePath: string, resourceId?: string) => ipcRenderer.invoke('files:openAsAdmin', filePath, resourceId),
     openInExplorer: (filePath: string) => ipcRenderer.invoke('files:openInExplorer', filePath),
     resolveDropped: (paths: string[]): Promise<Array<{ type: string; title: string; file_path: string; meta?: string }>> =>
       ipcRenderer.invoke('files:resolveDropped', paths),

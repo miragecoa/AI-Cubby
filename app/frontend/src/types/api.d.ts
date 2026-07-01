@@ -9,7 +9,7 @@ declare global {
         update: (id: string, data: Partial<import('../stores/resources').Resource>) => Promise<import('../stores/resources').Resource | null>
         remove: (id: string) => Promise<void>
         restore: (resource: import('../stores/resources').Resource) => Promise<import('../stores/resources').Resource | null>
-        ignore: (filePath: string) => Promise<void>
+        ignore: (filePath: string, resourceId?: string) => Promise<void>
         add: (data: { type: string; title: string; file_path: string; note?: string }) => Promise<{ resource: import('../stores/resources').Resource; existed: boolean }>
         batchRemove: (ids: string[]) => Promise<number>
         batchUpdate: (ids: string[], data: Partial<import('../stores/resources').Resource>) => Promise<import('../stores/resources').Resource[]>
@@ -42,8 +42,8 @@ declare global {
         reFetchDirTags: () => Promise<void>
       }
       files: {
-        openPath: (filePath: string, meta?: string) => Promise<import('../stores/resources').Resource | null>
-        openAsAdmin: (filePath: string) => Promise<import('../stores/resources').Resource | null>
+        openPath: (filePath: string, meta?: string, resourceId?: string) => Promise<import('../stores/resources').Resource | null>
+        openAsAdmin: (filePath: string, resourceId?: string) => Promise<import('../stores/resources').Resource | null>
         openInExplorer: (filePath: string) => Promise<void>
         readImage: (filePath: string, size?: number) => Promise<string | null>
         readFullImage: (filePath: string) => Promise<string | null>

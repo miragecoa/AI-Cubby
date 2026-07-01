@@ -1,9 +1,10 @@
 import Database from 'better-sqlite3'
 import { join, basename, normalize } from 'path'
-import { mkdirSync, unlinkSync, statSync, existsSync } from 'fs'
+import { mkdirSync, unlinkSync, existsSync } from 'fs'
 import { SCHEMA_SQL } from './schema'
 import { loadManifest, getProfileDir } from './profiles'
 import { pinyin } from 'pinyin-pro'
+import { getPathSize } from '../utils/path-size'
 
 let db: Database.Database
 export let dbPath = ''
@@ -138,12 +139,15 @@ export function initDatabase(profileId?: string): Database.Database {
 
   // 补填 file_size（每次启动检查，确保新旧资源都有值）
   {
-    const rows = db.prepare(`SELECT id, file_path FROM resources WHERE file_size IS NULL OR file_size = 0`).all() as Array<{ id: string; file_path: string }>
+    const rows = db.prepare(`SELECT id, file_path FROM resources WHERE file_size IS NULL OR file_size = 0 LIMIT 200`).all() as Array<{ id: string; file_path: string }>
     if (rows.length) {
       const stmt = db.prepare(`UPDATE resources SET file_size = ? WHERE id = ?`)
       let filled = 0
       for (const r of rows) {
-        try { const s = statSync(r.file_path); stmt.run(s.size, r.id); filled++ } catch { /* file gone */ }
+        try {
+          const size = getPathSize(r.file_path, { maxEntries: 3000, deadlineMs: 500 })
+          if (size > 0) { stmt.run(size, r.id); filled++ }
+        } catch { /* file gone */ }
       }
       console.log(`[file_size] backfill: ${filled}/${rows.length}`)
     }
@@ -273,4 +277,3 @@ export function clipboardClearAll(): void {
     try { require('fs').unlinkSync(r.image_path) } catch { /* already gone */ }
   }
 }
-

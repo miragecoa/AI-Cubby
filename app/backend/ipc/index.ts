@@ -510,9 +510,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('resources:restore', (_e, resource: object) => restoreResource(resource as any))
 
-  ipcMain.handle('resources:ignore', (_e, filePath: string) => {
+  ipcMain.handle('resources:ignore', (_e, filePath: string, resourceId?: string) => {
     addIgnoredPath(filePath)
-    removeResourceByPath(filePath)   // 同时从资源库中删除，防止重启后重新出现
+    if (resourceId) removeResource(resourceId)
+    else removeResourceByPath(filePath)
     return true
   })
 
@@ -731,7 +732,7 @@ export function registerIpcHandlers(): void {
   })
 
   // ── 文件操作 ──────────────────────────────────────────
-  ipcMain.handle('files:openPath', async (_e, filePath: string, meta?: string) => {
+  ipcMain.handle('files:openPath', async (_e, filePath: string, meta?: string, resourceId?: string) => {
     incLaunchCount()
     const m = meta ? (() => { try { return JSON.parse(meta) } catch { return null } })() : null
     if (m?.steam_appid) {
@@ -746,6 +747,7 @@ export function registerIpcHandlers(): void {
     } else {
       shell.openPath(filePath).catch(() => { })
     }
+    if (resourceId) return touchResourceUsage(resourceId)
     const resource = getResourceByPath(filePath)
     return resource ? touchResourceUsage(resource.id) : null
   })
@@ -759,7 +761,7 @@ export function registerIpcHandlers(): void {
 
   // 以管理员身份运行（Windows UAC 提权）
   // 使用 -PassThru 获取 PID，手动注册运行会话（UAC 提权进程的父进程是 svchost，WMI 监听会过滤掉）
-  ipcMain.handle('files:openAsAdmin', async (_e, filePath: string) => {
+  ipcMain.handle('files:openAsAdmin', async (_e, filePath: string, resourceId?: string) => {
     let targetPath = filePath
     if (filePath.toLowerCase().endsWith('.lnk')) {
       try { targetPath = shell.readShortcutLink(filePath).target || filePath } catch { /* ignore */ }
@@ -775,6 +777,7 @@ export function registerIpcHandlers(): void {
       })
       const pid = parseInt(stdout)
       if (pid && !isNaN(pid)) {
+        if (resourceId) return touchResourceUsage(resourceId)
         return trackRunningProcess(targetPath, pid)
       }
     } catch { /* 用户取消 UAC 或其他错误 */ }

@@ -582,7 +582,7 @@ const isExe = computed(() => {
 
 async function openAsAdmin() {
   showMenu.value = false
-  const updated = await window.api.files.openAsAdmin(props.resource.file_path)
+  const updated = await window.api.files.openAsAdmin(props.resource.file_path, props.resource.id)
   if (updated) store.addOrUpdate(updated)
 }
 

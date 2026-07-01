@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join, dirname, basename } from 'path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
+import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync, rmSync, unlinkSync } from 'fs'
 import { randomUUID } from 'crypto'
 
 export interface Profile {
@@ -13,7 +13,9 @@ export interface ProfileManifest {
   profiles: Profile[]
 }
 
-function getAppDir(): string {
+let cachedAppDir: string | null = null
+
+function getPortableDir(): string {
   if (process.env.AI_CUBBY_PROFILE_ROOT) return process.env.AI_CUBBY_PROFILE_ROOT
   if (!app.isPackaged) return app.getAppPath()
   // Launched via launcher stub → LAUNCHER_EXE = root\AI-Cubby.exe
@@ -24,6 +26,74 @@ function getAppDir(): string {
   if (basename(exeDir).toLowerCase() === 'core') return dirname(exeDir)
   // Legacy flat install — exe is already in the root
   return exeDir
+}
+
+function canWriteDir(dir: string): boolean {
+  try {
+    mkdirSync(dir, { recursive: true })
+    const probe = join(dir, `.ai-cubby-write-test-${process.pid}-${Date.now()}`)
+    writeFileSync(probe, 'ok', 'utf8')
+    unlinkSync(probe)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function canWriteExistingProfileDb(dir: string): boolean {
+  const manifestPath = join(dir, 'profiles.json')
+  if (!existsSync(manifestPath)) return true
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as ProfileManifest
+    const active = manifest.active || 'default'
+    const resourceDb = join(dir, 'profiles', active, 'resources.db')
+    if (!existsSync(resourceDb)) return true
+    const fd = openSync(resourceDb, 'r+')
+    closeSync(fd)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function copyDirMissing(src: string, dest: string): void {
+  if (!existsSync(src) || existsSync(dest)) return
+  const stat = lstatSync(src)
+  if (stat.isSymbolicLink()) return
+  if (!stat.isDirectory()) {
+    mkdirSync(dirname(dest), { recursive: true })
+    copyFileSync(src, dest)
+    return
+  }
+  mkdirSync(dest, { recursive: true })
+  for (const name of readdirSync(src)) {
+    copyDirMissing(join(src, name), join(dest, name))
+  }
+}
+
+function migrateProfileDataIfNeeded(fromDir: string, toDir: string): void {
+  try {
+    mkdirSync(toDir, { recursive: true })
+    copyDirMissing(join(fromDir, 'profiles.json'), join(toDir, 'profiles.json'))
+    copyDirMissing(join(fromDir, 'profiles'), join(toDir, 'profiles'))
+  } catch (error) {
+    console.warn('[profiles] Failed to migrate profile data to writable directory:', error)
+  }
+}
+
+function getAppDir(): string {
+  if (cachedAppDir) return cachedAppDir
+  const portableDir = getPortableDir()
+  if (process.env.AI_CUBBY_PROFILE_ROOT || !app.isPackaged || (canWriteDir(portableDir) && canWriteExistingProfileDb(portableDir))) {
+    cachedAppDir = portableDir
+    return cachedAppDir
+  }
+
+  const fallbackDir = join(app.getPath('userData'), 'portable-data')
+  migrateProfileDataIfNeeded(portableDir, fallbackDir)
+  cachedAppDir = fallbackDir
+  console.warn(`[profiles] Portable directory is not writable, using ${fallbackDir}`)
+  return cachedAppDir
 }
 
 function getManifestPath(): string {
