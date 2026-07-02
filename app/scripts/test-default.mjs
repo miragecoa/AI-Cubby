@@ -92,6 +92,30 @@ test('quick panel groups can open all resources sequentially', () => {
   assert.match(en, /openAll: 'Open all'/)
 })
 
+test('quick panel resource context menu mirrors normal resource actions', () => {
+  const pinboard = read('frontend/src/components/PinBoard.vue')
+  const library = read('frontend/src/pages/LibraryPage.vue')
+  assert.match(pinboard, /select: \[resource: Resource\]/)
+  assert.match(pinboard, /remove: \[resource: Resource\]/)
+  assert.match(pinboard, /ignore: \[resource: Resource\]/)
+  assert.match(pinboard, /selectCtxItem/)
+  assert.match(pinboard, /openCtxAsAdmin/)
+  assert.match(pinboard, /showCtxInFolder/)
+  assert.match(pinboard, /killCtxItem/)
+  assert.match(pinboard, /setCtxPrivate/)
+  assert.match(pinboard, /ignoreCtxItem/)
+  assert.match(pinboard, /removeCtxItem/)
+  assert.match(pinboard, /t\('resource\.detail'\)/)
+  assert.match(pinboard, /t\('resource\.admin'\)/)
+  assert.match(pinboard, /t\('resource\.showInFolder'\)/)
+  assert.match(pinboard, /t\('resource\.setPrivate'\)/)
+  assert.match(pinboard, /t\('resource\.ignore'\)/)
+  assert.match(pinboard, /t\('resource\.removeFromLibrary'\)/)
+  assert.match(library, /@select="onCardSelect"/)
+  assert.match(library, /@remove="removeResource"/)
+  assert.match(library, /@ignore="ignoreResource"/)
+})
+
 test('image and icon loading stays concurrency limited', () => {
   const imageCache = read('frontend/src/utils/image-cache.ts')
   const ipc = read('backend/ipc/index.ts')
@@ -263,6 +287,20 @@ test('document category can create managed notes and profile documents', () => {
   assert.match(zh, /saveAndClose: '保存并关闭'/)
   assert.match(en, /createCard: 'New'/)
   assert.match(en, /saveAndClose: 'Save and close'/)
+})
+
+test('search includes managed note text content as low priority matches', () => {
+  const queries = read('backend/db/queries.ts')
+  const ipc = read('backend/ipc/index.ts')
+  assert.match(ipc, /INSERT OR REPLACE INTO resource_content/)
+  assert.match(ipc, /fetch_status, is_truncated, word_count, fetched_at/)
+  assert.match(queries, /JOIN resource_content rc ON rc\.resource_id = r\.id/)
+  assert.match(queries, /content_hits=\$\{contentRows\.length\}/)
+  assert.match(queries, /function readSearchableTextDocument/)
+  assert.match(queries, /ext !== '\.md' && ext !== '\.txt'/)
+  assert.match(queries, /stat\.size > 1024 \* 1024/)
+  assert.match(queries, /text_file_hits/)
+  assert.match(queries, /rows\.push\(row\)/)
 })
 
 let failed = 0

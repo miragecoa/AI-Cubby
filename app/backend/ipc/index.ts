@@ -586,6 +586,11 @@ export function registerIpcHandlers(): void {
     const existing = getResourceByPath(filePath)
     if (existing) {
       updateResource(existing.id, { file_size: Buffer.byteLength(content, 'utf8') } as any)
+      getDb().prepare(`
+        INSERT OR REPLACE INTO resource_content
+          (resource_id, text, fetch_status, is_truncated, word_count, fetched_at)
+        VALUES (?, ?, 'done', 0, ?, ?)
+      `).run(existing.id, content, content.trim() ? content.trim().split(/\s+/).length : 0, Date.now())
       return getResourceById(existing.id)
     }
     return null

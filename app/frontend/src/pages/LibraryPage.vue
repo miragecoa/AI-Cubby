@@ -611,7 +611,19 @@
           <div v-else ref="gridScrollRef" class="grid-scroll" @mousedown="onGridMousedown" @scroll="onContentScroll" @wheel="onContentWheel">
             <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
             <!-- Pin Board -->
-            <PinBoard ref="pinBoardRef" v-if="viewMode === 'pinboard'" :zoom="cardZoom" :batch-mode="batchMode" :selected-ids="selectedIds" @open="openResource" @open-many="openResourcesSequentially" @refresh="() => {}" />
+            <PinBoard
+              ref="pinBoardRef"
+              v-if="viewMode === 'pinboard'"
+              :zoom="cardZoom"
+              :batch-mode="batchMode"
+              :selected-ids="selectedIds"
+              @open="openResource"
+              @open-many="openResourcesSequentially"
+              @select="onCardSelect"
+              @remove="removeResource"
+              @ignore="ignoreResource"
+              @refresh="() => {}"
+            />
 
             <div v-else-if="viewMode !== 'list'" class="grid" :style="{ '--card-min-width': cardMinWidth + 'px' }">
                 <button

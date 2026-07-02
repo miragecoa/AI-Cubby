@@ -89,16 +89,24 @@
     <!-- Context menu -->
     <Teleport to="body">
       <div v-if="ctxMenu.show" class="pb-ctx-backdrop" @mousedown="ctxMenu.show = false" />
-      <div v-if="ctxMenu.show" class="pb-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }">
+      <div v-if="ctxMenu.show" ref="ctxMenuRef" class="pb-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }">
         <template v-if="ctxMenu.isGroup">
           <button @click="openGroupItems()">{{ t('pinboard.openAll') }}</button>
           <button @click="startRenameGroup()">{{ t('pinboard.renameGroup') }}</button>
           <button @click="deleteGroup()">{{ t('pinboard.deleteGroup') }}</button>
         </template>
         <template v-else>
-          <button @click="openCtxItem()">{{ t('resource.open') }}</button>
+          <button @click="selectCtxItem()"><span v-html="ctxIcons.detail" />{{ t('resource.detail') }}</button>
+          <button @click="openCtxItem()"><span v-html="ctxIcons.open" />{{ t('resource.open') }}</button>
+          <button v-if="ctxMenu.resource && isExeResource(ctxMenu.resource)" @click="openCtxAsAdmin()"><span v-html="ctxIcons.shield" />{{ t('resource.admin') }}</button>
+          <button v-if="ctxMenu.resource && ctxMenu.resource.type !== 'webpage'" @click="showCtxInFolder()"><span v-html="ctxIcons.folder" />{{ t('resource.showInFolder') }}</button>
+          <button v-if="ctxMenu.resource && store.runningMap.has(ctxMenu.resource.id)" @click="killCtxItem()" class="danger"><span v-html="ctxIcons.kill" />{{ t('resource.kill') }}</button>
           <button v-if="ctxMenu.inGroup" @click="removeFromGroup()">{{ t('pinboard.removeFromGroup') }}</button>
           <button @click="unpinCtxItem()">{{ t('pinboard.unpin') }}</button>
+          <button v-if="ctxMenu.resource" @click="setCtxPrivate()"><span v-html="ctxIcons.private" />{{ ctxMenu.resource.is_private ? t('resource.unsetPrivate') : t('resource.setPrivate') }}</button>
+          <hr />
+          <button v-if="ctxMenu.resource" @click="ignoreCtxItem()" class="danger"><span v-html="ctxIcons.ignore" />{{ t('resource.ignore') }}</button>
+          <button v-if="ctxMenu.resource" @click="removeCtxItem()" class="danger"><span v-html="ctxIcons.remove" />{{ t('resource.removeFromLibrary') }}</button>
         </template>
       </div>
     </Teleport>
@@ -106,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useResourceStore } from '../stores/resources'
 import type { Resource } from '../stores/resources'
@@ -115,7 +123,14 @@ import { loadImage, loadIcon } from '../utils/image-cache'
 const { t } = useI18n()
 const store = useResourceStore()
 const props = defineProps<{ zoom?: number; batchMode?: boolean; selectedIds?: Set<string> }>()
-const emit = defineEmits<{ open: [resource: Resource]; openMany: [resources: Resource[]]; refresh: [] }>()
+const emit = defineEmits<{
+  open: [resource: Resource]
+  openMany: [resources: Resource[]]
+  refresh: []
+  select: [resource: Resource]
+  remove: [resource: Resource]
+  ignore: [resource: Resource]
+}>()
 
 const iconSize = computed(() => Math.round(56 * (props.zoom ?? 0.75) / 0.75))
 const cellWidth = computed(() => iconSize.value + 32)
@@ -462,9 +477,27 @@ function onItemClick(item: BoardItem) {
 }
 
 const ctxMenu = ref({ show: false, x: 0, y: 0, item: null as BoardItem | null, isGroup: false, inGroup: false, resource: null as Resource | null })
-function onCtxMenu(item: BoardItem, e: MouseEvent) { ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, item, isGroup: item.isGroup, inGroup: false, resource: item.resource ?? null } }
-function onCtxMenuChild(child: Resource, e: MouseEvent) { ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, item: null, isGroup: false, inGroup: true, resource: child } }
-function openCtxItem() { if (ctxMenu.value.resource) emit('open', ctxMenu.value.resource); ctxMenu.value.show = false }
+const ctxMenuRef = ref<HTMLElement | null>(null)
+function clampCtxMenu(sourceEvent: MouseEvent) {
+  nextTick(() => {
+    if (!ctxMenuRef.value) return
+    const rect = ctxMenuRef.value.getBoundingClientRect()
+    if (ctxMenu.value.x + rect.width > window.innerWidth) ctxMenu.value.x = Math.max(8, sourceEvent.clientX - rect.width)
+    if (ctxMenu.value.y + rect.height > window.innerHeight) ctxMenu.value.y = Math.max(8, sourceEvent.clientY - rect.height)
+  })
+}
+function onCtxMenu(item: BoardItem, e: MouseEvent) {
+  if (props.batchMode && !item.isGroup && item.resource) return
+  ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, item, isGroup: item.isGroup, inGroup: false, resource: item.resource ?? null }
+  clampCtxMenu(e)
+}
+function onCtxMenuChild(child: Resource, e: MouseEvent) {
+  ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, item: null, isGroup: false, inGroup: true, resource: child }
+  clampCtxMenu(e)
+}
+function closeCtxMenu() { ctxMenu.value.show = false }
+function openCtxItem() { if (ctxMenu.value.resource) emit('open', ctxMenu.value.resource); closeCtxMenu() }
+function selectCtxItem() { if (ctxMenu.value.resource) emit('select', ctxMenu.value.resource); closeCtxMenu() }
 function openGroupItems() {
   const children = ctxMenu.value.item?.children ?? []
   if (children.length) emit('openMany', children)
@@ -476,6 +509,54 @@ async function removeFromGroup() { if (ctxMenu.value.resource) { await window.ap
 function startRenameGroup() { if (ctxMenu.value.item?.groupData) expandedGroup.value = ctxMenu.value.item.groupData; ctxMenu.value.show = false }
 async function deleteGroup() { if (ctxMenu.value.item?.id) { await window.api.pinboard.removeGroup(ctxMenu.value.item.id); await reload() }; ctxMenu.value.show = false }
 async function renameGroup(id: string, name: string) { const n = name.trim(); if (!n) return; await window.api.pinboard.renameGroup(id, n); await reload() }
+function isExeResource(resource: Resource) {
+  const fp = resource.file_path.toLowerCase()
+  return fp.endsWith('.exe') || fp.endsWith('.lnk')
+}
+async function openCtxAsAdmin() {
+  const resource = ctxMenu.value.resource
+  closeCtxMenu()
+  if (!resource) return
+  const updated = await window.api.files.openAsAdmin(resource.file_path, resource.id)
+  if (updated) {
+    store.addOrUpdate(updated)
+    resources.value = resources.value.map(r => r.id === updated.id ? updated : r)
+  }
+}
+function showCtxInFolder() {
+  const resource = ctxMenu.value.resource
+  closeCtxMenu()
+  if (resource) window.api.files.openInExplorer(resource.file_path)
+}
+async function killCtxItem() {
+  const resource = ctxMenu.value.resource
+  closeCtxMenu()
+  if (resource) await window.api.monitor.kill(resource.id)
+}
+async function setCtxPrivate() {
+  const resource = ctxMenu.value.resource
+  closeCtxMenu()
+  if (!resource) return
+  const updated = await window.api.resources.update(resource.id, { is_private: resource.is_private ? 0 : 1 } as any)
+  if (updated) {
+    store.addOrUpdate(updated)
+    resources.value = resources.value.map(r => r.id === updated.id ? updated : r)
+  }
+}
+function ignoreCtxItem() {
+  const resource = ctxMenu.value.resource
+  closeCtxMenu()
+  if (!resource) return
+  emit('ignore', resource)
+  resources.value = resources.value.filter(r => r.id !== resource.id)
+}
+function removeCtxItem() {
+  const resource = ctxMenu.value.resource
+  closeCtxMenu()
+  if (!resource) return
+  emit('remove', resource)
+  resources.value = resources.value.filter(r => r.id !== resource.id)
+}
 
 function onKeyDown(e: KeyboardEvent) { if (e.key === 'Escape' && editMode.value) exitEditMode() }
 defineExpose({ reload, boardItemIds })
@@ -492,6 +573,17 @@ const TYPE_ICONS: Record<string, string> = {
   folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
 }
 function typeIcon(type: string) { return TYPE_ICONS[type] ?? TYPE_ICONS.app }
+
+const ctxIcons = {
+  open: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
+  detail: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+  ignore: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`,
+  kill: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`,
+  private: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>`,
+  remove: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
+  shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+}
 
 async function reload() {
   const [r, g] = await Promise.all([window.api.pinboard.getAll(), window.api.pinboard.getGroups()])
@@ -552,7 +644,12 @@ async function reload() {
 .pb-folder-grid .pb-label { font-size: 10px; width: 68px; }
 
 .pb-ctx-backdrop { position: fixed; inset: 0; z-index: 2000; }
-.pb-ctx-menu { position: fixed; z-index: 2001; background: var(--surface, #191930); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 4px 0; min-width: 140px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
-.pb-ctx-menu button { display: block; width: 100%; text-align: left; padding: 7px 14px; background: none; border: none; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.pb-ctx-menu { position: fixed; z-index: 2001; background: var(--surface, #191930); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 4px 0; min-width: 174px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.pb-ctx-menu button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 14px; background: none; border: none; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.pb-ctx-menu button span { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.pb-ctx-menu button span :deep(svg) { width: 14px; height: 14px; display: block; }
 .pb-ctx-menu button:hover { background: rgba(255,255,255,0.06); color: #fff; }
+.pb-ctx-menu button.danger { color: var(--danger); }
+.pb-ctx-menu button.danger:hover { background: rgba(239, 68, 68, 0.1); }
+.pb-ctx-menu hr { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 4px 0; }
 </style>

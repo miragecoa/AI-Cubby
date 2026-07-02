@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { basename, extname } from 'path'
+import { existsSync, readFileSync, statSync } from 'fs'
 import { getDb } from './index'
 import { getPathSize } from '../utils/path-size'
 
@@ -491,9 +492,24 @@ function extractTokens(query: string): string[] {
   return [...tokens]
 }
 
+function readSearchableTextDocument(filePath: string): string | null {
+  const ext = extname(filePath).toLowerCase()
+  if (ext !== '.md' && ext !== '.txt') return null
+  try {
+    if (!existsSync(filePath)) return null
+    const stat = statSync(filePath)
+    if (!stat.isFile() || stat.size > 1024 * 1024) return null
+    return readFileSync(filePath, 'utf8')
+  } catch {
+    return null
+  }
+}
+
 export function searchResources(query: string, type?: string): Resource[] {
   const db = getDb()
   const typeFilter = type ? `AND r.type = '${type}'` : ''
+  const safeTypeClause = type ? `AND r.type = ?` : ''
+  const safeTypeParams = type ? [type] : []
 
   // 第一步：FTS5 全文搜索（精准）
   let rows = db.prepare(`
@@ -514,18 +530,64 @@ export function searchResources(query: string, type?: string): Resource[] {
     if (tokens.length > 0) {
       const conditions = tokens.map(() => `(r.title LIKE ? OR r.file_path LIKE ?)`).join(' OR ')
       const params = tokens.flatMap(t => [`%${t}%`, `%${t}%`])
-      const typeClause = type ? `AND r.type = '${type}'` : ''
       rows = db.prepare(`
         SELECT r.* FROM resources r
         WHERE (${conditions})
-        ${typeClause}
+        ${safeTypeClause}
         ORDER BY r.added_at DESC
         LIMIT 100
-      `).all(...params) as Resource[]
+      `).all(...params, ...safeTypeParams) as Resource[]
       console.log(`[search] like_hits=${rows.length} params=${JSON.stringify(params)}`)
     } else {
       console.log(`[search] no tokens extracted, skipping LIKE fallback`)
     }
+  }
+
+  const seen = new Set(rows.map(r => r.id))
+  const contentTokens = extractTokens(query)
+  const contentParts = ['rc.text LIKE ?']
+  const contentParams: unknown[] = [`%${query}%`]
+  for (const token of contentTokens) {
+    contentParts.push('rc.text LIKE ?')
+    contentParams.push(`%${token}%`)
+  }
+  const contentRows = db.prepare(`
+    SELECT r.* FROM resources r
+    JOIN resource_content rc ON rc.resource_id = r.id
+    WHERE (${contentParts.join(' OR ')})
+    ${safeTypeClause}
+    ORDER BY COALESCE(rc.fetched_at, 0) DESC, r.updated_at DESC
+    LIMIT 100
+  `).all(...contentParams, ...safeTypeParams) as Resource[]
+  for (const row of contentRows) {
+    if (!seen.has(row.id)) {
+      rows.push(row)
+      seen.add(row.id)
+    }
+  }
+  console.log(`[search] content_hits=${contentRows.length} total=${rows.length}`)
+
+  if (!type || type === 'document') {
+    const textNeedles = [query, ...contentTokens].map(s => s.toLowerCase()).filter(Boolean)
+    const docCandidates = db.prepare(`
+      SELECT r.* FROM resources r
+      WHERE r.type = 'document'
+      ORDER BY r.updated_at DESC
+      LIMIT 200
+    `).all() as Resource[]
+    let fileHits = 0
+    for (const row of docCandidates) {
+      if (seen.has(row.id)) continue
+      const text = readSearchableTextDocument(row.file_path)
+      if (!text) continue
+      const lower = text.toLowerCase()
+      if (!textNeedles.some(needle => lower.includes(needle))) continue
+      rows.push(row)
+      seen.add(row.id)
+      fileHits++
+      if (rows.length >= 100) break
+    }
+    if (fileHits) console.log(`[search] text_file_hits=${fileHits} total=${rows.length}`)
   }
 
   return rows.map(attachTags)
