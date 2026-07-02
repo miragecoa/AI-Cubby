@@ -35,6 +35,9 @@ export const useResourceStore = defineStore('resources', () => {
   const activeTags = ref<number[]>([])
   const excludedTags = ref<number[]>([])
   const loading = ref(false)
+  const contentSearchQuery = ref('')
+  const contentSearchType = ref('')
+  const contentSearchResults = ref<Resource[]>([])
 
   // 运行中状态：resourceId → startTime(ms)
   const runningMap = ref<Map<string, number>>(new Map())
@@ -203,6 +206,18 @@ export const useResourceStore = defineStore('resources', () => {
         }
       }
 
+      const currentContentType = activeType.value === 'all' ? '' : activeType.value
+      if (contentSearchQuery.value === searchQuery.value.trim() && contentSearchType.value === currentContentType && contentSearchResults.value.length > 0) {
+        const matchedIds = new Set(matched.map(r => r.id))
+        for (const resource of contentSearchResults.value) {
+          if (activeType.value !== 'all' && resource.type !== activeType.value) continue
+          if (matchedIds.has(resource.id)) continue
+          matched.push(resource)
+          matchedIds.add(resource.id)
+          relevanceMap.set(resource.id, 120)
+        }
+      }
+
       list = matched
     }
 
@@ -284,6 +299,12 @@ export const useResourceStore = defineStore('resources', () => {
     } catch { /* 忽略 */ }
   }
 
+  function setContentSearchResults(query: string, type: string, resources: Resource[]) {
+    contentSearchQuery.value = query
+    contentSearchType.value = type
+    contentSearchResults.value = resources
+  }
+
   function addOrUpdate(resource: Resource) {
     const idx = items.value.findIndex((r) => r.id === resource.id)
     if (idx >= 0) {
@@ -334,6 +355,7 @@ export const useResourceStore = defineStore('resources', () => {
     items, activeType, searchQuery, activeTags, excludedTags, loading,
     runningMap, clockTick, setRunning,
     filtered, counts,
+    setContentSearchResults,
     loadAll, addOrUpdate, remove, ignore, batchIgnore,
     batchRemove, batchUpdate, batchReplacePath
   }

@@ -2498,6 +2498,8 @@ watch(() => [store.activeType, store.searchQuery, store.activeTags], () => {
 
 // 搜索计数：从有内容到清空算 1 次完整搜索
 let _hadSearchContent = false
+let _contentSearchTimer: ReturnType<typeof setTimeout> | null = null
+let _contentSearchSeq = 0
 watch(() => store.searchQuery, (q) => {
   const hasContent = !!q.trim()
   if (hasContent) {
@@ -2509,6 +2511,24 @@ watch(() => store.searchQuery, (q) => {
   }
   // 并行触发语义搜索（AI 开启时）
   aiStore.scheduleSearch(q)
+  if (_contentSearchTimer) clearTimeout(_contentSearchTimer)
+  const query = q.trim()
+  const type = store.activeType === 'all' ? undefined : store.activeType
+  if (!query) {
+    store.setContentSearchResults('', type ?? '', [])
+    return
+  }
+  const seq = ++_contentSearchSeq
+  _contentSearchTimer = setTimeout(async () => {
+    try {
+      const results = await window.api.search.query(query, type)
+      if (seq === _contentSearchSeq && store.searchQuery.trim() === query) {
+        store.setContentSearchResults(query, type ?? '', results)
+      }
+    } catch {
+      if (seq === _contentSearchSeq) store.setContentSearchResults(query, type ?? '', [])
+    }
+  }, 180)
 })
 
 // 拖放导入

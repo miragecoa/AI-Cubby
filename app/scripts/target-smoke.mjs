@@ -61,6 +61,13 @@ try {
   await page.reload()
   await page.waitForSelector('.app', { timeout: 20_000 })
   await page.waitForTimeout(800)
+  const searchInput = page.locator('.search[type="search"]')
+  await searchInput.fill('qxnotebody')
+  await page.waitForTimeout(700)
+  const uiSearchHit = await page.locator('.card, .list-row, .pb-cell').filter({ hasText: 'Needle Note' }).count()
+  if (uiSearchHit < 1) throw new Error('top search box did not show note matched by body text')
+  await searchInput.fill('')
+  await page.waitForTimeout(300)
   const viewButtons = page.locator('.view-toggle-btn')
   if (await viewButtons.count() > 1) {
     await viewButtons.nth(1).click()

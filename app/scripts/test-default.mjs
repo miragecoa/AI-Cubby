@@ -292,6 +292,9 @@ test('document category can create managed notes and profile documents', () => {
 test('search includes managed note text content as low priority matches', () => {
   const queries = read('backend/db/queries.ts')
   const ipc = read('backend/ipc/index.ts')
+  const store = read('frontend/src/stores/resources.ts')
+  const library = read('frontend/src/pages/LibraryPage.vue')
+  const targetSmoke = read('scripts/target-smoke.mjs')
   assert.match(ipc, /INSERT OR REPLACE INTO resource_content/)
   assert.match(ipc, /fetch_status, is_truncated, word_count, fetched_at/)
   assert.match(queries, /JOIN resource_content rc ON rc\.resource_id = r\.id/)
@@ -301,6 +304,13 @@ test('search includes managed note text content as low priority matches', () => 
   assert.match(queries, /stat\.size > 1024 \* 1024/)
   assert.match(queries, /text_file_hits/)
   assert.match(queries, /rows\.push\(row\)/)
+  assert.match(store, /contentSearchResults = ref<Resource\[\]>\(\[\]\)/)
+  assert.match(store, /setContentSearchResults\(query: string, type: string, resources: Resource\[\]\)/)
+  assert.match(store, /relevanceMap\.set\(resource\.id, 120\)/)
+  assert.match(library, /window\.api\.search\.query\(query, type\)/)
+  assert.match(library, /store\.setContentSearchResults\(query, type \?\? '', results\)/)
+  assert.match(targetSmoke, /searchInput\.fill\('qxnotebody'\)/)
+  assert.match(targetSmoke, /top search box did not show note matched by body text/)
 })
 
 let failed = 0
