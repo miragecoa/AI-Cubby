@@ -321,6 +321,7 @@ const displayTitle = computed(() => {
   const sep = Math.max(r.file_path.lastIndexOf('/'), r.file_path.lastIndexOf('\\'))
   if (dot > sep && dot > 0) {
     const ext = r.file_path.slice(dot)
+    if (ext.toLowerCase() === '.aicnote') return r.title
     // title 已含扩展名或无扩展名类型（文件夹）则跳过
     if (!r.title.toLowerCase().endsWith(ext.toLowerCase())) {
       // app/game 且 title 是 lnk 友好名（≠ exe 基名），不追加扩展名

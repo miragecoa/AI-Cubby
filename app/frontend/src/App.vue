@@ -13,11 +13,7 @@
     <div class="titlebar" :class="{ 'is-pinned': isPinned }">
       <div class="titlebar-title">
         <!-- 图标：自定义图片 or 默认SVG -->
-        <button
-          class="tb-logo-btn"
-          :title="t('sidebar.changeIcon')"
-          @click="pickAppIcon"
-        >
+        <div class="tb-logo-mark" aria-hidden="true">
           <img v-if="customIconUrl" :src="customIconUrl" class="tb-logo-img" alt="icon" />
           <svg v-else class="tb-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="7" height="7" rx="1.5" />
@@ -25,16 +21,8 @@
             <rect x="3" y="14" width="7" height="7" rx="1.5" />
             <rect x="14" y="14" width="7" height="7" rx="1.5" />
           </svg>
-        </button>
+        </div>
         <!-- 清除自定义图标按钮（有自定义图标时才显示） -->
-        <button
-          v-if="customIconUrl && sidebarEditing"
-          class="tb-icon-clear"
-          :title="t('sidebar.clearIcon')"
-          @click.stop="clearAppIcon"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
         <input
           v-if="sidebarEditing"
           class="tb-logo-input"
@@ -44,6 +32,14 @@
           maxlength="20"
         />
         <span v-else class="tb-logo-text">{{ settingsStore.appTitle }}</span>
+        <div v-if="sidebarEditing" class="tb-edit-actions">
+          <button class="tb-icon-action" :title="t('sidebar.changeIcon')" @click.stop="pickAppIcon">
+            <span v-html="imageIcon" />
+          </button>
+          <button v-if="customIconUrl" class="tb-icon-action danger" :title="t('sidebar.clearIcon')" @click.stop="clearAppIcon">
+            <span v-html="resetIcon" />
+          </button>
+        </div>
         <button
           class="tb-edit-btn"
           :class="{ active: sidebarEditing }"
@@ -129,6 +125,8 @@ async function clearAppIcon() {
 
 const editIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`
 const doneIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>`
+const imageIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 15l-4.5-4.5L10 17l-2.5-2.5L3 19"/></svg>`
+const resetIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v6h6"/></svg>`
 
 const isOnSettings = computed(() => route.path === '/settings')
 function toggleSettings() {
@@ -290,22 +288,17 @@ body {
   padding: 0 6px 0 26px;
   height: 100%;
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
 }
 
-.tb-logo-btn {
+.tb-logo-mark {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: none;
-  border: none;
   padding: 2px;
   border-radius: 4px;
-  cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.1s;
 }
-.tb-logo-btn:hover { background: var(--surface-2); }
 
 .tb-logo {
   width: 16px;
@@ -321,7 +314,15 @@ body {
   object-fit: contain;
 }
 
-.tb-icon-clear {
+.tb-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.tb-icon-action {
   width: 16px;
   height: 16px;
   background: none;
@@ -335,9 +336,12 @@ body {
   justify-content: center;
   flex-shrink: 0;
   transition: background 0.1s, color 0.1s;
+  -webkit-app-region: no-drag;
 }
-.tb-icon-clear:hover { background: rgba(239,68,68,0.12); color: #ef4444; }
-.tb-icon-clear svg { width: 10px; height: 10px; }
+.tb-icon-action:hover { background: var(--surface-2); color: var(--text-2); }
+.tb-icon-action.danger:hover { background: rgba(239,68,68,0.12); color: #ef4444; }
+.tb-icon-action span { display: flex; line-height: 0; }
+.tb-icon-action svg { width: 12px; height: 12px; }
 
 .tb-logo-text {
   font-size: 13px;
@@ -359,6 +363,7 @@ body {
   outline: none;
   letter-spacing: -0.01em;
   width: 110px;
+  -webkit-app-region: no-drag;
 }
 
 .tb-edit-btn {
@@ -375,7 +380,9 @@ body {
   transition: background 0.1s, color 0.1s;
   flex-shrink: 0;
   margin-left: 16px;
+  -webkit-app-region: no-drag;
 }
+.tb-edit-actions + .tb-edit-btn { margin-left: 2px; }
 .tb-edit-btn:hover { background: var(--surface-2); color: var(--text-2); }
 .tb-edit-btn.active { color: var(--accent); background: rgba(99,102,241,0.1); }
 .tb-edit-btn span { display: flex; line-height: 0; }

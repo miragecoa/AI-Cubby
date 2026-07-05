@@ -3,12 +3,12 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import os from 'node:os'
+import { applyAutomationZoom, auditWindowChrome, captureVisualWindow, normalizeVisualWindow } from './visual-harness.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const appDir = resolve(__dirname, '..')
 const mainEntry = join(appDir, 'out', 'main', 'main.js')
 const artifactsDir = resolve(appDir, '..', 'artifacts', 'visual-smoke')
-const MAX_VIEWPORT = { width: 1400, height: 900 }
 const useDefaultProfile = process.argv.includes('--default-profile')
 const profileRoot = useDefaultProfile
   ? appDir
@@ -39,28 +39,6 @@ function screenshotPath(name) {
   return join(artifactsDir, `${new Date().toISOString().replace(/[:.]/g, '-')}-${name}.png`)
 }
 
-async function primaryWorkAreaSize(electronApp) {
-  try {
-    return await electronApp.evaluate(({ screen }) => screen.getPrimaryDisplay().workAreaSize)
-  } catch {
-    return { width: MAX_VIEWPORT.width, height: MAX_VIEWPORT.height }
-  }
-}
-
-async function fitViewportToScreen(electronApp, page) {
-  const workArea = await primaryWorkAreaSize(electronApp)
-  const viewport = {
-    width: Math.min(MAX_VIEWPORT.width, Math.max(640, workArea.width - 80)),
-    height: Math.min(MAX_VIEWPORT.height, Math.max(520, workArea.height - 80)),
-  }
-  await page.setViewportSize(viewport)
-  return viewport
-}
-
-async function applyAutomationZoom(page) {
-  await page.evaluate(() => window.api?.app?.setZoom?.(1)).catch(() => {})
-}
-
 let electronApp
 try {
   electronApp = await electron.launch({
@@ -68,6 +46,7 @@ try {
     env: {
       ...process.env,
       AI_CUBBY_SMOKE: '1',
+      AI_CUBBY_VISUAL_NON_INTRUSIVE: process.env.AI_CUBBY_VISUAL_FOREGROUND === '1' ? '0' : '1',
       AI_CUBBY_PROFILE_ROOT: profileRoot,
       ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
     },
@@ -82,8 +61,7 @@ try {
     report.consoleErrors.push(error?.stack || String(error))
   })
   await page.waitForLoadState('domcontentloaded', { timeout: 20_000 })
-  report.viewport = await fitViewportToScreen(electronApp, page)
-  await applyAutomationZoom(page)
+  report.viewport = await normalizeVisualWindow(electronApp, page)
   await page.waitForTimeout(1200)
 
   addCheck('main window opened', await page.locator('body').count() === 1)
@@ -100,9 +78,12 @@ try {
   await applyAutomationZoom(page)
   await page.waitForTimeout(250)
   addCheck('application shell rendered', await page.locator('.titlebar').count() === 1)
+  const chromeAudit = await auditWindowChrome(page)
+  addCheck('sidebar settings is inside screenshot', chromeAudit.settings.found && chromeAudit.settings.visible, JSON.stringify(chromeAudit.settings))
+  addCheck('window controls are inside screenshot', chromeAudit.windowButtons.found && chromeAudit.windowButtons.visible, JSON.stringify(chromeAudit.windowButtons))
 
   const libraryShot = screenshotPath('library')
-  const libraryShotBuffer = await page.screenshot({ path: libraryShot, fullPage: true })
+  const libraryShotBuffer = await captureVisualWindow(page, libraryShot)
   report.screenshots.push({ name: 'library', path: libraryShot })
   addCheck('library screenshot captured', libraryShotBuffer.length > 10_000, `bytes=${libraryShotBuffer.length}`)
 
@@ -115,7 +96,7 @@ try {
   addCheck('settings page has controls', await page.locator('button, input, select').count() > 3)
 
   const settingsShot = screenshotPath('settings')
-  const settingsShotBuffer = await page.screenshot({ path: settingsShot, fullPage: true })
+  const settingsShotBuffer = await captureVisualWindow(page, settingsShot)
   report.screenshots.push({ name: 'settings', path: settingsShot })
   addCheck('settings screenshot captured', settingsShotBuffer.length > 10_000, `bytes=${settingsShotBuffer.length}`)
 

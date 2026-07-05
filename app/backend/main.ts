@@ -775,6 +775,13 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     // 页面加载完成后重新应用保存的标题（防止 HTML <title> 覆盖）
     mainWindow?.setTitle(savedAppTitle)
+    if (process.env['AI_CUBBY_VISUAL_NON_INTRUSIVE'] === '1') {
+      mainWindow?.setSkipTaskbar(true)
+      mainWindow?.showInactive()
+      mainWindow?.blur()
+      drawerWindow?.hide()
+      return
+    }
     const showOnAutoStart = getSetting('showOnAutoStart') === 'true'
     // 无论是否隐藏启动，都先恢复最大化状态，确保后续 show() 时窗口尺寸正确
     if (wasMaximized) mainWindow?.maximize()

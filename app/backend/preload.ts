@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('api', {
     create: (request: { kind: 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'; title: string }): Promise<{ resource: any; existed: boolean }> =>
       ipcRenderer.invoke('documents:create', request),
     readText: (filePath: string): Promise<string> => ipcRenderer.invoke('documents:readText', filePath),
+    readNote: (resourceId: string): Promise<{ resource: any; note: any }> => ipcRenderer.invoke('documents:readNote', resourceId),
+    writeNote: (resourceId: string, note: any): Promise<any | null> =>
+      ipcRenderer.invoke('documents:writeNote', resourceId, note),
     writeText: (filePath: string, content: string): Promise<any | null> =>
       ipcRenderer.invoke('documents:writeText', filePath, content),
     touch: (resourceId: string): Promise<any | null> => ipcRenderer.invoke('documents:touch', resourceId),

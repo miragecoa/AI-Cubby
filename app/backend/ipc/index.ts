@@ -1,4 +1,5 @@
-import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, globalShortcut, webContents, clipboard } from 'electron'
+import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, session, globalShortcut, webContents, clipboard } from 'electron'
+import { randomUUID } from 'crypto'
 import * as mm from 'music-metadata'
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync, unlinkSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
@@ -96,13 +97,26 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.a
 
 type DocumentKind = 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'
 const DOCUMENT_KIND_EXT: Record<DocumentKind, string> = {
-  note: '.md',
+  note: '.aicnote',
   txt: '.txt',
   md: '.md',
   csv: '.csv',
   docx: '.docx',
   xlsx: '.xlsx',
   pptx: '.pptx',
+}
+
+type ManagedNoteBlock =
+  | { id: string; type: 'text'; text: string }
+  | { id: string; type: 'image'; src: string; alt?: string; width?: number; align?: 'left' | 'right' | 'inline' }
+
+interface ManagedNoteDocument {
+  version: 1
+  type: 'ai-cubby-note'
+  title: string
+  blocks: ManagedNoteBlock[]
+  createdAt: number
+  updatedAt: number
 }
 
 function activeProfileDocumentsDir(kind: DocumentKind): string {
@@ -129,6 +143,72 @@ function uniqueDocumentPath(dir: string, title: string, ext: string): string {
     index += 1
   }
   return candidate
+}
+
+function createEmptyManagedNote(title: string, text = ''): ManagedNoteDocument {
+  const now = Date.now()
+  return {
+    version: 1,
+    type: 'ai-cubby-note',
+    title,
+    blocks: [{ id: randomUUID(), type: 'text', text }],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function normalizeManagedNote(input: any, fallbackTitle: string): ManagedNoteDocument {
+  if (input?.type !== 'ai-cubby-note' || !Array.isArray(input.blocks)) {
+    return createEmptyManagedNote(fallbackTitle, typeof input?.content === 'string' ? input.content : '')
+  }
+  const now = Date.now()
+  const blocks = input.blocks
+    .map((block: any): ManagedNoteBlock | null => {
+      if (block?.type === 'image' && typeof block.src === 'string' && block.src.startsWith('data:image/')) {
+        const width = Number(block.width)
+        return {
+          id: typeof block.id === 'string' ? block.id : randomUUID(),
+          type: 'image',
+          src: block.src,
+          alt: typeof block.alt === 'string' ? block.alt : '',
+          width: Number.isFinite(width) ? Math.min(100, Math.max(20, width)) : 70,
+          align: block.align === 'left' || block.align === 'right' || block.align === 'inline' ? block.align : 'left',
+        }
+      }
+      if (block?.type === 'text') {
+        return { id: typeof block.id === 'string' ? block.id : randomUUID(), type: 'text', text: typeof block.text === 'string' ? block.text : '' }
+      }
+      return null
+    })
+    .filter(Boolean) as ManagedNoteBlock[]
+  return {
+    version: 1,
+    type: 'ai-cubby-note',
+    title: typeof input.title === 'string' && input.title.trim() ? input.title : fallbackTitle,
+    blocks: blocks.length ? blocks : [{ id: randomUUID(), type: 'text', text: '' }],
+    createdAt: Number.isFinite(input.createdAt) ? input.createdAt : now,
+    updatedAt: now,
+  }
+}
+
+function managedNoteText(note: ManagedNoteDocument): string {
+  return note.blocks
+    .map(block => block.type === 'text' ? block.text : (block.alt ?? ''))
+    .join('\n')
+    .trim()
+}
+
+function writeManagedNoteFile(filePath: string, note: ManagedNoteDocument): void {
+  writeFileSync(filePath, JSON.stringify({ ...note, updatedAt: Date.now() }, null, 2), 'utf8')
+}
+
+function updateManagedNoteSearchContent(resourceId: string, note: ManagedNoteDocument): void {
+  const text = managedNoteText(note)
+  getDb().prepare(`
+    INSERT OR REPLACE INTO resource_content
+      (resource_id, text, fetch_status, is_truncated, word_count, fetched_at)
+    VALUES (?, ?, 'done', 0, ?, ?)
+  `).run(resourceId, text, text ? text.split(/\s+/).length : 0, Date.now())
 }
 
 function crc32(buf: Buffer): number {
@@ -227,7 +307,7 @@ function createManagedDocument(kind: DocumentKind, rawTitle: string): { filePath
   mkdirSync(dir, { recursive: true })
   const filePath = uniqueDocumentPath(dir, title, ext)
   if (kind === 'note') {
-    writeFileSync(filePath, `# ${title}\n\n`, 'utf8')
+    writeManagedNoteFile(filePath, createEmptyManagedNote(title))
   } else if (kind === 'txt' || kind === 'md' || kind === 'csv') {
     writeFileSync(filePath, '', 'utf8')
   } else {
@@ -236,7 +316,7 @@ function createManagedDocument(kind: DocumentKind, rawTitle: string): { filePath
   return {
     filePath,
     title,
-    meta: JSON.stringify({ created_by: 'ai-cubby', document_kind: kind, managed_note: kind === 'note' }),
+    meta: JSON.stringify({ created_by: 'ai-cubby', document_kind: kind, managed_note: kind === 'note', internal_note_version: kind === 'note' ? 1 : undefined }),
   }
 }
 
@@ -247,6 +327,47 @@ function isProfileDocumentPath(filePath: string): boolean {
   const rel = relative(root, target)
   return !!rel && !rel.startsWith('..') && !rel.includes(':')
 }
+function migrateLegacyManagedNote(resource: NonNullable<ReturnType<typeof getResourceById>>): { resource: NonNullable<ReturnType<typeof getResourceById>>; note: ManagedNoteDocument } {
+  if (!isProfileDocumentPath(resource.file_path)) throw new Error('Document is outside the active profile')
+  const ext = extname(resource.file_path).toLowerCase()
+  if (ext !== '.md' && ext !== '.txt') throw new Error('Only legacy text notes can be migrated')
+  const legacyText = existsSync(resource.file_path) ? readFileSync(resource.file_path, 'utf8') : ''
+  const dir = activeProfileDocumentsDir('note')
+  mkdirSync(dir, { recursive: true })
+  const newPath = uniqueDocumentPath(dir, sanitizeDocumentTitle(resource.title, 'note'), DOCUMENT_KIND_EXT.note)
+  const note = createEmptyManagedNote(resource.title, legacyText)
+  writeManagedNoteFile(newPath, note)
+  let previousMeta: any = {}
+  try { previousMeta = resource.meta ? JSON.parse(resource.meta) : {} } catch { previousMeta = {} }
+  updateResource(resource.id, {
+    file_path: newPath,
+    file_size: statSync(newPath).size,
+    meta: JSON.stringify({
+      ...previousMeta,
+      created_by: 'ai-cubby',
+      document_kind: 'note',
+      managed_note: true,
+      internal_note_version: 1,
+      migrated_from: resource.file_path,
+      migrated_at: Date.now(),
+    }),
+  } as any)
+  updateManagedNoteSearchContent(resource.id, note)
+  return { resource: getResourceById(resource.id)!, note }
+}
+
+function readManagedNoteResource(resourceId: string): { resource: NonNullable<ReturnType<typeof getResourceById>>; note: ManagedNoteDocument } {
+  const resource = getResourceById(resourceId)
+  if (!resource) throw new Error('Resource not found')
+  if (!isProfileDocumentPath(resource.file_path)) throw new Error('Document is outside the active profile')
+  const ext = extname(resource.file_path).toLowerCase()
+  if (ext === '.md' || ext === '.txt') return migrateLegacyManagedNote(resource)
+  if (ext !== '.aicnote') throw new Error('Only managed notes can be edited in app')
+  const note = normalizeManagedNote(JSON.parse(readFileSync(resource.file_path, 'utf8')), resource.title)
+  updateManagedNoteSearchContent(resource.id, note)
+  return { resource, note }
+}
+
 const _audioTagged = new Set<string>() // 本次进程会话内已导入元数据的资源
 
 async function extractAudioCover(filePath: string): Promise<string | null> {
@@ -576,6 +697,25 @@ export function registerIpcHandlers(): void {
     const ext = extname(filePath).toLowerCase()
     if (ext !== '.md' && ext !== '.txt') throw new Error('Only text documents can be edited in app')
     return readFileSync(filePath, 'utf8')
+  })
+
+  ipcMain.handle('documents:readNote', (_e, resourceId: string) => {
+    const { resource, note } = readManagedNoteResource(resourceId)
+    return { resource, note }
+  })
+
+  ipcMain.handle('documents:writeNote', (_e, resourceId: string, payload: ManagedNoteDocument) => {
+    const resource = getResourceById(resourceId)
+    if (!resource) throw new Error('Resource not found')
+    if (!isProfileDocumentPath(resource.file_path)) throw new Error('Document is outside the active profile')
+    if (extname(resource.file_path).toLowerCase() !== '.aicnote') {
+      throw new Error('Only managed notes can be edited in app')
+    }
+    const note = normalizeManagedNote(payload, resource.title)
+    writeManagedNoteFile(resource.file_path, note)
+    updateResource(resource.id, { file_size: statSync(resource.file_path).size } as any)
+    updateManagedNoteSearchContent(resource.id, note)
+    return getResourceById(resource.id)
   })
 
   ipcMain.handle('documents:writeText', (_e, filePath: string, content: string) => {
@@ -1220,7 +1360,8 @@ public class WH { [DllImport("user32.dll")] public static extern bool SetWindowP
     async function tryFetch(src: string): Promise<string | null> {
       try {
         const resp = await net.fetch(src, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' }
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
+          signal: AbortSignal.timeout(6000),
         })
         if (!resp.ok) return null
         const buf = Buffer.from(await resp.arrayBuffer())
@@ -1236,20 +1377,25 @@ public class WH { [DllImport("user32.dll")] public static extern bool SetWindowP
       } catch { return null }
     }
     try {
+      // VPN clients can change the Windows/PAC proxy while the app is running.
+      // Refresh Chromium's proxy service so net.fetch observes the latest route.
+      await session.defaultSession.forceReloadProxyConfig().catch(() => {})
       const { hostname, origin, protocol } = new URL(url)
       // Convert IDN (e.g. 百度.com) to punycode (xn--fiq228c.com) for HTTP headers
       const asciiHost = domainToASCII(hostname) || hostname
       const safeOrigin = asciiHost !== hostname ? `${protocol}//${asciiHost}` : origin
-      // 1. DuckDuckGo favicon (works in China, no auth required)
-      const ddg = await tryFetch(`https://icons.duckduckgo.com/ip3/${asciiHost}.ico`)
-      if (ddg) return ddg
-      // 2. Direct /favicon.ico from the site
-      const direct = await tryFetch(`${safeOrigin}/favicon.ico`)
-      if (direct) return direct
-      // 3. Google S2 fallback
-      const google = await tryFetch(`https://www.google.com/s2/favicons?domain=${asciiHost}&sz=128`)
-      if (google) return google
-      return null
+      // Race independent sources: a blocked provider should not delay a route
+      // that is reachable through the user's local VPN/system proxy.
+      const sources = [
+        `${safeOrigin}/favicon.ico`,
+        `https://icons.duckduckgo.com/ip3/${asciiHost}.ico`,
+        `https://www.google.com/s2/favicons?domain=${asciiHost}&sz=128`,
+      ]
+      return await Promise.any(sources.map(async src => {
+        const icon = await tryFetch(src)
+        if (!icon) throw new Error('favicon unavailable')
+        return icon
+      })).catch(() => null)
     } catch { return null }
   })
 

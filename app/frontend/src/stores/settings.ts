@@ -351,7 +351,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const resourceSort = ref<ResourceSortField>('lastUsed')
   const tagSort = ref<TagSortField>('lastUsed')
   const sidebarCollapsed = ref(false)
-  const showFileExt = ref(true)
+  const showFileExt = ref(false)
   const autoUpdate = ref(true)
   const autoDirTag = ref(true)
   const activeThemeId = ref<ThemeId>('smart')
@@ -933,7 +933,7 @@ export const useSettingsStore = defineStore('settings', () => {
     themeVars.value = { ...DARK_THEME }
     hotkeyWake.value = 'Alt+Space'
     showOnAutoStart.value = false
-    showFileExt.value = true
+    showFileExt.value = false
     autoUpdate.value = true
     resourceSort.value = 'lastUsed'
     tagSort.value = 'lastUsed'
@@ -953,7 +953,7 @@ export const useSettingsStore = defineStore('settings', () => {
       window.api.settings.set('theme', JSON.stringify(DARK_THEME)),
       window.api.settings.set('hotkeyWake', 'Alt+Space'),
       window.api.settings.set('showOnAutoStart', 'false'),
-      window.api.settings.set('showFileExt', 'true'),
+      window.api.settings.set('showFileExt', 'false'),
       window.api.settings.set('autoUpdate', 'true'),
       window.api.settings.set('resourceSort', 'lastUsed'),
       window.api.settings.set('tagSort', 'lastUsed'),

@@ -1,5 +1,18 @@
 export {}
 
+type ManagedNoteBlock =
+  | { id: string; type: 'text'; text: string }
+  | { id: string; type: 'image'; src: string; alt?: string; width?: number; align?: 'left' | 'right' | 'inline' }
+
+interface ManagedNoteDocument {
+  version: 1
+  type: 'ai-cubby-note'
+  title: string
+  blocks: ManagedNoteBlock[]
+  createdAt: number
+  updatedAt: number
+}
+
 declare global {
   interface Window {
     api: {
@@ -21,6 +34,8 @@ declare global {
       documents: {
         create: (request: { kind: 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'; title: string }) => Promise<{ resource: import('../stores/resources').Resource; existed: boolean }>
         readText: (filePath: string) => Promise<string>
+        readNote: (resourceId: string) => Promise<{ resource: import('../stores/resources').Resource; note: ManagedNoteDocument }>
+        writeNote: (resourceId: string, note: ManagedNoteDocument) => Promise<import('../stores/resources').Resource | null>
         writeText: (filePath: string, content: string) => Promise<import('../stores/resources').Resource | null>
         touch: (resourceId: string) => Promise<import('../stores/resources').Resource | null>
       }

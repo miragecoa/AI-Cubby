@@ -357,7 +357,9 @@ async function embedTexts(texts: string[]): Promise<number[][]> {
 // Indexing
 // ---------------------------------------------------------------------------
 
-async function runFullIndex() {
+let fullIndexPromise: Promise<void> | null = null
+
+async function performFullIndex() {
   log('runFullIndex called, db:', !!db, 'llamaReady:', llamaReady)
   if (!db || !llamaReady) { log('runFullIndex aborted'); return }
 
@@ -424,9 +426,28 @@ async function runFullIndex() {
     }
     emitProgress({ stage: '抓取内容', percent: 0, done: 0, total: needsContent.length })
     drainContentQueue()
-  } else if (needsContentEmbed.length === 0 && needsEmbed.length === 0) {
+  } else {
     emitProgress({ stage: 'done', percent: 100 })
   }
+}
+
+function runFullIndex(): Promise<void> {
+  if (fullIndexPromise) {
+    log('runFullIndex joined existing indexing task')
+    return fullIndexPromise
+  }
+
+  fullIndexPromise = performFullIndex()
+    .catch((error: any) => {
+      log('full index failed:', error?.stack || error?.message || error)
+      emitProgress({ stage: 'done', percent: 100 })
+    })
+    .finally(() => {
+      // Never leave the home screen displaying a completed x/x indexing task.
+      if (status === 'indexing') setStatus(llamaReady ? 'ready' : 'disabled')
+      fullIndexPromise = null
+    })
+  return fullIndexPromise
 }
 
 async function indexMetadataEmbedding(resourceId: string) {

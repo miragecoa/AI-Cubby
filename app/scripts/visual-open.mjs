@@ -6,12 +6,12 @@ import { stdin as input, stdout as output } from 'node:process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import os from 'node:os'
+import { applyAutomationZoom, auditWindowChrome, captureVisualWindow, normalizeVisualWindow } from './visual-harness.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const appDir = resolve(__dirname, '..')
 const mainEntry = join(appDir, 'out', 'main', 'main.js')
 const artifactsDir = resolve(appDir, '..', 'artifacts', 'visual-open')
-const MAX_VIEWPORT = { width: 1400, height: 900 }
 const useDefaultProfile = process.argv.includes('--default-profile')
 const profileArg = process.argv.find(arg => arg.startsWith('--profile='))
 const profileRoot = useDefaultProfile
@@ -32,6 +32,7 @@ const electronApp = await electron.launch({
   env: {
     ...process.env,
     AI_CUBBY_SMOKE: '1',
+    AI_CUBBY_VISUAL_NON_INTRUSIVE: process.argv.includes('--foreground') ? '0' : '1',
     AI_CUBBY_PROFILE_ROOT: profileRoot,
     ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
   },
@@ -41,34 +42,11 @@ const electronApp = await electron.launch({
 let page = await electronApp.firstWindow({ timeout: 30_000 })
 let selectedWindowIndex = 0
 await page.waitForLoadState('domcontentloaded', { timeout: 20_000 })
-const initialViewport = await fitViewportToScreen(page)
-await applyAutomationZoom(page)
+const initialViewport = await normalizeVisualWindow(electronApp, page)
 await page.waitForTimeout(1000)
 
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-')
-}
-
-async function primaryWorkAreaSize() {
-  try {
-    return await electronApp.evaluate(({ screen }) => screen.getPrimaryDisplay().workAreaSize)
-  } catch {
-    return { width: MAX_VIEWPORT.width, height: MAX_VIEWPORT.height }
-  }
-}
-
-async function fitViewportToScreen(p) {
-  const workArea = await primaryWorkAreaSize()
-  const viewport = {
-    width: Math.min(MAX_VIEWPORT.width, Math.max(640, workArea.width - 80)),
-    height: Math.min(MAX_VIEWPORT.height, Math.max(520, workArea.height - 80)),
-  }
-  await p.setViewportSize(viewport)
-  return viewport
-}
-
-async function applyAutomationZoom(p) {
-  await p.evaluate(() => window.api?.app?.setZoom?.(1)).catch(() => {})
 }
 
 function splitArgs(line) {
@@ -91,7 +69,7 @@ async function screenshot(name = 'screen', windowIndex = selectedWindowIndex) {
   const pages = electronApp.windows()
   const p = pages[windowIndex] ?? await activePage()
   const shotPath = join(artifactsDir, `${nowStamp()}-${name}.png`)
-  await p.screenshot({ path: shotPath, timeout: 15_000, animations: 'disabled', caret: 'hide', fullPage: true })
+  await captureVisualWindow(p, shotPath)
   console.log(`screenshot: ${shotPath}`)
 }
 
@@ -183,6 +161,9 @@ Commands:
   windows                      List Electron windows.
   use <index>                  Switch active window by index.
   exit                         Close the app and exit.
+
+By default the automation window is shown inactive and moved off-screen so it does not cover your desktop.
+Launch with --foreground, or set AI_CUBBY_VISUAL_FOREGROUND=1, when you want to watch it directly.
 `
 
 console.log(`AI Cubby visual controller is open.`)
@@ -282,50 +263,19 @@ async function runCommand(line) {
       await screenshot(args[0] ?? 'screen')
     } else if (cmd === 'shotAudit') {
       const base = args[0] ?? 'audit'
-      await p.evaluate(() => {
-        document.getElementById('__visual_audit_style')?.remove()
-        const style = document.createElement('style')
-        style.id = '__visual_audit_style'
-        style.textContent = `
-          .sidebar-footer {
-            position: fixed !important;
-            left: 0 !important;
-            bottom: 0 !important;
-            width: 64px !important;
-            min-height: 48px !important;
-            z-index: 10000 !important;
-            background: var(--surface, #252540) !important;
-            outline: 2px solid var(--accent, #7c8cff) !important;
-            outline-offset: -2px !important;
-          }
-          .tag-panel {
-            position: fixed !important;
-            right: 0 !important;
-            top: 120px !important;
-            bottom: 0 !important;
-            width: 240px !important;
-            z-index: 10000 !important;
-            background: var(--surface, #252540) !important;
-            outline: 2px solid var(--accent, #7c8cff) !important;
-            outline-offset: -2px !important;
-          }
-        `
-        document.head.appendChild(style)
-      })
-      try {
-        await screenshot(`${base}-full`)
-        for (const [selector, suffix] of [['.sidebar-footer', 'sidebar-footer'], ['.tag-panel', 'tag-panel']]) {
-          const target = p.locator(selector).first()
-          if (await target.count()) {
-            const cropPath = join(artifactsDir, `${nowStamp()}-${base}-${suffix}.png`)
-            await target.screenshot({ path: cropPath, timeout: 15_000, animations: 'disabled', caret: 'hide' })
-            console.log(`${suffix}: ${cropPath}`)
-          } else {
-            console.log(`${suffix}: not found`)
-          }
+      await normalizeVisualWindow(electronApp, p)
+      const audit = await auditWindowChrome(p)
+      console.log(JSON.stringify(audit, null, 2))
+      await screenshot(`${base}-full`)
+      for (const [selector, suffix] of [['.sidebar-footer', 'sidebar-footer'], ['.titlebar-btns', 'window-buttons'], ['.tag-panel', 'tag-panel']]) {
+        const target = p.locator(selector).first()
+        if (await target.count()) {
+          const cropPath = join(artifactsDir, `${nowStamp()}-${base}-${suffix}.png`)
+          await target.screenshot({ path: cropPath, timeout: 15_000, animations: 'disabled', caret: 'hide' })
+          console.log(`${suffix}: ${cropPath}`)
+        } else {
+          console.log(`${suffix}: not found`)
         }
-      } finally {
-        await p.evaluate(() => document.getElementById('__visual_audit_style')?.remove()).catch(() => {})
       }
     } else if (cmd === 'shotWindow') {
       await screenshot(args[1] ?? `window-${args[0]}`, Number(args[0]))

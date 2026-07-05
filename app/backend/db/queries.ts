@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { basename, extname } from 'path'
 import { existsSync, readFileSync, statSync } from 'fs'
+import { match as pinyinMatch } from 'pinyin-pro'
 import { getDb } from './index'
 import { getPathSize } from '../utils/path-size'
 
@@ -494,15 +495,26 @@ function extractTokens(query: string): string[] {
 
 function readSearchableTextDocument(filePath: string): string | null {
   const ext = extname(filePath).toLowerCase()
-  if (ext !== '.md' && ext !== '.txt') return null
+  if (ext !== '.md' && ext !== '.txt' && ext !== '.aicnote') return null
   try {
     if (!existsSync(filePath)) return null
     const stat = statSync(filePath)
-    if (!stat.isFile() || stat.size > 1024 * 1024) return null
-    return readFileSync(filePath, 'utf8')
+    if (!stat.isFile() || stat.size > 5 * 1024 * 1024) return null
+    const raw = readFileSync(filePath, 'utf8')
+    if (ext !== '.aicnote') return raw
+    const parsed = JSON.parse(raw)
+    if (parsed?.type !== 'ai-cubby-note' || !Array.isArray(parsed.blocks)) return ''
+    return parsed.blocks
+      .map((block: any) => block?.type === 'text' ? String(block.text ?? '') : String(block?.alt ?? ''))
+      .join('\n')
   } catch {
     return null
   }
+}
+
+function noteBodyMatches(text: string, needles: string[]): boolean {
+  const lower = text.toLowerCase()
+  return needles.some(needle => lower.includes(needle) || pinyinMatch(text, needle) !== null)
 }
 
 export function searchResources(query: string, type?: string): Resource[] {
@@ -545,6 +557,7 @@ export function searchResources(query: string, type?: string): Resource[] {
 
   const seen = new Set(rows.map(r => r.id))
   const contentTokens = extractTokens(query)
+  const textNeedles = [query, ...contentTokens].map(s => s.toLowerCase()).filter(Boolean)
   const contentParts = ['rc.text LIKE ?']
   const contentParams: unknown[] = [`%${query}%`]
   for (const token of contentTokens) {
@@ -567,8 +580,26 @@ export function searchResources(query: string, type?: string): Resource[] {
   }
   console.log(`[search] content_hits=${contentRows.length} total=${rows.length}`)
 
+  const pinyinContentRows = db.prepare(`
+    SELECT r.*, rc.text AS __content_text FROM resources r
+    JOIN resource_content rc ON rc.resource_id = r.id
+    WHERE LENGTH(COALESCE(rc.text, '')) > 0
+    ${safeTypeClause}
+    ORDER BY COALESCE(rc.fetched_at, 0) DESC, r.updated_at DESC
+    LIMIT 300
+  `).all(...safeTypeParams) as Array<Resource & { __content_text?: string }>
+  let pinyinContentHits = 0
+  for (const row of pinyinContentRows) {
+    if (seen.has(row.id)) continue
+    if (!noteBodyMatches(String(row.__content_text ?? '').slice(0, 80_000), textNeedles)) continue
+    rows.push(row)
+    seen.add(row.id)
+    pinyinContentHits++
+    if (rows.length >= 100) break
+  }
+  if (pinyinContentHits) console.log(`[search] pinyin_content_hits=${pinyinContentHits} total=${rows.length}`)
+
   if (!type || type === 'document') {
-    const textNeedles = [query, ...contentTokens].map(s => s.toLowerCase()).filter(Boolean)
     const docCandidates = db.prepare(`
       SELECT r.* FROM resources r
       WHERE r.type = 'document'
@@ -580,8 +611,7 @@ export function searchResources(query: string, type?: string): Resource[] {
       if (seen.has(row.id)) continue
       const text = readSearchableTextDocument(row.file_path)
       if (!text) continue
-      const lower = text.toLowerCase()
-      if (!textNeedles.some(needle => lower.includes(needle))) continue
+      if (!noteBodyMatches(text.slice(0, 80_000), textNeedles)) continue
       rows.push(row)
       seen.add(row.id)
       fileHits++

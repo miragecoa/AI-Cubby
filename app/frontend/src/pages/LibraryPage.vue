@@ -1084,6 +1084,19 @@
           <div class="note-editor-head">
             <div class="note-editor-title">{{ noteEditor.title }}</div>
             <div class="note-editor-actions">
+              <div class="note-insert-image-wrap">
+                <button class="bm-cancel" type="button" :aria-describedby="'note-insert-image-tip'" @click="insertNoteImage">
+                  {{ t('library.documents.insertImage') }}
+                </button>
+                <div id="note-insert-image-tip" class="note-insert-image-tip" role="tooltip">
+                  {{ t('library.documents.insertImageHint') }}
+                </div>
+              </div>
+              <div v-if="noteEditor.selectedImageId" class="note-image-toolbar">
+                <button type="button" :class="{ active: noteEditor.selectedImageAlign === 'left' }" @mousedown.prevent @click="setSelectedImageAlign('left')">{{ t('library.documents.wrapLeft') }}</button>
+                <button type="button" :class="{ active: noteEditor.selectedImageAlign === 'inline' }" @mousedown.prevent @click="setSelectedImageAlign('inline')">{{ t('library.documents.wrapInline') }}</button>
+                <button type="button" :class="{ active: noteEditor.selectedImageAlign === 'right' }" @mousedown.prevent @click="setSelectedImageAlign('right')">{{ t('library.documents.wrapRight') }}</button>
+              </div>
               <button
                 v-if="noteEditor.dirty"
                 class="note-editor-dirty"
@@ -1097,17 +1110,32 @@
               </button>
             </div>
           </div>
-          <textarea
-            :key="noteEditor.resource?.file_path || 'note-editor'"
-            ref="noteTextAreaRef"
-            v-model="noteEditor.content"
-            class="note-editor-textarea"
-            spellcheck="false"
-            @input="noteEditor.dirty = true"
-            @keydown.ctrl.s.prevent="saveLocalNote"
-            @keydown.meta.s.prevent="saveLocalNote"
-          />
+          <div class="note-editor-body">
+            <div
+              ref="noteSurfaceRef"
+              class="note-editor-surface"
+              contenteditable="true"
+              spellcheck="false"
+              @beforeinput="captureNoteUndoSnapshot"
+              @input="markNoteDirty"
+              @keydown="handleNoteKeydown"
+              @paste="handleNotePaste"
+              @drop.prevent="handleNoteDrop"
+              @dragover.prevent
+              @click="handleNoteSurfaceClick"
+              @dblclick.capture.prevent.stop="handleNoteSurfaceDoubleClick"
+              @dragstart="handleNoteDragStart"
+              @mousedown="handleNoteSurfaceMouseDown"
+            />
+          </div>
         </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="noteEditor.previewImage" class="note-image-preview" role="dialog" aria-modal="true" @click="noteEditor.previewImage = ''">
+        <img :src="noteEditor.previewImage" alt="" @click.stop />
+        <button type="button" class="note-image-preview-close" aria-label="Close" @click.stop="noteEditor.previewImage = ''">&times;</button>
       </div>
     </Teleport>
 
@@ -1731,6 +1759,17 @@ const showAiInstallModal = ref(false)
 const showAiPanel = ref(false)
 const aiDiscovered = ref(localStorage.getItem('ai_discovered') === '1')
 type DocumentCreateKind = 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'
+type NoteBlock =
+  | { id: string; type: 'text'; text: string }
+  | { id: string; type: 'image'; src: string; alt?: string; width?: number; align?: 'left' | 'right' | 'inline' }
+type ManagedNote = {
+  version: 1
+  type: 'ai-cubby-note'
+  title: string
+  blocks: NoteBlock[]
+  createdAt: number
+  updatedAt: number
+}
 const showDocumentCreateModal = ref(false)
 const documentCreateKind = ref<DocumentCreateKind>('note')
 const documentCreateTitle = ref('')
@@ -1751,11 +1790,19 @@ const noteEditor = reactive({
   show: false,
   resource: null as Resource | null,
   title: '',
-  content: '',
+  blocks: [] as NoteBlock[],
+  createdAt: 0,
   dirty: false,
   saving: false,
+  previewImage: '',
+  selectedImageId: '',
+  selectedImageAlign: 'left' as 'left' | 'right' | 'inline',
 })
-const noteTextAreaRef = ref<HTMLTextAreaElement | null>(null)
+const noteSurfaceRef = ref<HTMLElement | null>(null)
+let noteDragImageId = ''
+let noteResizeState: { id: string; startX: number; startWidth: number; corner: 'nw' | 'ne' | 'sw' | 'se' } | null = null
+const NOTE_UNDO_LIMIT = 80
+let noteUndoStack: string[] = []
 const iconWarmupVisible = ref(false)
 const iconWarmupDone = ref(0)
 const iconWarmupTotal = ref(0)
@@ -4089,6 +4136,372 @@ async function createDocumentResource() {
   }
 }
 
+function noteBlockId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `block-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function createTextBlock(text = ''): NoteBlock {
+  return { id: noteBlockId(), type: 'text', text }
+}
+
+function normalizeNoteBlocks(blocks: NoteBlock[]): NoteBlock[] {
+  const normalized = blocks
+    .map((block) => {
+      if (block.type === 'image') {
+        const align = block.align === 'right' || block.align === 'inline' ? block.align : 'left'
+        return { ...block, align, width: Math.min(100, Math.max(18, Number(block.width ?? 42))) }
+      }
+      return { ...block, text: block.text ?? '' }
+    })
+  if (normalized.length === 0 || normalized[normalized.length - 1].type !== 'text') {
+    normalized.push(createTextBlock())
+  }
+  return normalized
+}
+
+function serializeNote(): ManagedNote {
+  const now = Date.now()
+  const blocks = noteSurfaceToBlocks()
+  return {
+    version: 1,
+    type: 'ai-cubby-note',
+    title: noteEditor.title,
+    blocks,
+    createdAt: noteEditor.createdAt || now,
+    updatedAt: now,
+  }
+}
+
+function markNoteDirty() {
+  noteEditor.dirty = true
+}
+
+function escapeNoteHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function escapeNoteAttr(text: string): string {
+  return escapeNoteHtml(text).replace(/"/g, '&quot;')
+}
+
+function renderNoteBlocks(blocks: NoteBlock[]): string {
+  return normalizeNoteBlocks(blocks).map((block) => {
+    if (block.type === 'image') return renderNoteImage(block)
+    const text = escapeNoteHtml(block.text || '').replace(/\n/g, '<br>')
+    return text || '<br>'
+  }).join('')
+}
+
+function renderNoteImage(block: Extract<NoteBlock, { type: 'image' }>): string {
+  const width = Math.min(100, Math.max(20, Number(block.width ?? 42)))
+  const align = block.align === 'right' || block.align === 'inline' ? block.align : 'left'
+  const src = escapeNoteAttr(block.src)
+  const alt = escapeNoteAttr(block.alt || '')
+  return `<span class="note-flow-image align-${align}" contenteditable="false" draggable="true" data-note-image-id="${escapeNoteAttr(block.id)}" data-src="${src}" data-alt="${alt}" data-width="${width}" data-align="${align}" style="width:${width}%"><img src="${src}" alt="${alt}" draggable="false"><span class="note-image-resize resize-nw" data-resize-handle="nw"></span><span class="note-image-resize resize-ne" data-resize-handle="ne"></span><span class="note-image-resize resize-sw" data-resize-handle="sw"></span><span class="note-image-resize resize-se" data-resize-handle="se"></span></span>`
+}
+
+function resetNoteUndoHistory() {
+  noteUndoStack = []
+}
+
+function currentNoteHtml() {
+  return noteSurfaceRef.value?.innerHTML ?? ''
+}
+
+function pushNoteUndoSnapshot(snapshot = currentNoteHtml()) {
+  if (!noteEditor.show || !noteSurfaceRef.value) return
+  if (noteUndoStack[noteUndoStack.length - 1] === snapshot) return
+  noteUndoStack.push(snapshot)
+  if (noteUndoStack.length > NOTE_UNDO_LIMIT) noteUndoStack.shift()
+}
+
+function captureNoteUndoSnapshot() {
+  pushNoteUndoSnapshot()
+}
+
+function moveNoteCaretToEnd(surface: HTMLElement) {
+  const range = document.createRange()
+  range.selectNodeContents(surface)
+  range.collapse(false)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
+function undoNoteEdit() {
+  const surface = noteSurfaceRef.value
+  const snapshot = noteUndoStack.pop()
+  if (!surface || snapshot == null) return false
+  surface.innerHTML = snapshot
+  selectNoteImage(null)
+  markNoteDirty()
+  surface.focus()
+  moveNoteCaretToEnd(surface)
+  return true
+}
+
+function noteSurfaceToBlocks(): NoteBlock[] {
+  const surface = noteSurfaceRef.value
+  if (!surface) return normalizeNoteBlocks(noteEditor.blocks)
+  const blocks: NoteBlock[] = []
+  let text = ''
+  const flushText = () => {
+    if (text) {
+      blocks.push(createTextBlock(text))
+      text = ''
+    }
+  }
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent ?? ''
+      return
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return
+    const el = node as HTMLElement
+    if (el.classList.contains('note-flow-image')) {
+      flushText()
+      blocks.push({
+        id: el.dataset.noteImageId || noteBlockId(),
+        type: 'image',
+        src: el.dataset.src || el.querySelector('img')?.getAttribute('src') || '',
+        alt: el.dataset.alt || '',
+        width: Number(el.dataset.width || parseFloat(el.style.width) || 42),
+        align: (el.dataset.align as any) || 'left',
+      })
+      return
+    }
+    if (el.tagName === 'BR') {
+      text += '\n'
+      return
+    }
+    Array.from(el.childNodes).forEach(walk)
+    if (el.tagName === 'DIV' || el.tagName === 'P') text += '\n'
+  }
+  Array.from(surface.childNodes).forEach(walk)
+  flushText()
+  return normalizeNoteBlocks(blocks).filter((block, index, arr) => (
+    block.type === 'image' || block.text.trim() || index === arr.length - 1
+  ))
+}
+
+function selectedImageEl(): HTMLElement | null {
+  if (!noteEditor.selectedImageId) return null
+  return noteSurfaceRef.value?.querySelector<HTMLElement>(`.note-flow-image[data-note-image-id="${noteEditor.selectedImageId}"]`) ?? null
+}
+
+function selectNoteImage(el: HTMLElement | null) {
+  noteSurfaceRef.value?.querySelectorAll('.note-flow-image.selected').forEach(node => node.classList.remove('selected'))
+  noteEditor.selectedImageId = el?.dataset.noteImageId ?? ''
+  noteEditor.selectedImageAlign = (el?.dataset.align as 'left' | 'right' | 'inline') || 'left'
+  if (el) {
+    el.classList.add('selected')
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    noteSurfaceRef.value?.focus()
+  }
+}
+
+function deleteSelectedNoteImage() {
+  const el = selectedImageEl()
+  if (!el) return false
+  pushNoteUndoSnapshot()
+  el.remove()
+  noteEditor.selectedImageId = ''
+  markNoteDirty()
+  noteSurfaceRef.value?.focus()
+  return true
+}
+
+function insertHtmlAtSelection(html: string) {
+  const surface = noteSurfaceRef.value
+  if (!surface) return
+  surface.focus()
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || !surface.contains(selection.anchorNode)) {
+    surface.insertAdjacentHTML('beforeend', html)
+    return
+  }
+  const range = selection.getRangeAt(0)
+  range.deleteContents()
+  const template = document.createElement('template')
+  template.innerHTML = html
+  const frag = template.content
+  const last = frag.lastChild
+  range.insertNode(frag)
+  if (last) {
+    range.setStartAfter(last)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+}
+
+async function addImageToNote(dataUrl: string) {
+  const imageBlock: Extract<NoteBlock, { type: 'image' }> = { id: noteBlockId(), type: 'image', src: dataUrl, alt: '', width: 42, align: 'left' }
+  pushNoteUndoSnapshot()
+  insertHtmlAtSelection(renderNoteImage(imageBlock))
+  markNoteDirty()
+}
+
+function setSelectedImageAlign(align: 'left' | 'right' | 'inline') {
+  const el = selectedImageEl()
+  if (!el) return
+  pushNoteUndoSnapshot()
+  el.dataset.align = align
+  el.classList.toggle('align-left', align === 'left')
+  el.classList.toggle('align-right', align === 'right')
+  el.classList.toggle('align-inline', align === 'inline')
+  noteEditor.selectedImageAlign = align
+  markNoteDirty()
+}
+
+function handleNoteKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+    event.preventDefault()
+    undoNoteEdit()
+    return
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault()
+    void saveLocalNote()
+    return
+  }
+  if ((event.key === 'Delete' || event.key === 'Backspace') && noteEditor.selectedImageId) {
+    event.preventDefault()
+    deleteSelectedNoteImage()
+    return
+  }
+  if (event.key === 'Tab') {
+    event.preventDefault()
+    pushNoteUndoSnapshot()
+    document.execCommand('insertText', false, '    ')
+    markNoteDirty()
+  }
+}
+
+async function insertNoteImage() {
+  const imagePath = await window.api.files.pickImage()
+  if (!imagePath) return
+  const dataUrl = await window.api.files.readFullImage(imagePath)
+  if (dataUrl) await addImageToNote(dataUrl)
+}
+
+function handleNotePaste(event: ClipboardEvent) {
+  const item = Array.from(event.clipboardData?.items ?? []).find(i => i.type.startsWith('image/'))
+  if (!item) return
+  const file = item.getAsFile()
+  if (!file) return
+  event.preventDefault()
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result === 'string') void addImageToNote(reader.result)
+  }
+  reader.readAsDataURL(file)
+}
+
+function handleNoteDrop(event: DragEvent) {
+  if (noteDragImageId) {
+    const surface = noteSurfaceRef.value
+    const image = surface?.querySelector<HTMLElement>(`.note-flow-image[data-note-image-id="${noteDragImageId}"]`)
+    if (surface && image) {
+      const range = getNoteDropRange(event.clientX, event.clientY)
+      pushNoteUndoSnapshot()
+      if (range && surface.contains(range.startContainer)) {
+        range.insertNode(image)
+        range.collapse(false)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+      } else {
+        surface.appendChild(image)
+      }
+      selectNoteImage(image)
+      markNoteDirty()
+    }
+    noteDragImageId = ''
+    return
+  }
+  const file = Array.from(event.dataTransfer?.files ?? []).find(f => f.type.startsWith('image/'))
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result === 'string') void addImageToNote(reader.result)
+  }
+  reader.readAsDataURL(file)
+}
+
+function getNoteDropRange(x: number, y: number): Range | null {
+  const legacy = document.caretRangeFromPoint?.(x, y)
+  if (legacy) return legacy
+  const position = (document as any).caretPositionFromPoint?.(x, y)
+  if (!position) return null
+  const range = document.createRange()
+  range.setStart(position.offsetNode, position.offset)
+  range.collapse(true)
+  return range
+}
+
+function handleNoteSurfaceClick(event: MouseEvent) {
+  const image = (event.target as HTMLElement).closest<HTMLElement>('.note-flow-image')
+  selectNoteImage(image)
+}
+
+function handleNoteSurfaceDoubleClick(event: MouseEvent) {
+  const image = (event.target as HTMLElement).closest<HTMLElement>('.note-flow-image')
+  if (!image) return
+  event.preventDefault()
+  event.stopPropagation()
+  noteEditor.previewImage = image.dataset.src || image.querySelector('img')?.getAttribute('src') || ''
+}
+
+function handleNoteDragStart(event: DragEvent) {
+  const image = (event.target as HTMLElement).closest<HTMLElement>('.note-flow-image')
+  if (!image) return
+  noteDragImageId = image.dataset.noteImageId || ''
+  event.dataTransfer?.setData('text/plain', noteDragImageId)
+  event.dataTransfer?.setDragImage(image, Math.min(40, image.offsetWidth / 2), 20)
+}
+
+function handleNoteSurfaceMouseDown(event: MouseEvent) {
+  const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-resize-handle]')
+  if (!handle) return
+  const image = handle.closest<HTMLElement>('.note-flow-image')
+  const surface = noteSurfaceRef.value
+  if (!image || !surface) return
+  event.preventDefault()
+  selectNoteImage(image)
+  pushNoteUndoSnapshot()
+  noteResizeState = {
+    id: image.dataset.noteImageId || '',
+    startX: event.clientX,
+    startWidth: Number(image.dataset.width || parseFloat(image.style.width) || 42),
+    corner: (handle.dataset.resizeHandle as 'nw' | 'ne' | 'sw' | 'se') || 'se',
+  }
+  window.addEventListener('mousemove', onNoteImageResizeMove)
+  window.addEventListener('mouseup', stopNoteImageResize, { once: true })
+}
+
+function onNoteImageResizeMove(event: MouseEvent) {
+  if (!noteResizeState) return
+  const el = selectedImageEl()
+  const surface = noteSurfaceRef.value
+  if (!el || !surface) return
+  const direction = noteResizeState.corner.endsWith('w') ? -1 : 1
+  const deltaPercent = ((event.clientX - noteResizeState.startX) / Math.max(1, surface.clientWidth)) * 100 * direction
+  const width = Math.min(90, Math.max(18, noteResizeState.startWidth + deltaPercent))
+  el.dataset.width = String(Math.round(width))
+  el.style.width = `${width}%`
+  markNoteDirty()
+}
+
+function stopNoteImageResize() {
+  noteResizeState = null
+  window.removeEventListener('mousemove', onNoteImageResizeMove)
+}
+
 async function openLocalNote(resource: Resource, touchUsage = true) {
   let current = resource
   if (touchUsage) {
@@ -4102,25 +4515,38 @@ async function openLocalNote(resource: Resource, touchUsage = true) {
   noteEditor.resource = current
   noteEditor.title = current.title
   noteEditor.saving = false
-  noteEditor.content = await window.api.documents.readText(current.file_path)
+  const result = await window.api.documents.readNote(current.id)
+  if (result.resource) {
+    current = result.resource
+    store.addOrUpdate(result.resource)
+    noteEditor.resource = result.resource
+  }
+  noteEditor.blocks = normalizeNoteBlocks(result.note.blocks as NoteBlock[])
+  noteEditor.createdAt = result.note.createdAt
+  noteEditor.selectedImageId = ''
   noteEditor.dirty = false
+  resetNoteUndoHistory()
   await nextTick()
-  noteTextAreaRef.value?.focus()
+  if (noteSurfaceRef.value) noteSurfaceRef.value.innerHTML = renderNoteBlocks(noteEditor.blocks)
+  noteSurfaceRef.value?.focus()
 }
 
 function closeNoteEditor() {
   if (noteEditor.dirty && !confirm(t('library.documents.discardConfirm'))) return
   noteEditor.show = false
   noteEditor.resource = null
-  noteEditor.content = ''
+  noteEditor.blocks = []
+  noteEditor.previewImage = ''
+  noteEditor.selectedImageId = ''
   noteEditor.dirty = false
+  resetNoteUndoHistory()
 }
 
 async function saveLocalNote() {
   if (!noteEditor.resource || noteEditor.saving) return
   noteEditor.saving = true
   try {
-    const updated = await window.api.documents.writeText(noteEditor.resource.file_path, noteEditor.content)
+    const updated = await window.api.documents.writeNote(noteEditor.resource.id, serializeNote())
     if (updated) {
       store.addOrUpdate(updated)
       noteEditor.resource = updated
@@ -4136,7 +4562,10 @@ async function saveAndCloseLocalNote() {
   if (!noteEditor.saving && !noteEditor.dirty) {
     noteEditor.show = false
     noteEditor.resource = null
-    noteEditor.content = ''
+    noteEditor.blocks = []
+    noteEditor.previewImage = ''
+    noteEditor.selectedImageId = ''
+    resetNoteUndoHistory()
   }
 }
 
@@ -5774,6 +6203,32 @@ async function deleteIgnored(filePath: string) {
   flex-shrink: 0;
   min-width: max-content;
 }
+.note-image-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.note-image-toolbar button {
+  min-width: 34px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.note-image-toolbar button:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+.note-image-toolbar button.active {
+  background: var(--accent);
+  color: #fff;
+}
 .note-editor-dirty {
   appearance: none;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
@@ -5802,15 +6257,144 @@ async function deleteIgnored(filePath: string) {
   white-space: nowrap;
   flex-shrink: 0;
 }
-.note-editor-textarea {
+.note-insert-image-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.note-insert-image-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 4;
+  width: max-content;
+  max-width: 220px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -2px);
+  transition: opacity 0.08s ease, transform 0.08s ease;
+}
+.note-insert-image-wrap:hover .note-insert-image-tip,
+.note-insert-image-wrap:focus-within .note-insert-image-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.note-editor-body {
   flex: 1;
-  resize: none;
+  overflow: auto;
+  padding: 28px 24px;
+  background: var(--surface);
+}
+.note-editor-surface {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 16px 0 80px;
   border: 0;
   outline: 0;
-  padding: 18px;
+  background: transparent;
   color: var(--text);
+  font: 15px/1.75 Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  white-space: pre-wrap;
+  word-break: break-word;
+  caret-color: var(--accent-2);
+}
+.note-editor-surface :deep(.note-flow-image) {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-block;
+  max-width: 90%;
+  margin: 6px 14px 10px 0;
+  vertical-align: top;
+  cursor: move;
+  user-select: none;
+  clear: none;
+}
+.note-editor-surface :deep(.note-flow-image.align-left) {
+  float: left;
+}
+.note-editor-surface :deep(.note-flow-image.align-right) {
+  float: right;
+  margin: 6px 0 10px 14px;
+}
+.note-editor-surface :deep(.note-flow-image.align-inline) {
+  float: none;
+  display: inline-block;
+  margin: 4px 8px;
+}
+.note-editor-surface :deep(.note-flow-image img) {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border);
   background: var(--bg);
-  font: 14px/1.7 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+.note-editor-surface :deep(.note-flow-image.selected) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.note-editor-surface :deep(.note-image-resize) {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  background: var(--surface);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.note-editor-surface :deep(.note-flow-image.selected .note-image-resize) {
+  display: block;
+  opacity: 1;
+  pointer-events: auto;
+}
+.note-editor-surface :deep(.resize-nw) { left: -7px; top: -7px; cursor: nwse-resize; }
+.note-editor-surface :deep(.resize-ne) { right: -7px; top: -7px; cursor: nesw-resize; }
+.note-editor-surface :deep(.resize-sw) { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.note-editor-surface :deep(.resize-se) { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.note-image-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(0, 0, 0, 0.78);
+  cursor: zoom-out;
+}
+.note-image-preview img {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+  border-radius: 0;
+}
+.note-image-preview-close {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 30px;
+  line-height: 36px;
+  cursor: pointer;
 }
 
 .grid-sentinel {
@@ -5991,10 +6575,16 @@ async function deleteIgnored(filePath: string) {
   font-size: 13px;
   color: var(--text-2);
   transition: background 0.1s;
+  white-space: nowrap;
 }
 .type-filter-item:hover { background: var(--surface-2); }
 .type-filter-item input[type="checkbox"] { accent-color: var(--accent); flex-shrink: 0; }
-.tfi-label { flex: 1; }
+.tfi-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  word-break: keep-all;
+}
 .tfi-count { font-size: 11px; color: var(--text-3); }
 .display-separator { height: 1px; background: var(--border); margin: 4px 14px; }
 .type-filter-footer {
@@ -6157,8 +6747,9 @@ async function deleteIgnored(filePath: string) {
 .page-indicator { font-size: 11px; color: var(--text-2); padding: 0 6px; user-select: none; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 3px; }
 .page-input { width: 28px; text-align: center; background: transparent; border: 1px solid rgba(255,255,255,0.1); border-radius: 3px; color: var(--text); font-size: 11px; padding: 1px 2px; font-variant-numeric: tabular-nums; outline: none; }
 .page-input:focus { border-color: var(--accent); }
-.page-size-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; }
-.page-size-select { background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
+.page-size-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 14px; white-space: nowrap; }
+.page-size-row .tfi-label { flex: 0 0 auto; min-width: 58px; }
+.page-size-select { min-width: 74px; background: var(--surface); color: var(--text); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 4px; font-size: 11px; }
 .page-size-select { cursor: pointer; }
 .thumb-quality-wrap { position: relative; display: flex; justify-content: flex-end; flex-shrink: 0; }
 .thumb-quality-trigger {
@@ -6253,7 +6844,7 @@ async function deleteIgnored(filePath: string) {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,.4);
-  min-width: 130px;
+  min-width: 168px;
   padding: 6px 0;
 }
 .sort-select-inline {

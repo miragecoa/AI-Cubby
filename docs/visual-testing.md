@@ -25,6 +25,26 @@ The controller launches the built Electron main process with Playwright. It sets
 By default it uses an isolated profile root under the system temp directory and
 records that path in the terminal output.
 
+All visual scripts share `app/scripts/visual-harness.mjs`. It normalizes the
+window to the usable display area (up to 1400x900), resets app zoom to 100%,
+captures only the visible Electron viewport, and audits that the lower-left
+settings control and upper-right window controls are inside the screenshot.
+By default the automation window is shown inactive, skipped from the taskbar,
+and moved just outside the primary work area so it does not cover the user's
+desktop while screenshots and Playwright interactions still work.
+
+To watch the automated window directly in the foreground:
+
+```powershell
+npm run visual:open -- --foreground
+```
+
+For smoke scripts, set:
+
+```powershell
+$env:AI_CUBBY_VISUAL_FOREGROUND=1
+```
+
 To use the normal development profile instead:
 
 ```powershell

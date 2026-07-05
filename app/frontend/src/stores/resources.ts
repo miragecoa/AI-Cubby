@@ -214,7 +214,7 @@ export const useResourceStore = defineStore('resources', () => {
           if (matchedIds.has(resource.id)) continue
           matched.push(resource)
           matchedIds.add(resource.id)
-          relevanceMap.set(resource.id, 120)
+          relevanceMap.set(resource.id, 1000)
         }
       }
 

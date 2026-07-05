@@ -6,8 +6,8 @@
         <polyline v-else points="9 18 15 12 9 6" />
       </svg>
     </button>
-    <div v-if="expanded" class="tips-text-wrap" @click="openCurrentTip">
-      <span class="tips-text" :key="currentIndex">{{ currentText }}</span>
+    <div v-if="expanded" class="tips-text-wrap">
+      <span class="tips-text" :key="currentIndex" @click="openCurrentTip">{{ currentText }}</span>
     </div>
   </div>
 </template>
@@ -92,7 +92,8 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   align-items: center;
   flex-shrink: 1;
   min-width: 0;
-  -webkit-app-region: no-drag;
+  height: 100%;
+  -webkit-app-region: drag;
 }
 .tips-toggle {
   flex-shrink: 0;
@@ -104,12 +105,14 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   line-height: 0;
   display: flex;
   align-items: center;
+  -webkit-app-region: no-drag;
 }
 .tips-toggle:hover { color: rgba(255, 255, 255, 0.5); }
 .tips-text-wrap {
   overflow: hidden;
   min-width: 0;
-  cursor: pointer;
+  cursor: default;
+  -webkit-app-region: drag;
 }
 .tips-text {
   font-size: 11px;
@@ -117,8 +120,11 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: block;
+  display: inline-block;
+  max-width: 100%;
   animation: tips-fade 20s infinite;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 @keyframes tips-fade {
   0%, 8% { opacity: 0; }

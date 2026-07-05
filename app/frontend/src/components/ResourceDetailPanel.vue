@@ -873,9 +873,11 @@ async function refetchIcon() {
   font-size: 12px;
   color: var(--text-3);
   flex-shrink: 0;
-  width: 34px;
+  width: 50px;
   text-align: right;
   padding-top: 1px;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .field-input {
@@ -1160,6 +1162,7 @@ async function refetchIcon() {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .ai-index-badge {
   display: inline-block;
@@ -1167,6 +1170,7 @@ async function refetchIcon() {
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
+  white-space: nowrap;
 }
 .ai-index--done { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
 .ai-index--pending { background: rgba(255,255,255,0.06); color: var(--text-3); }
@@ -1176,6 +1180,7 @@ async function refetchIcon() {
 .ai-index-chips {
   font-size: 11px;
   color: var(--text-3);
+  white-space: nowrap;
 }
 .ai-index-details {
   font-size: 11px;
@@ -1186,6 +1191,8 @@ async function refetchIcon() {
   user-select: none;
   opacity: 0.7;
   transition: opacity 0.15s;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 .ai-index-details summary:hover { opacity: 1; }
 .ai-index-pre {
