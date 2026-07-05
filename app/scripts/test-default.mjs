@@ -386,6 +386,30 @@ test('search includes managed note text content as low priority matches', () => 
   assert.match(targetSmoke, /top search box did not show note matched by body text/)
 })
 
+test('AI recommendations stay separate from stable search results', () => {
+  const resourceStore = read('frontend/src/stores/resources.ts')
+  const aiStore = read('frontend/src/stores/ai.ts')
+  const library = read('frontend/src/pages/LibraryPage.vue')
+  assert.doesNotMatch(resourceStore, /useAiStore/)
+  assert.doesNotMatch(resourceStore, /semanticResults/)
+  assert.match(aiStore, /const sequence = \+\+searchSequence/)
+  assert.match(aiStore, /sequence === searchSequence/)
+  assert.match(library, /class="ai-recommendations"/)
+  assert.match(library, /const aiRecommendedItems = computed/)
+  assert.match(library, /aiStore\.semanticQuery !== query/)
+  assert.doesNotMatch(library, /v-for="\(item, idx\) in visibleItems"[\s\S]{0,500}:ai-match=/)
+})
+
+test('Windows icon extraction preserves and repairs transparency', () => {
+  const ipc = read('backend/ipc/index.ts')
+  assert.match(ipc, /static void NormalizeAlpha\(Bitmap bmp\)/)
+  assert.match(ipc, /bool missingAlpha=zero==w\*h/)
+  assert.match(ipc, /bool blackMatte=opaque==w\*h&&border>0&&borderDark\*100\/border>=60/)
+  assert.match(ipc, /System\.Collections\.Generic\.Queue<int>/)
+  assert.match(ipc, /NormalizeAlpha\(bmp\)/)
+  assert.match(ipc, /Math\.Min\(255,\(\(px>>16\)&255\)\*255\/a\)/)
+})
+
 test('managed note images expose working scoped controls and fullscreen preview', () => {
   const source = read('frontend/src/pages/LibraryPage.vue')
   assert.match(source, /:deep\(\.note-flow-image\.selected \.note-image-resize\)/)

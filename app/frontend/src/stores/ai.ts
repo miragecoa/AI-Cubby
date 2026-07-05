@@ -52,6 +52,7 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   let searchTimer: ReturnType<typeof setTimeout> | null = null
+  let searchSequence = 0
 
   /** Short query gate: English < 3 chars, Chinese < 2 chars → skip semantic */
   function isTooShort(q: string): boolean {
@@ -64,8 +65,10 @@ export const useAiStore = defineStore('ai', () => {
   function scheduleSearch(query: string) {
     if (searchTimer) clearTimeout(searchTimer)
     if (!query.trim() || status.value !== 'ready' || isTooShort(query)) {
+      searchSequence++
       semanticResults.value = []
       semanticQuery.value = ''
+      semanticLoading.value = false
       return
     }
     searchTimer = setTimeout(() => runSearch(query, maxResults.value), 400)
@@ -79,23 +82,26 @@ export const useAiStore = defineStore('ai', () => {
 
   async function runSearch(query: string, topK?: number) {
     if (status.value !== 'ready') return
-    semanticQuery.value = query
+    const normalizedQuery = query.trim()
+    const sequence = ++searchSequence
+    semanticQuery.value = normalizedQuery
+    semanticResults.value = []
     semanticLoading.value = true
     try {
-      const results = await window.api.ai.search(query, topK)
-      if (semanticQuery.value === query) {
+      const results = await window.api.ai.search(normalizedQuery, topK)
+      if (sequence === searchSequence && semanticQuery.value === normalizedQuery) {
         semanticResults.value = results
       }
     } catch {
-      semanticResults.value = []
+      if (sequence === searchSequence) semanticResults.value = []
     } finally {
-      semanticLoading.value = false
+      if (sequence === searchSequence) semanticLoading.value = false
     }
   }
 
   return {
     status, progress, maxResults,
-    semanticResults, semanticLoading,
+    semanticResults, semanticQuery, semanticLoading,
     init, enable, disable, scheduleSearch, searchNow,
   }
 })

@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { match as pinyinMatch } from 'pinyin-pro'
 import { useSettingsStore } from './settings'
-import { useAiStore } from './ai'
 
 export type ResourceType = 'image' | 'game' | 'app' | 'video' | 'comic' | 'music' | 'novel' | 'folder' | 'document' | 'webpage' | 'other'
 
@@ -154,55 +153,6 @@ export const useResourceStore = defineStore('resources', () => {
         if (score >= 0) {
           matched.push(r)
           relevanceMap.set(r.id, score)
-        }
-      }
-
-      // ── AI 语义融合 (RRF) — 始终并行，短词拦截在 ai store 里 ──
-      const aiStore = useAiStore()
-      if (aiStore.semanticResults.length > 0) {
-        const K = 60
-
-        // Coverage penalty: weak literal matches (token/fuzzy, score < 1500) get demoted
-        // This prevents "截图工具" matching only "工具" from beating AI results
-        const WEAK_THRESHOLD = 1500
-        const literalRanked = matched.slice().sort((a, b) => (relevanceMap.get(b.id) ?? 0) - (relevanceMap.get(a.id) ?? 0))
-        const literalRankMap = new Map<string, number>()
-        literalRanked.forEach((r, i) => {
-          const litScore = relevanceMap.get(r.id) ?? 0
-          // Weak matches get pushed down: rank inflated by penalty
-          const penalty = litScore < WEAK_THRESHOLD ? Math.round((1 - litScore / WEAK_THRESHOLD) * 10) : 0
-          literalRankMap.set(r.id, i + penalty)
-        })
-
-        const aiRankMap = new Map<string, number>()
-        aiStore.semanticResults.forEach((sr, i) => aiRankMap.set(sr.resourceId, i))
-
-        const allIds = new Set([...matched.map(r => r.id), ...aiStore.semanticResults.map(sr => sr.resourceId)])
-        const matchedIds = new Set(matched.map(r => r.id))
-        const rrfScores = new Map<string, number>()
-
-        for (const id of allIds) {
-          const litRank = literalRankMap.get(id)
-          const aiRank = aiRankMap.get(id)
-          let score = 0
-          if (litRank !== undefined) score += 1 / (K + litRank)
-          if (aiRank !== undefined) score += 1 / (K + aiRank)
-          rrfScores.set(id, score)
-
-          if (!matchedIds.has(id)) {
-            const resource = items.value.find(r => r.id === id)
-            if (resource) { matched.push(resource); matchedIds.add(id) }
-          }
-        }
-
-        const maxRrf = Math.max(...rrfScores.values(), 0.001)
-        for (const [id, rrf] of rrfScores) {
-          relevanceMap.set(id, Math.round((rrf / maxRrf) * 5000))
-        }
-
-        // Remove items with zero RRF score (not in either list)
-        for (let i = matched.length - 1; i >= 0; i--) {
-          if ((rrfScores.get(matched[i].id) ?? 0) <= 0) matched.splice(i, 1)
         }
       }
 

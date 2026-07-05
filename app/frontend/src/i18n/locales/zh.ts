@@ -230,6 +230,8 @@ export default {
     clearSearch: '清除搜索',
     aiSearch: 'AI 搜索',
     aiSearchTitle: 'AI 模糊搜索资源：通过自然语言描述轻松找到文件',
+    aiRecommendations: 'AI 引擎推荐',
+    aiRecommendationsLoading: '正在查找相关资源…',
     aiSettings: 'AI 智能设置',
     adjustCard: '调整卡片大小',
     ignored: '已忽略',

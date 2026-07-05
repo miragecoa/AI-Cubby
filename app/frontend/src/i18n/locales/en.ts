@@ -230,6 +230,8 @@ export default {
     clearSearch: 'Clear search',
     aiSearch: 'AI Search',
     aiSearchTitle: 'AI semantic search: describe what you\'re looking for in natural language',
+    aiRecommendations: 'AI recommendations',
+    aiRecommendationsLoading: 'Finding related resources…',
     aiSettings: 'AI Settings',
     adjustCard: 'Adjust card size',
     ignored: 'Ignored',

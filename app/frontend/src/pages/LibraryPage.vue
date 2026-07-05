@@ -334,7 +334,7 @@
 
     <!-- 主内容区域：库视图 + 标签面板 -->
     <div class="content-area">
-      <div ref="viewAreaRef" class="view-area" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" @drop.prevent="onDrop">
+      <div ref="viewAreaRef" class="view-area" :style="aiRecommendationStyle" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave" @drop.prevent="onDrop">
         <!-- 拖放覆盖层 -->
         <div v-if="dropOver" class="drop-overlay">
           <span class="drop-icon" v-html="dropSvg" />
@@ -588,7 +588,7 @@
             <div class="spinner" />
           </div>
 
-          <div v-else-if="store.filtered.length === 0 && !showDocumentCreateEntry" class="empty-state">
+          <div v-else-if="store.filtered.length === 0 && !showDocumentCreateEntry && !showAiRecommendations" class="empty-state">
             <span class="empty-icon" v-html="emptyIcon" />
             <div class="empty-text">{{ t('library.empty') }}</div>
             <div v-if="store.activeType === 'webpage'" class="empty-hint">
@@ -608,7 +608,7 @@
             <div v-else class="empty-hint">{{ t('library.emptyDefaultHint') }}</div>
           </div>
 
-          <div v-else ref="gridScrollRef" class="grid-scroll" @mousedown="onGridMousedown" @scroll="onContentScroll" @wheel="onContentWheel">
+          <div v-else ref="gridScrollRef" class="grid-scroll" :class="{ 'has-ai-recommendations': showAiRecommendations }" @mousedown="onGridMousedown" @scroll="onContentScroll" @wheel="onContentWheel">
             <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
             <!-- Pin Board -->
             <PinBoard
@@ -649,7 +649,6 @@
                   :show-micro-label="store.activeType === 'folder' || store.activeType === 'document'"
                   :heat-level="statsPanel === 'heat' ? heatLevel(item) : undefined"
                   :display="settingsStore.cardDisplay"
-                  :ai-match="aiMatchMap.get(item.id)"
                   @toggle-select="toggleSelect(item)"
                   @shift-select="onCardShiftSelect(item)"
                   @select="onCardSelect"
@@ -731,7 +730,6 @@
                 :show-date="settingsStore.listDisplay.date"
                 :show-count="settingsStore.listDisplay.count"
                 :show-tags="settingsStore.listDisplay.tags"
-                :ai-match="aiMatchMap.get(item.id)"
                 @click="onListRowClick($event, item)"
                 @dblclick="openResource(item)"
                 @contextmenu="openListMenu($event, item)"
@@ -828,6 +826,54 @@
               </button>
             </div>
           </div>
+          <section
+            v-if="showAiRecommendations"
+            class="ai-recommendations"
+            :aria-busy="aiStore.semanticLoading"
+          >
+            <div class="ai-recommendations-header">
+              <span class="ai-recommendations-icon" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3l1.3 3.9L17 8.5l-3.7 1.6L12 14l-1.3-3.9L7 8.5l3.7-1.6L12 3z" fill="currentColor"/>
+                  <path d="M19 13l.7 2 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2z" fill="currentColor" opacity=".6"/>
+                </svg>
+              </span>
+              <span class="ai-recommendations-title">{{ t('library.aiRecommendations') }}</span>
+              <span v-if="!aiStore.semanticLoading" class="ai-recommendations-count">{{ aiRecommendedItems.length }}</span>
+              <span v-else class="ai-recommendations-loading">
+                <span class="ai-recommendations-spinner" />
+                {{ t('library.aiRecommendationsLoading') }}
+              </span>
+            </div>
+            <div
+              v-if="aiRecommendedItems.length > 0"
+              ref="aiRecommendationsTrackRef"
+              class="ai-recommendations-track"
+              @wheel.prevent="onAiRecommendationsWheel"
+              @pointerdown="startAiRecommendationsDrag"
+              @pointermove="moveAiRecommendationsDrag"
+              @pointerup="stopAiRecommendationsDrag"
+              @pointercancel="stopAiRecommendationsDrag"
+              @click.capture="onAiRecommendationClickCapture"
+            >
+              <div v-for="(item, idx) in aiRecommendedItems" :key="`ai-${item.id}`" class="ai-recommendation-item">
+                <ResourceCard
+                  :resource="item"
+                  :item-index="idx"
+                  :card-zoom="aiRecommendationZoom"
+                  :show-micro-label="store.activeType === 'folder' || store.activeType === 'document'"
+                  :display="settingsStore.cardDisplay"
+                  :ai-match="aiMatchMap.get(item.id)"
+                  @select="onCardSelect"
+                  @select-hint="onCardSelectHint"
+                  @open="openResource"
+                  @remove="removeResource"
+                  @ignore="ignoreResource"
+                  @set-private="setResourcePrivate"
+                />
+              </div>
+            </div>
+          </section>
         </template>
       </div>
 
@@ -1738,19 +1784,81 @@ const { t, locale } = useI18n()
 const store = useResourceStore()
 const settingsStore = useSettingsStore()
 const aiStore = useAiStore()
-/** Map of resourceId → chunkText for AI-matched results (hidden for strong literal matches) */
+/** AI matches are rendered only in the independent recommendation section. */
 const aiMatchMap = computed(() => {
   const m = new Map<string, string>()
-  const q = store.searchQuery.toLowerCase().trim()
-  if (!q) return m
+  const q = store.searchQuery.trim()
+  if (!q || aiStore.semanticQuery !== q) return m
   for (const r of aiStore.semanticResults) {
-    // If title already contains the query, don't show AI badge (literal gets the credit)
-    const resource = store.items.find(i => i.id === r.resourceId)
-    if (resource && resource.title.toLowerCase().includes(q)) continue
     m.set(r.resourceId, r.chunkText)
   }
   return m
 })
+const aiRecommendedItems = computed(() => {
+  const query = store.searchQuery.trim()
+  if (!query || aiStore.semanticQuery !== query) return []
+  const byId = new Map(store.items.map(item => [item.id, item]))
+  return aiStore.semanticResults
+    .map(result => byId.get(result.resourceId))
+    .filter((item): item is Resource => !!item && (store.activeType === 'all' || item.type === store.activeType))
+})
+const showAiRecommendations = computed(() => {
+  if (viewMode.value === 'pinboard' || !store.searchQuery.trim()) return false
+  return aiStore.semanticLoading || aiRecommendedItems.value.length > 0
+})
+const aiRecommendationZoom = computed(() => cardZoom.value)
+const aiRecommendationStyle = computed(() => {
+  const cardWidth = Math.max(64, cardMinWidth.value)
+  const height = Math.max(132, Math.min(310, Math.round(cardWidth * 1.4 + 44)))
+  return {
+    '--ai-rec-height': `${height}px`,
+    '--ai-rec-card-width': `${cardWidth}px`,
+  }
+})
+const aiRecommendationsTrackRef = ref<HTMLElement | null>(null)
+const aiRecommendationDrag = reactive({ pointerId: -1, startX: 0, startScrollLeft: 0, moved: false })
+let suppressAiRecommendationClick = false
+
+function onAiRecommendationsWheel(event: WheelEvent) {
+  const track = aiRecommendationsTrackRef.value
+  if (!track) return
+  track.scrollLeft += Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+}
+
+function startAiRecommendationsDrag(event: PointerEvent) {
+  if (event.button !== 0) return
+  const track = aiRecommendationsTrackRef.value
+  if (!track) return
+  aiRecommendationDrag.pointerId = event.pointerId
+  aiRecommendationDrag.startX = event.clientX
+  aiRecommendationDrag.startScrollLeft = track.scrollLeft
+  aiRecommendationDrag.moved = false
+  suppressAiRecommendationClick = false
+  track.setPointerCapture(event.pointerId)
+}
+
+function moveAiRecommendationsDrag(event: PointerEvent) {
+  if (event.pointerId !== aiRecommendationDrag.pointerId) return
+  const track = aiRecommendationsTrackRef.value
+  if (!track) return
+  const distance = event.clientX - aiRecommendationDrag.startX
+  if (Math.abs(distance) > 4) aiRecommendationDrag.moved = true
+  if (aiRecommendationDrag.moved) track.scrollLeft = aiRecommendationDrag.startScrollLeft - distance
+}
+
+function stopAiRecommendationsDrag(event: PointerEvent) {
+  if (event.pointerId !== aiRecommendationDrag.pointerId) return
+  suppressAiRecommendationClick = aiRecommendationDrag.moved
+  aiRecommendationDrag.pointerId = -1
+  aiRecommendationDrag.moved = false
+}
+
+function onAiRecommendationClickCapture(event: MouseEvent) {
+  if (!suppressAiRecommendationClick) return
+  event.preventDefault()
+  event.stopPropagation()
+  suppressAiRecommendationClick = false
+}
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const showAddModal = ref(false)
 const showAiComingSoon = ref(false)
@@ -6016,6 +6124,9 @@ async function deleteIgnored(filePath: string) {
   flex-direction: column;
   user-select: none;
 }
+.grid-scroll.has-ai-recommendations {
+  padding-bottom: var(--ai-rec-height, 190px);
+}
 :global(.box-sel-rect) {
   position: fixed;
   pointer-events: none;
@@ -6030,6 +6141,117 @@ async function deleteIgnored(filePath: string) {
   grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width, 225px), 1fr));
   gap: clamp(3px, calc(var(--card-min-width, 225px) * 0.05), 16px);
   align-content: start;
+}
+
+.ai-recommendations {
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--ai-rec-height, 190px);
+  padding: 9px 10px 10px;
+  display: flex;
+  align-items: stretch;
+  gap: 9px;
+  border-top: 2px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: var(--surface);
+  box-shadow: 0 -10px 28px color-mix(in srgb, #000 28%, transparent);
+  overflow: hidden;
+}
+.ai-recommendations-header {
+  flex: 0 0 34px;
+  min-width: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 5px 5px 3px 0;
+  border-right: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ai-recommendations-title {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+.ai-recommendations-icon {
+  display: flex;
+  color: var(--accent-2);
+}
+.ai-recommendations-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-2);
+  text-align: center;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.ai-recommendations-loading {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-3);
+  font-weight: 400;
+  font-size: 0;
+}
+.ai-recommendations-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.ai-recommendations-track {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1px 2px 10px;
+  cursor: grab;
+  touch-action: pan-y;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 45%, var(--border)) transparent;
+  scrollbar-gutter: stable;
+}
+.ai-recommendations-track:active {
+  cursor: grabbing;
+}
+.ai-recommendations-track::-webkit-scrollbar {
+  height: 6px;
+}
+.ai-recommendations-track::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  border-radius: 3px;
+}
+.ai-recommendations-track::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 3px;
+}
+.ai-recommendations-track::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 70%, var(--border));
+}
+.ai-recommendation-item {
+  flex: 0 0 var(--ai-rec-card-width, 104px);
+  min-width: 0;
+  user-select: none;
+}
+.ai-recommendation-item :deep(.card) {
+  width: 100%;
 }
 
 .doc-create-card {
