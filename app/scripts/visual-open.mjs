@@ -290,7 +290,7 @@ async function runCommand(line) {
     } else if (cmd === 'text') {
       console.log(await p.locator(args[0]).textContent({ timeout: 5000 }))
     } else if (cmd === 'click') {
-      await p.locator(args[0]).click({ timeout: 10_000 })
+      await p.locator(args[0]).first().click({ timeout: 10_000 })
       console.log('clicked')
     } else if (cmd === 'clickText') {
       await p.getByText(args.join(' '), { exact: false }).first().click({ timeout: 10_000 })
@@ -332,6 +332,23 @@ async function runCommand(line) {
 }
 
 let commandQueue = Promise.resolve()
+const batchArg = process.argv.find(arg => arg.startsWith('--commands-base64='))
+if (batchArg) {
+  const commands = Buffer.from(batchArg.slice('--commands-base64='.length), 'base64')
+    .toString('utf8')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+  for (const command of commands) {
+    console.log(`visual> ${command}`)
+    await runCommand(command)
+  }
+  try { await electronApp.close() } catch {}
+  const marker = join(artifactsDir, 'last-profile.txt')
+  writeFileSync(marker, profileRoot, 'utf8')
+  process.exit(0)
+}
+
 rl.on('line', (line) => {
   commandQueue = commandQueue
     .then(() => runCommand(line))

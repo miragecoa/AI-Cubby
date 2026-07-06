@@ -854,9 +854,13 @@
               @pointermove="moveAiRecommendationsDrag"
               @pointerup="stopAiRecommendationsDrag"
               @pointercancel="stopAiRecommendationsDrag"
-              @click.capture="onAiRecommendationClickCapture"
             >
-              <div v-for="(item, idx) in aiRecommendedItems" :key="`ai-${item.id}`" class="ai-recommendation-item">
+              <div
+                v-for="(item, idx) in aiRecommendedItems"
+                :key="`ai-${item.id}`"
+                class="ai-recommendation-item"
+                @click.capture="onAiRecommendationItemClick($event, item)"
+              >
                 <ResourceCard
                   :resource="item"
                   :item-index="idx"
@@ -866,7 +870,6 @@
                   :ai-match="aiMatchMap.get(item.id)"
                   @select="onCardSelect"
                   @select-hint="onCardSelectHint"
-                  @open="openResource"
                   @remove="removeResource"
                   @ignore="ignoreResource"
                   @set-private="setResourcePrivate"
@@ -1834,7 +1837,6 @@ function startAiRecommendationsDrag(event: PointerEvent) {
   aiRecommendationDrag.startScrollLeft = track.scrollLeft
   aiRecommendationDrag.moved = false
   suppressAiRecommendationClick = false
-  track.setPointerCapture(event.pointerId)
 }
 
 function moveAiRecommendationsDrag(event: PointerEvent) {
@@ -1842,7 +1844,10 @@ function moveAiRecommendationsDrag(event: PointerEvent) {
   const track = aiRecommendationsTrackRef.value
   if (!track) return
   const distance = event.clientX - aiRecommendationDrag.startX
-  if (Math.abs(distance) > 4) aiRecommendationDrag.moved = true
+  if (!aiRecommendationDrag.moved && Math.abs(distance) > 4) {
+    aiRecommendationDrag.moved = true
+    track.setPointerCapture(event.pointerId)
+  }
   if (aiRecommendationDrag.moved) track.scrollLeft = aiRecommendationDrag.startScrollLeft - distance
 }
 
@@ -1853,10 +1858,10 @@ function stopAiRecommendationsDrag(event: PointerEvent) {
   aiRecommendationDrag.moved = false
 }
 
-function onAiRecommendationClickCapture(event: MouseEvent) {
-  if (!suppressAiRecommendationClick) return
+function onAiRecommendationItemClick(event: MouseEvent, item: Resource) {
   event.preventDefault()
   event.stopPropagation()
+  if (!suppressAiRecommendationClick) openResource(item)
   suppressAiRecommendationClick = false
 }
 const searchInputRef = ref<HTMLInputElement | null>(null)
