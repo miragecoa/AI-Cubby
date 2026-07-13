@@ -4395,9 +4395,9 @@ function noteSurfaceToBlocks(): NoteBlock[] {
   }
   Array.from(surface.childNodes).forEach(walk)
   flushText()
-  return normalizeNoteBlocks(blocks).filter((block, index, arr) => (
-    block.type === 'image' || block.text.trim() || index === arr.length - 1
-  ))
+  // A text block containing only line breaks is still document structure. This
+  // occurs around inline images and between empty paragraphs, so do not discard it.
+  return normalizeNoteBlocks(blocks)
 }
 
 function selectedImageEl(): HTMLElement | null {
