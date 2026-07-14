@@ -346,6 +346,8 @@ test('document category can create managed notes and profile documents', () => {
   assert.match(library, /@click="saveLocalNote"/)
   assert.match(library, /noteSurfaceRef\.value\.innerHTML = renderNoteBlocks/)
   assert.doesNotMatch(library, /return normalizeNoteBlocks\(blocks\)\.filter/)
+  assert.match(library, /const isBlockElement = el\.tagName === 'DIV' \|\| el\.tagName === 'P'/)
+  assert.match(library, /if \(isBlockElement\) appendTextLineBreak\(\)/)
   assert.match(resourceCard, /ext\.toLowerCase\(\) === '\.aicnote'/)
   assert.match(settings, /const showFileExt = ref\(false\)/)
   assert.match(settings, /window\.api\.settings\.set\('showFileExt', 'false'\)/)

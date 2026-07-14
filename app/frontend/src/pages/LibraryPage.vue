@@ -4367,6 +4367,9 @@ function noteSurfaceToBlocks(): NoteBlock[] {
       text = ''
     }
   }
+  const appendTextLineBreak = () => {
+    if (text && !text.endsWith('\n')) text += '\n'
+  }
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       text += node.textContent ?? ''
@@ -4390,8 +4393,12 @@ function noteSurfaceToBlocks(): NoteBlock[] {
       text += '\n'
       return
     }
+    // Chromium can turn a return after inline text into `text<div>next line</div>`.
+    // Preserve the boundary on both sides of block elements before flattening them.
+    const isBlockElement = el.tagName === 'DIV' || el.tagName === 'P'
+    if (isBlockElement) appendTextLineBreak()
     Array.from(el.childNodes).forEach(walk)
-    if (el.tagName === 'DIV' || el.tagName === 'P') text += '\n'
+    if (isBlockElement) appendTextLineBreak()
   }
   Array.from(surface.childNodes).forEach(walk)
   flushText()
