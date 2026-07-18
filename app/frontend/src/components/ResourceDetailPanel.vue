@@ -88,7 +88,7 @@
               </button>
             </div>
 
-            <button class="cover-btn" @click="pickCover">
+            <button class="cover-btn" @click="openCoverPicker">
               <span v-html="imageSvg" />{{ t('detail.pickCover') }}
             </button>
             <button v-if="canRefetchIcon" class="cover-btn" :class="{ 'cover-btn-fail': faviconFailed }" @click="refetchIcon" :disabled="faviconLoading">
@@ -239,6 +239,49 @@
         </div>
 
       </div>
+
+      <div v-if="coverPickerMode" class="cover-picker-overlay" @mousedown.self="closeCoverPicker">
+        <section class="cover-picker-dialog" role="dialog" aria-modal="true" :aria-label="t('detail.coverPicker.title')">
+          <header class="cover-picker-header">
+            <div>
+              <strong>{{ t('detail.coverPicker.title') }}</strong>
+              <p v-if="coverPickerMode === 'source'">{{ t('detail.coverPicker.sourcePrompt') }}</p>
+            </div>
+            <button class="close-btn" :aria-label="t('detail.close')" @click="closeCoverPicker" v-html="closeSvg" />
+          </header>
+
+          <div v-if="coverPickerMode === 'source'" class="cover-source-options">
+            <button class="cover-source-option" @click="pickCoverFromFile">
+              <span class="cover-source-icon" v-html="folderSvg" />
+              <span><strong>{{ t('detail.coverPicker.fromComputer') }}</strong><small>{{ t('detail.coverPicker.fromComputerHint') }}</small></span>
+            </button>
+            <button class="cover-source-option" @click="openLibraryCoverPicker">
+              <span class="cover-source-icon" v-html="imageSvg" />
+              <span><strong>{{ t('detail.coverPicker.fromLibrary') }}</strong><small>{{ t('detail.coverPicker.fromLibraryHint') }}</small></span>
+            </button>
+          </div>
+
+          <template v-else>
+            <div class="cover-library-toolbar">
+              <button class="cover-picker-back" :aria-label="t('detail.coverPicker.back')" @click="coverPickerMode = 'source'">&#8592;</button>
+              <input ref="coverSearchInput" v-model="coverSearchQuery" class="cover-search-input" :placeholder="t('detail.coverPicker.searchPlaceholder')" spellcheck="false" />
+              <span class="cover-result-count">{{ filteredCoverSources.length }}</span>
+            </div>
+            <div v-if="coverSourcesLoading" class="cover-picker-state">{{ t('detail.coverPicker.loading') }}</div>
+            <div v-else-if="filteredCoverSources.length === 0" class="cover-picker-state">{{ t('detail.coverPicker.empty') }}</div>
+            <div v-else class="cover-resource-grid">
+              <button v-for="source in filteredCoverSources" :key="source.id" class="cover-resource-item" :disabled="savingCoverSource === source.id" @click="useLibraryCover(source)">
+                <span class="cover-resource-thumb">
+                  <img v-if="coverPreviewCache[source.cover_path!]" :src="coverPreviewCache[source.cover_path!]" :alt="source.title" />
+                  <span v-else class="cover-resource-placeholder" v-html="imageSvg" />
+                </span>
+                <span class="cover-resource-title" :title="source.title">{{ source.title }}</span>
+                <span v-if="savingCoverSource === source.id" class="cover-resource-saving">{{ t('detail.coverPicker.using') }}</span>
+              </button>
+            </div>
+          </template>
+        </section>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -249,6 +292,7 @@ import { useI18n } from 'vue-i18n'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
+import { match as pinyinMatch } from 'pinyin-pro'
 
 const { t, locale } = useI18n()
 
@@ -405,7 +449,50 @@ watchEffect(async () => {
 })
 
 // ─── Pick cover ────────────────────────────────────────────────────
-async function pickCover() {
+const coverPickerMode = ref<'source' | 'library' | null>(null)
+const coverSources = ref<Resource[]>([])
+const coverSearchQuery = ref('')
+const coverSourcesLoading = ref(false)
+const savingCoverSource = ref<string | null>(null)
+const coverPreviewCache = ref<Record<string, string>>({})
+const coverPreviewLoading = new Set<string>()
+const coverSearchInput = ref<HTMLInputElement | null>(null)
+
+const filteredCoverSources = computed(() => {
+  const query = coverSearchQuery.value.trim().toLowerCase()
+  if (!query) return coverSources.value
+  return coverSources.value.filter(source =>
+    source.title.toLowerCase().includes(query) ||
+    source.file_path.toLowerCase().includes(query) ||
+    pinyinMatch(source.title, query) !== null
+  )
+})
+
+function loadCoverPreviews() {
+  for (const source of filteredCoverSources.value.slice(0, 72)) {
+    const path = source.cover_path
+    if (!path || coverPreviewCache.value[path] || coverPreviewLoading.has(path)) continue
+    coverPreviewLoading.add(path)
+    void window.api.files.readImage(path, 160).then(image => {
+      if (image) coverPreviewCache.value = { ...coverPreviewCache.value, [path]: image }
+    }).finally(() => coverPreviewLoading.delete(path))
+  }
+}
+
+watch(filteredCoverSources, loadCoverPreviews)
+
+function openCoverPicker() {
+  coverPickerMode.value = 'source'
+}
+
+function closeCoverPicker() {
+  coverPickerMode.value = null
+  coverSearchQuery.value = ''
+  savingCoverSource.value = null
+}
+
+async function pickCoverFromFile() {
+  closeCoverPicker()
   const imagePath = await window.api.files.pickImage()
   if (!imagePath) return
   hasEdited.value = true
@@ -418,6 +505,39 @@ async function pickCover() {
   if (savedPath) {
     store.addOrUpdate({ ...props.resource, cover_path: savedPath, user_modified: 1 })
     thumbSrc.value = dataUrl
+  }
+}
+
+async function openLibraryCoverPicker() {
+  coverPickerMode.value = 'library'
+  coverSearchQuery.value = ''
+  coverSourcesLoading.value = true
+  try {
+    const resources = await window.api.resources.getAll()
+    coverSources.value = resources
+      .filter(source => source.id !== props.resource.id && Boolean(source.cover_path))
+      .sort((a, b) => b.updated_at - a.updated_at)
+    loadCoverPreviews()
+  } finally {
+    coverSourcesLoading.value = false
+    nextTick(() => coverSearchInput.value?.focus())
+  }
+}
+
+async function useLibraryCover(source: Resource) {
+  if (!source.cover_path || savingCoverSource.value) return
+  savingCoverSource.value = source.id
+  try {
+    const dataUrl = await window.api.files.readFullImage(source.cover_path)
+    if (!dataUrl) return
+    const savedPath = await window.api.files.saveCover(props.resource.id, dataUrl, true)
+    if (!savedPath) return
+    hasEdited.value = true
+    store.addOrUpdate({ ...props.resource, cover_path: savedPath, user_modified: 1 })
+    thumbSrc.value = dataUrl
+    closeCoverPicker()
+  } finally {
+    savingCoverSource.value = null
   }
 }
 
@@ -1258,4 +1378,111 @@ async function refetchIcon() {
 .btn-open:hover { opacity: 0.85; }
 .btn-open span { width: 13px; height: 13px; display: flex; }
 .btn-open :deep(svg) { width: 13px; height: 13px; }
+
+/* 封面来源选择 */
+.cover-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+}
+.cover-picker-dialog {
+  width: 620px;
+  max-width: calc(100vw - 48px);
+  max-height: min(680px, calc(100vh - 72px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+.cover-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px 13px;
+  border-bottom: 1px solid var(--border);
+}
+.cover-picker-header strong { font-size: 15px; color: var(--text); }
+.cover-picker-header p { margin: 3px 0 0; color: var(--text-3); font-size: 12px; }
+.cover-source-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 16px; }
+.cover-source-option {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 86px;
+  padding: 12px;
+  color: var(--text-2);
+  text-align: left;
+  font-family: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.cover-source-option:hover { border-color: var(--accent); background: rgba(99,102,241,0.09); color: var(--text); }
+.cover-source-option > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.cover-source-option strong { font-size: 13px; font-weight: 600; }
+.cover-source-option small { color: var(--text-3); font-size: 11px; line-height: 1.35; }
+.cover-source-icon { width: 28px; height: 28px; flex: none; color: var(--accent-2); }
+.cover-source-icon :deep(svg) { width: 28px; height: 28px; }
+.cover-library-toolbar { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.cover-picker-back {
+  width: 28px; height: 28px; padding: 0; flex: none;
+  color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px;
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.cover-picker-back:hover { color: var(--accent-2); border-color: var(--accent); }
+.cover-search-input {
+  min-width: 0; flex: 1; padding: 7px 9px;
+  color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+  font: 12px inherit; outline: none;
+}
+.cover-search-input:focus { border-color: var(--accent); }
+.cover-search-input::placeholder { color: var(--text-3); }
+.cover-result-count { min-width: 20px; color: var(--text-3); font-size: 12px; text-align: right; }
+.cover-picker-state { display: grid; min-height: 220px; place-items: center; padding: 20px; color: var(--text-3); font-size: 12px; }
+.cover-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  min-height: 0;
+  padding: 14px;
+  overflow-y: auto;
+}
+.cover-resource-item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 5px;
+  color: var(--text-2);
+  text-align: left;
+  font-family: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.cover-resource-item:hover { border-color: var(--accent); background: rgba(99,102,241,0.09); }
+.cover-resource-item:disabled { cursor: wait; opacity: 0.7; }
+.cover-resource-thumb { display: flex; width: 100%; aspect-ratio: 1.35; overflow: hidden; align-items: center; justify-content: center; background: var(--surface-3); border-radius: 4px; }
+.cover-resource-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.cover-resource-placeholder { width: 26px; height: 26px; color: var(--text-3); opacity: 0.55; }
+.cover-resource-placeholder :deep(svg) { width: 100%; height: 100%; }
+.cover-resource-title { overflow: hidden; color: var(--text-2); font-size: 11px; line-height: 16px; white-space: nowrap; text-overflow: ellipsis; }
+.cover-resource-saving { position: absolute; inset: 5px 5px auto; padding: 4px; color: #fff; font-size: 10px; text-align: center; background: rgba(0, 0, 0, 0.66); border-radius: 4px; }
+@media (max-width: 560px) {
+  .cover-source-options { grid-template-columns: 1fr; }
+  .cover-resource-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 </style>

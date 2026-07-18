@@ -59,6 +59,8 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE resources ADD COLUMN pin_group_id TEXT DEFAULT NULL',
     'ALTER TABLE resources ADD COLUMN in_quickpanel INTEGER DEFAULT 0',
     'ALTER TABLE resources ADD COLUMN is_private INTEGER DEFAULT 0',
+    'ALTER TABLE resources ADD COLUMN private_at INTEGER DEFAULT 0',
+    'ALTER TABLE ignored_paths ADD COLUMN added_at INTEGER DEFAULT 0',
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
   }

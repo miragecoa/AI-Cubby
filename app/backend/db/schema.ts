@@ -53,7 +53,8 @@ export const SCHEMA_SQL = `
   END;
 
   CREATE TABLE IF NOT EXISTS ignored_paths (
-    path TEXT PRIMARY KEY
+    path TEXT PRIMARY KEY,
+    added_at INTEGER NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS blocked_dirs (

@@ -650,12 +650,13 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('resources:setPrivate', (_e, id: string, isPrivate: boolean) => {
-    updateResource(id, { is_private: isPrivate ? 1 : 0 })
+    updateResource(id, { is_private: isPrivate ? 1 : 0, private_at: isPrivate ? Date.now() : 0 })
     return getResourceById(id)
   })
 
   ipcMain.handle('resources:batchSetPrivate', (_e, ids: string[], isPrivate: boolean) => {
-    for (const id of ids) updateResource(id, { is_private: isPrivate ? 1 : 0 })
+    const privateAt = isPrivate ? Date.now() : 0
+    for (const id of ids) updateResource(id, { is_private: isPrivate ? 1 : 0, private_at: privateAt })
     return true
   })
   ipcMain.handle('resources:getById', (_e, id: string) => getResourceById(id))
@@ -1437,6 +1438,33 @@ public class WH { [DllImport("user32.dll")] public static extern bool SetWindowP
         if (!icon) throw new Error('favicon unavailable')
         return icon
       })).catch(() => null)
+    } catch { return null }
+  })
+
+  ipcMain.handle('webpage:fetchTitle', async (_e, url: string) => {
+    try {
+      // Use Electron's network stack so page metadata follows the current system/VPN proxy too.
+      await session.defaultSession.forceReloadProxyConfig().catch(() => {})
+      const resp = await net.fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
+        signal: AbortSignal.timeout(6000),
+      })
+      if (!resp.ok || !resp.headers.get('content-type')?.toLowerCase().includes('text/html')) return null
+      const html = await resp.text()
+      const titleMatch = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)
+        ?? html.match(/<meta\b[^>]*(?:property|name)=["']og:title["'][^>]*content=["']([^"']*)["'][^>]*>/i)
+        ?? html.match(/<meta\b[^>]*content=["']([^"']*)["'][^>]*(?:property|name)=["']og:title["'][^>]*>/i)
+      if (!titleMatch?.[1]) return null
+      const title = titleMatch[1]
+        .replace(/<[^>]*>/g, '')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/\s+/g, ' ')
+        .trim()
+      return title || null
     } catch { return null }
   })
 

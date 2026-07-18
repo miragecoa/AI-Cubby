@@ -24,6 +24,7 @@ export interface Resource {
   stat_paused?: number
   file_size?: number
   is_private?: number
+  private_at?: number
   tags?: Tag[]
 }
 
@@ -188,11 +189,11 @@ export function isIgnored(filePath: string): boolean {
 }
 
 export function addIgnoredPath(filePath: string): void {
-  getDb().prepare('INSERT OR IGNORE INTO ignored_paths (path) VALUES (?)').run(filePath.toLowerCase())
+  getDb().prepare('INSERT OR IGNORE INTO ignored_paths (path, added_at) VALUES (?, ?)').run(filePath.toLowerCase(), Date.now())
 }
 
 export function getAllIgnoredPaths(): string[] {
-  return (getDb().prepare('SELECT path FROM ignored_paths ORDER BY path').all() as { path: string }[])
+  return (getDb().prepare('SELECT path FROM ignored_paths ORDER BY added_at DESC, rowid DESC').all() as { path: string }[])
     .map(r => r.path)
 }
 

@@ -27,11 +27,36 @@ test('package exposes default, build, and visual smoke scripts', () => {
   assert.ok(pkg.scripts['visual:open']?.includes('scripts/visual-open.mjs'))
 })
 
-test('favicon fetching refreshes VPN proxy config and bounds provider latency', () => {
+test('webpage metadata follows VPN proxy config and uses the page title', () => {
   const source = read('backend/ipc/index.ts')
+  const preload = read('backend/preload.ts')
+  const modal = read('frontend/src/components/AddResourceModal.vue')
   assert.match(source, /session\.defaultSession\.forceReloadProxyConfig\(\)/)
   assert.match(source, /signal: AbortSignal\.timeout\(6000\)/)
   assert.match(source, /Promise\.any\(sources\.map/)
+  assert.match(source, /webpage:fetchTitle/)
+  assert.match(source, /titleMatch = html\.match/)
+  assert.match(preload, /fetchTitle: \(url: string\)/)
+  assert.match(modal, /window\.api\.webpage\.fetchTitle\(u\)/)
+  assert.match(modal, /pageTitle \|\| new URL\(u\)\.hostname/)
+})
+
+test('cover changes offer computer and indexed-library sources', () => {
+  const detail = read('frontend/src/components/ResourceDetailPanel.vue')
+  const zh = read('frontend/src/i18n/locales/zh.ts')
+  const en = read('frontend/src/i18n/locales/en.ts')
+  const apiTypes = read('frontend/src/types/api.d.ts')
+  assert.match(detail, /@click="openCoverPicker"/)
+  assert.match(detail, /pickCoverFromFile/)
+  assert.match(detail, /openLibraryCoverPicker/)
+  assert.match(detail, /window\.api\.resources\.getAll\(\)/)
+  assert.match(detail, /filter\(source => source\.id !== props\.resource\.id && Boolean\(source\.cover_path\)\)/)
+  assert.match(detail, /pinyinMatch\(source\.title, query\)/)
+  assert.match(detail, /window\.api\.files\.readFullImage\(source\.cover_path\)/)
+  assert.match(detail, /window\.api\.files\.saveCover\(props\.resource\.id, dataUrl, true\)/)
+  assert.match(zh, /coverPicker:/)
+  assert.match(en, /coverPicker:/)
+  assert.match(apiTypes, /saveCover: \(resourceId: string, dataUrl: string, userPicked\?: boolean\)/)
 })
 
 test('AI full indexing cannot overlap or remain stuck in indexing state', () => {
@@ -225,6 +250,21 @@ test('resource ignore removes by id and read-only installs use writable profile 
   assert.match(profiles, /const fallbackDir = join\(app\.getPath\('userData'\), 'portable-data'\)/)
   assert.match(profiles, /migrateProfileDataIfNeeded\(portableDir, fallbackDir\)/)
   assert.match(profiles, /copyDirMissing\(join\(fromDir, 'profiles'\), join\(toDir, 'profiles'\)\)/)
+})
+
+test('privacy and ignored lists keep recent entries first and support pinyin search', () => {
+  const queries = read('backend/db/queries.ts')
+  const ipc = read('backend/ipc/index.ts')
+  const library = read('frontend/src/pages/LibraryPage.vue')
+  assert.match(queries, /INSERT OR IGNORE INTO ignored_paths \(path, added_at\) VALUES \(\?, \?\)/)
+  assert.match(queries, /SELECT path FROM ignored_paths ORDER BY added_at DESC, rowid DESC/)
+  assert.match(ipc, /private_at: isPrivate \? Date\.now\(\) : 0/)
+  assert.match(library, /const privacySearch = ref\(''\)/)
+  assert.match(library, /function matchesPrivacySearch/)
+  assert.match(library, /const pinyinIndices = pinyinMatch\(value, query\)/)
+  assert.match(library, /pinyinIndices\.some\(index =>/)
+  assert.match(library, /\\u3400-\\u4dbf\\u4e00-\\u9fff/)
+  assert.match(library, /filteredPrivateItems/)
 })
 
 test('file size is calculated for imports and backfilled safely', () => {

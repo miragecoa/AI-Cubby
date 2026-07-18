@@ -63,7 +63,7 @@ declare global {
         readImage: (filePath: string, size?: number) => Promise<string | null>
         readFullImage: (filePath: string) => Promise<string | null>
         getAppIcon: (filePath: string) => Promise<string | null>
-        saveCover: (resourceId: string, dataUrl: string) => Promise<string | null>
+        saveCover: (resourceId: string, dataUrl: string, userPicked?: boolean) => Promise<string | null>
         pickFile: () => Promise<string | null>
         pickImage: () => Promise<string | null>
         pickFolder: () => Promise<string | null>
@@ -173,6 +173,7 @@ declare global {
       onDownloadError: (callback: (msg: string) => void) => () => void
       webpage: {
         fetchFavicon: (url: string) => Promise<string | null>
+        fetchTitle: (url: string) => Promise<string | null>
         importChromeBookmarks: () => Promise<Array<{ name: string; url: string; folder: string }>>
         importBrowserBookmarks: () => Promise<Array<{ name: string; url: string; folder: string }>>
       }

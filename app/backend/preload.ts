@@ -339,6 +339,7 @@ contextBridge.exposeInMainWorld('api', {
   // 网页资源
   webpage: {
     fetchFavicon: (url: string): Promise<string | null> => ipcRenderer.invoke('webpage:fetchFavicon', url),
+    fetchTitle: (url: string): Promise<string | null> => ipcRenderer.invoke('webpage:fetchTitle', url),
     importChromeBookmarks: (): Promise<Array<{ name: string; url: string; folder: string }>> =>
       ipcRenderer.invoke('webpage:importChromeBookmarks'),
     importBrowserBookmarks: (): Promise<Array<{ name: string; url: string; folder: string }>> =>

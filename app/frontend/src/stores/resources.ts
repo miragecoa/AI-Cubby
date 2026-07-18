@@ -24,6 +24,7 @@ export interface Resource {
   file_size?: number
   stat_paused?: number
   is_private?: number
+  private_at?: number
   tags?: Array<{ id: number; name: string; source: string }>
 }
 

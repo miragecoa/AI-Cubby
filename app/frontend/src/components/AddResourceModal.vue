@@ -483,6 +483,7 @@ const canSubmitFolder = computed(() => folderPath.value.trim() !== '' && folderF
 const webForm = ref({ url: '', title: '' })
 const webFavicon = ref<string | null>(null)
 const webFaviconLoading = ref(false)
+const webAutoTitle = ref('')
 let webFaviconTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(() => webForm.value.url, (url) => {
@@ -495,12 +496,20 @@ watch(() => webForm.value.url, (url) => {
     try { new URL(u) } catch { return }
     webFaviconLoading.value = true
     try {
-      webFavicon.value = await window.api.webpage.fetchFavicon(u)
+      const canAutofillTitle = !webForm.value.title.trim() || webForm.value.title === webAutoTitle.value
+      const [favicon, pageTitle] = await Promise.all([
+        window.api.webpage.fetchFavicon(u),
+        window.api.webpage.fetchTitle(u),
+      ])
+      if (webForm.value.url.trim() !== url.trim()) return
+      webFavicon.value = favicon
+      if (canAutofillTitle && (!webForm.value.title.trim() || webForm.value.title === webAutoTitle.value)) {
+        try {
+          webForm.value.title = pageTitle || new URL(u).hostname.replace(/^www\./, '')
+          webAutoTitle.value = webForm.value.title
+        } catch { /* ignore */ }
+      }
     } finally { webFaviconLoading.value = false }
-    // Auto-fill title from domain if empty
-    if (!webForm.value.title.trim()) {
-      try { webForm.value.title = new URL(u).hostname.replace(/^www\./, '') } catch { /* ignore */ }
-    }
   }, 500)
 })
 
@@ -596,6 +605,7 @@ function resetAll() {
   webForm.value = { url: '', title: '' }
   webFavicon.value = null
   webFaviconLoading.value = false
+  webAutoTitle.value = ''
 }
 
 // ── 单个文件操作 ────────────────────────────────────────

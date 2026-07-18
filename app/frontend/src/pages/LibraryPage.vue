@@ -348,6 +348,22 @@
             <button class="ignored-tab" :class="{ active: privacyTab === 'ignored' }" @click="openIgnoredTab">{{ t('library.privacyTab.ignored') }}</button>
             <button class="ignored-tab" :class="{ active: privacyTab === 'blocked' }" @click="openBlockedTab">{{ t('library.privacyTab.blocked') }}</button>
           </div>
+          <div v-if="privacyTab !== 'blocked'" class="privacy-search-row">
+            <span class="privacy-search-icon" v-html="searchSvg" />
+            <input
+              v-model.trim="privacySearch"
+              class="privacy-search"
+              type="search"
+              :placeholder="t('library.privacySearchPlaceholder')"
+            />
+            <button
+              v-if="privacySearch"
+              class="privacy-search-clear"
+              type="button"
+              :title="t('library.clearSearch')"
+              @click="privacySearch = ''"
+            >&times;</button>
+          </div>
 
           <!-- 隐私文件 tab -->
           <template v-if="privacyTab === 'privacy'">
@@ -367,11 +383,12 @@
 
             <!-- 隐私文件列表 -->
             <div class="privacy-files-header">
-              {{ t('library.privateFiles') }} ({{ privateItems.length }})
+              {{ t('library.privateFiles') }} ({{ privacySearch ? filteredPrivateItems.length + '/' + privateItems.length : privateItems.length }})
             </div>
             <div v-if="privateItems.length === 0" class="blocked-empty-hint">{{ t('library.privateEmpty') }}</div>
+            <div v-else-if="filteredPrivateItems.length === 0" class="blocked-empty-hint">{{ t('library.privacySearchEmpty') }}</div>
             <div v-else class="ignored-list">
-              <div v-for="item in privateItems" :key="item.id" class="ignored-row">
+              <div v-for="item in filteredPrivateItems" :key="item.id" class="ignored-row">
                 <span class="ignored-name" :title="item.file_path">{{ item.title }}</span>
                 <span class="ignored-path" :title="item.file_path">{{ item.file_path }}</span>
                 <button class="unignore-btn" @click="setResourcePrivate(item, false)">{{ t('library.unsetPrivate') }}</button>
@@ -381,11 +398,12 @@
 
           <!-- 已忽略 tab -->
           <template v-else-if="privacyTab === 'ignored'">
-            <div v-if="ignoredFiltered.length === 0" class="empty-state">
+            <div v-if="ignoredPaths.length === 0" class="empty-state">
               <span class="empty-icon" v-html="ignoreListSvg" />
               <div class="empty-text">{{ t('library.ignoredEmpty') }}</div>
               <div class="empty-hint">{{ t('library.ignoredEmptyHint') }}</div>
             </div>
+            <div v-else-if="ignoredFiltered.length === 0" class="blocked-empty-hint">{{ t('library.privacySearchEmpty') }}</div>
             <div v-else class="ignored-list">
               <div class="ignored-bulk-bar">
                 <div class="ignored-bulk-btns">
@@ -3233,7 +3251,7 @@ async function doBatchIgnore() {
   const filePaths = resources.map(r => r.file_path)
   const ids = resources.map(r => r.id)
   await store.batchIgnore(filePaths, ids)
-  ignoredPaths.value = [...ignoredPaths.value, ...filePaths]
+  ignoredPaths.value = [...filePaths].reverse().concat(ignoredPaths.value)
   showBatchIgnore.value = false
   exitBatchMode()
 }
@@ -3869,8 +3887,27 @@ const privacyMode = ref(false)
 const ignoredTab = ref<'files' | 'dirs'>('files')
 const ignoredPaths = ref<string[]>([])
 const blockedDirs = ref<string[]>([])
+const privacySearch = ref('')
 
-const privateItems = computed(() => store.items.filter(r => r.is_private))
+const privateItems = computed(() => store.items
+  .filter(r => r.is_private)
+  .slice()
+  .sort((a, b) => (b.private_at || b.added_at || 0) - (a.private_at || a.added_at || 0)))
+
+function matchesPrivacySearch(value: string): boolean {
+  const query = privacySearch.value.trim().toLowerCase()
+  if (!query) return true
+  if (value.toLowerCase().includes(query)) return true
+
+  // pinyin-pro also performs sparse character matching for Latin paths.
+  // Only accept its fallback when at least one matched character is Chinese.
+  const pinyinIndices = pinyinMatch(value, query)
+  return pinyinIndices !== null && pinyinIndices.some(index => /[\u3400-\u4dbf\u4e00-\u9fff]/.test(value[index] ?? ''))
+}
+
+const filteredPrivateItems = computed(() => privateItems.value.filter(item => (
+  matchesPrivacySearch(item.title) || matchesPrivacySearch(item.file_path)
+)))
 
 async function togglePrivacyPanel() {
   showPrivacy.value = !showPrivacy.value
@@ -4025,8 +4062,10 @@ function formatListDate(ts: number) {
 }
 
 const ignoredFiltered = computed(() => {
-  if (store.activeType === 'all') return ignoredPaths.value
-  return ignoredPaths.value.filter(p => inferType(p) === store.activeType)
+  const byType = store.activeType === 'all'
+    ? ignoredPaths.value
+    : ignoredPaths.value.filter(p => inferType(p) === store.activeType)
+  return byType.filter(matchesPrivacySearch)
 })
 
 async function addBlockedDir() {
@@ -4712,7 +4751,7 @@ function removeResource(resource: Resource) {
 async function ignoreResource(resource: Resource) {
   const snapshot: Resource = JSON.parse(JSON.stringify(resource))
   await store.ignore(resource.file_path, resource.id)
-  ignoredPaths.value = [...ignoredPaths.value, resource.file_path]
+  ignoredPaths.value = [resource.file_path, ...ignoredPaths.value]
   // Show undo toast
   if (toastTimer !== null) { clearTimeout(toastTimer); toastTimer = null }
   toastKey.value++
@@ -7162,6 +7201,51 @@ async function deleteIgnored(filePath: string) {
   padding: 12px 16px 0;
   flex-shrink: 0;
 }
+
+.privacy-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  padding: 0 10px;
+  height: 34px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.privacy-search-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.privacy-search-icon :deep(svg) { width: 15px; height: 15px; }
+.privacy-search {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.privacy-search::placeholder { color: var(--text-3); }
+.privacy-search-clear {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.privacy-search-clear:hover { color: var(--text); }
+.privacy-search-row:focus-within { border-color: var(--accent); }
 
 .ignored-tab {
   padding: 6px 16px;
