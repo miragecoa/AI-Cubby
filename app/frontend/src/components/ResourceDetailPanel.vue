@@ -403,7 +403,7 @@ watch(() => props.resource.id, () => {
 const tagSuggestions = ref<Array<{ id: number; name: string; count: number }>>([])
 
 async function loadTagSuggestions() {
-  tagSuggestions.value = await window.api.tags.getForType(props.resource.type, 'lastAssigned')
+  tagSuggestions.value = await window.api.tags.getForType(undefined, 'lastAssigned')
 }
 
 onMounted(loadTagSuggestions)

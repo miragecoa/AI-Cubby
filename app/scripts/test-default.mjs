@@ -59,6 +59,12 @@ test('cover changes offer computer and indexed-library sources', () => {
   assert.match(apiTypes, /saveCover: \(resourceId: string, dataUrl: string, userPicked\?: boolean\)/)
 })
 
+test('resource detail tag suggestions include tags from every resource type', () => {
+  const detail = read('frontend/src/components/ResourceDetailPanel.vue')
+  assert.match(detail, /window\.api\.tags\.getForType\(undefined, 'lastAssigned'\)/)
+  assert.doesNotMatch(detail, /getForType\(props\.resource\.type, 'lastAssigned'\)/)
+})
+
 test('AI full indexing cannot overlap or remain stuck in indexing state', () => {
   const source = read('backend/ai/ai-manager.ts')
   assert.match(source, /let fullIndexPromise: Promise<void> \| null = null/)
