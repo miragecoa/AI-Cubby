@@ -36,7 +36,7 @@ import { ensureProfiles, getProfileDir, loadManifest } from './db/profiles'
 import { registerIpcHandlers, resolveDroppedPaths, setOnLanguageChange } from './ipc/index'
 import { startMonitor, flushRunningSessions } from './monitor/recent-files'
 import type { RunningEvent } from './monitor/recent-files'
-import { checkResourceHealth } from './monitor/resource-health'
+import { checkResourceHealth, relocateMissingResources } from './monitor/resource-health'
 import { initAutoUpdater } from './updater'
 import { initHeartbeat, flushAndStop, incShortcutMain, incShortcutClip, incWakeCount, incDrawerWake } from './heartbeat'
 import { initAiManager, enableAi, disableAi, getAiStatus, isModelInstalled, semanticSearch, queueResourceContent, onStatusChange, onProgress, forceReindex, pauseIndex, resumeIndex, isIndexPaused } from './ai/ai-manager'
@@ -1667,8 +1667,14 @@ ipcRenderer.on('debug:log',(_,l)=>addLine(l));
   // it never performs a whole-disk scan or removes user records.
   setTimeout(() => {
     checkResourceHealth().then((result) => {
-      if (result.missing || result.relocated) mainWindow?.webContents.send('resources:reload')
-      if (result.missing || result.relocated) console.log('[ResourceHealth]', result)
+      if (result.missing) mainWindow?.webContents.send('resources:reload')
+      if (result.missing) console.log('[ResourceHealth] marked missing:', result)
+      setTimeout(() => {
+        relocateMissingResources().then((relocation) => {
+          if (relocation.relocated) mainWindow?.webContents.send('resources:reload')
+          if (relocation.relocated) console.log('[ResourceHealth] relocated:', relocation)
+        }).catch((error) => console.warn('[ResourceHealth] relocation failed:', error))
+      }, 250)
     }).catch((error) => console.warn('[ResourceHealth] check failed:', error))
   }, 8000)
 

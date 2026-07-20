@@ -17,7 +17,7 @@ import {
   getBlockedDirs, addBlockedDir, removeBlockedDir
 } from '../db/queries'
 import { scanRecentFolder, scanProcesses, setMonitorPaused, getRunningSessions, killRunningResource, trackRunningProcess } from '../monitor/recent-files'
-import { checkResourceHealth } from '../monitor/resource-health'
+import { checkResourceHealth, relocateMissingResources } from '../monitor/resource-health'
 import { dbPath, dataDir, getDb, clipboardGetItems, clipboardDeleteItem, clipboardClearAll, clipboardRecordUse } from '../db/index'
 import { getQuickPanelResources, setQuickPanel, batchSetQuickPanel, batchSetPinOrder, getAllPinGroups, createPinGroup, renamePinGroup, removePinGroup,
   setPinGroupForResource, setPinGroupOrder, setPinGroupCollapsed } from '../db/queries'
@@ -661,7 +661,11 @@ export function registerIpcHandlers(): void {
     return true
   })
   ipcMain.handle('resources:getById', (_e, id: string) => getResourceById(id))
-  ipcMain.handle('resources:checkHealth', () => checkResourceHealth())
+  ipcMain.handle('resources:checkHealth', async () => {
+    const health = await checkResourceHealth()
+    const relocation = await relocateMissingResources()
+    return { checked: health.checked, missing: health.missing, relocated: relocation.relocated }
+  })
 
   ipcMain.handle('resources:update', (_e, id: string, data: object) => {
     updateResource(id, { ...data, user_modified: 1 })

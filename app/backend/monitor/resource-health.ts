@@ -32,12 +32,32 @@ function pathSizeMatches(filePath: string, expectedSize: number): boolean {
   }
 }
 
-/**
- * Checks local resource paths after startup without walking entire disks. If a file was
- * moved into a directory already represented in the library, an exact name + size match
- * restores the existing record. Otherwise the resource stays in the library as missing.
- */
+/** Fast first pass: mark every unavailable local path before trying any relocation. */
 export async function checkResourceHealth(): Promise<ResourceHealthResult> {
+  const resources = getAllResources()
+  const local = resources.filter(isLocalResource)
+  const result: ResourceHealthResult = { checked: 0, missing: 0, relocated: 0 }
+
+  for (const resource of local) {
+    result.checked++
+    if (existsSync(resource.file_path)) continue
+    if (!resource.missing_at) {
+      updateResource(resource.id, { missing_at: Date.now(), last_path_check_at: Date.now() })
+      result.missing++
+    }
+
+    // Keep launch responsive when a library contains a large number of stale paths.
+    if (result.checked % 40 === 0) await yieldToMain()
+  }
+  return result
+}
+
+/**
+ * Slow second pass: only inspect known library directories for missing resources.
+ * It intentionally runs after the fast status pass so a large library never delays
+ * visible missing-file markers.
+ */
+export async function relocateMissingResources(): Promise<ResourceHealthResult> {
   const resources = getAllResources()
   const local = resources.filter(isLocalResource)
   const knownDirs = [...new Set(local
@@ -46,9 +66,8 @@ export async function checkResourceHealth(): Promise<ResourceHealthResult> {
   const result: ResourceHealthResult = { checked: 0, missing: 0, relocated: 0 }
 
   for (const resource of local) {
-    result.checked++
     if (existsSync(resource.file_path)) continue
-
+    result.checked++
     const filename = basename(resource.file_path)
     const matches = knownDirs
       .filter((dir) => sameVolume(dir, resource.file_path))
@@ -64,13 +83,9 @@ export async function checkResourceHealth(): Promise<ResourceHealthResult> {
         last_path_check_at: Date.now(),
       })
       result.relocated++
-    } else if (!resource.missing_at) {
-      updateResource(resource.id, { missing_at: Date.now(), last_path_check_at: Date.now() })
-      result.missing++
     }
 
-    // Keep launch responsive when a library contains a large number of stale paths.
-    if (result.checked % 40 === 0) await yieldToMain()
+    if (result.checked % 8 === 0) await yieldToMain()
   }
   return result
 }
