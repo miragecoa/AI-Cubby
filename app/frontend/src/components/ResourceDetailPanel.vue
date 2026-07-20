@@ -413,7 +413,9 @@ const filteredSuggestions = computed(() => {
   const addedIds = new Set((props.resource.tags ?? []).map(t => t.id))
   const query    = newTagInput.value.trim().toLowerCase()
   const available = tagSuggestions.value.filter(t => !addedIds.has(t.id))
-  return query ? available.filter(t => t.name.toLowerCase().includes(query)) : available
+  return query
+    ? available.filter(tag => tag.name.toLowerCase().includes(query) || pinyinMatch(tag.name, query) !== null)
+    : available
 })
 
 async function addTagFromSuggestion(tag: { id: number; name: string }) {

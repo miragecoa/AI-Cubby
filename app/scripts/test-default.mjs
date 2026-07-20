@@ -63,6 +63,7 @@ test('resource detail tag suggestions include tags from every resource type', ()
   const detail = read('frontend/src/components/ResourceDetailPanel.vue')
   assert.match(detail, /window\.api\.tags\.getForType\(undefined, 'lastAssigned'\)/)
   assert.doesNotMatch(detail, /getForType\(props\.resource\.type, 'lastAssigned'\)/)
+  assert.match(detail, /pinyinMatch\(tag\.name, query\) !== null/)
 })
 
 test('AI full indexing cannot overlap or remain stuck in indexing state', () => {
