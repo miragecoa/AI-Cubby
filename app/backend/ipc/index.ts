@@ -1,5 +1,5 @@
 import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, session, globalShortcut, webContents, clipboard } from 'electron'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import * as mm from 'music-metadata'
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync, unlinkSync } from 'fs'
 import { readFile, readdir } from 'fs/promises'
@@ -17,6 +17,7 @@ import {
   getBlockedDirs, addBlockedDir, removeBlockedDir
 } from '../db/queries'
 import { scanRecentFolder, scanProcesses, setMonitorPaused, getRunningSessions, killRunningResource, trackRunningProcess } from '../monitor/recent-files'
+import { checkResourceHealth } from '../monitor/resource-health'
 import { dbPath, dataDir, getDb, clipboardGetItems, clipboardDeleteItem, clipboardClearAll, clipboardRecordUse } from '../db/index'
 import { getQuickPanelResources, setQuickPanel, batchSetQuickPanel, batchSetPinOrder, getAllPinGroups, createPinGroup, renamePinGroup, removePinGroup,
   setPinGroupForResource, setPinGroupOrder, setPinGroupCollapsed } from '../db/queries'
@@ -660,6 +661,7 @@ export function registerIpcHandlers(): void {
     return true
   })
   ipcMain.handle('resources:getById', (_e, id: string) => getResourceById(id))
+  ipcMain.handle('resources:checkHealth', () => checkResourceHealth())
 
   ipcMain.handle('resources:update', (_e, id: string, data: object) => {
     updateResource(id, { ...data, user_modified: 1 })
@@ -1180,7 +1182,7 @@ export function registerIpcHandlers(): void {
       mkdirSync(coversDir, { recursive: true })
 
       // 删除同一资源的旧封面文件，避免积累
-      try {
+      if (userPicked) try {
         for (const f of readdirSync(coversDir)) {
           if (f.startsWith(`${resourceId}.`) || f.startsWith(`${resourceId}_`)) {
             try { unlinkSync(join(coversDir, f)) } catch { /* ignore */ }
@@ -1198,9 +1200,11 @@ export function registerIpcHandlers(): void {
         finalBuffer = Buffer.from(dataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64')
       }
 
-      // 时间戳后缀保证新路径与旧路径不同，渲染层/主进程缓存自动失效
-      const coverPath = join(coversDir, `${resourceId}_${Date.now()}.png`)
-      writeFileSync(coverPath, finalBuffer)
+      // Automatic covers are content-addressed; manual covers remain resource-owned.
+      const coverPath = userPicked
+        ? join(coversDir, `${resourceId}_${Date.now()}.png`)
+        : join(coversDir, `auto-${createHash('sha256').update(finalBuffer).digest('hex')}.png`)
+      if (!existsSync(coverPath)) writeFileSync(coverPath, finalBuffer)
       updateResource(resourceId, userPicked ? { cover_path: coverPath, user_modified: 1 } : { cover_path: coverPath })
       // Evict stale entries and pre-populate new path — readImage won't need
       // createThumbnailFromPath on a freshly-written file

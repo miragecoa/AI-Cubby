@@ -43,15 +43,54 @@ class LRUCache<V> {
 // 鈹€鈹€ Concurrency-limited queue 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type LoadFn = () => Promise<string | null>
-interface QueueItem { key: string; fn: LoadFn; resolve: (v: string | null) => void }
+type QueuePriority = 'normal' | 'idle'
+interface QueueItem {
+  key: string
+  fn: LoadFn
+  resolve: (v: string | null) => void
+  cacheResult: boolean
+}
 
 const MAX_CONCURRENT = 2
 let _running = 0
 export const DEFAULT_GRID_THUMB_SIZE = 64
 let _gridThumbSize = DEFAULT_GRID_THUMB_SIZE
 const _queue: QueueItem[] = []
+const _idleQueue: QueueItem[] = []
+const _inflight = new Map<string, Promise<string | null>>()
 let _paused = false
 let _onIdleCallback: (() => void) | null = null
+let _interactionUntil = 0
+let _idleFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+const IDLE_AFTER_INTERACTION_MS = 260
+
+function inputIsPending(): boolean {
+  return Boolean((navigator as Navigator & { scheduling?: { isInputPending?: () => boolean } }).scheduling?.isInputPending?.())
+}
+
+function canRunIdleWork(): boolean {
+  return !_paused && Date.now() >= _interactionUntil && !inputIsPending()
+}
+
+function scheduleIdleFlush(): void {
+  if (_idleFlushTimer || _paused || _idleQueue.length === 0) return
+  const delay = Math.max(0, _interactionUntil - Date.now())
+  _idleFlushTimer = setTimeout(() => {
+    _idleFlushTimer = null
+    flush()
+  }, delay)
+}
+
+/** Keep non-essential icon extraction and cover writes out of typing/scrolling frames. */
+export function deferIdleWork(delay = IDLE_AFTER_INTERACTION_MS): void {
+  _interactionUntil = Math.max(_interactionUntil, Date.now() + delay)
+  if (_idleFlushTimer) {
+    clearTimeout(_idleFlushTimer)
+    _idleFlushTimer = null
+  }
+  scheduleIdleFlush()
+}
 
 /** Register a one-shot callback that fires when the queue becomes empty. */
 export function onQueueIdle(cb: () => void): void { _onIdleCallback = cb }
@@ -59,14 +98,25 @@ export function onQueueIdle(cb: () => void): void { _onIdleCallback = cb }
 /** Pause/resume the loading queue (e.g. when window is minimized). */
 export function setPaused(paused: boolean): void {
   _paused = paused
-  if (!paused) flush()
+  if (!paused) {
+    flush()
+    scheduleIdleFlush()
+  }
 }
 
-function enqueue(key: string, fn: LoadFn): Promise<string | null> {
-  return new Promise<string | null>(resolve => {
-    _queue.push({ key, fn, resolve })
+function enqueue(key: string, fn: LoadFn, priority: QueuePriority = 'normal', cacheResult = true): Promise<string | null> {
+  const existing = _inflight.get(key)
+  if (existing) return existing
+
+  const task = new Promise<string | null>(resolve => {
+    const item = { key, fn, resolve, cacheResult }
+    ;(priority === 'idle' ? _idleQueue : _queue).push(item)
     flush()
+    if (priority === 'idle') scheduleIdleFlush()
   })
+  _inflight.set(key, task)
+  void task.finally(() => _inflight.delete(key))
+  return task
 }
 
 /** Remove all pending queue items matching a key prefix. */
@@ -75,6 +125,12 @@ export function cancelQueued(keyPrefix: string): void {
     if (_queue[i].key === keyPrefix || _queue[i].key.startsWith(keyPrefix)) {
       _queue[i].resolve(null)
       _queue.splice(i, 1)
+    }
+  }
+  for (let i = _idleQueue.length - 1; i >= 0; i--) {
+    if (_idleQueue[i].key === keyPrefix || _idleQueue[i].key.startsWith(keyPrefix)) {
+      _idleQueue[i].resolve(null)
+      _idleQueue.splice(i, 1)
     }
   }
 }
@@ -87,33 +143,46 @@ export function drainQueue(): void {
   while (_queue.length > 0) {
     _queue.pop()!.resolve(null)
   }
+  while (_idleQueue.length > 0) {
+    _idleQueue.pop()!.resolve(null)
+  }
 }
 
 function flush() {
   if (_paused) return
-  if (_queue.length === 0 && _running === 0 && _onIdleCallback) {
+  if (_queue.length === 0 && _idleQueue.length === 0 && _running === 0 && _onIdleCallback) {
     const cb = _onIdleCallback
     _onIdleCallback = null
     cb()
   }
-  while (_running < MAX_CONCURRENT && _queue.length > 0) {
-    const item = _queue.pop()!
-    // Skip if already cached by the time it's dequeued
-    if (_imgCache.has(item.key)) {
-      item.resolve(_imgCache.get(item.key) ?? null)
-      continue
+  while (_running < MAX_CONCURRENT && _queue.length > 0) start(_queue.pop()!)
+
+  // Shell icon extraction spawns a Windows process. Only allow one such job after
+  // the user has paused input/scrolling; normal thumbnails always take precedence.
+  if (_running === 0 && _queue.length === 0 && _idleQueue.length > 0) {
+    if (!canRunIdleWork()) {
+      scheduleIdleFlush()
+      return
     }
-    _running++
-    item.fn().then(result => {
-      _imgCache.set(item.key, result)
-      item.resolve(result)
-    }).catch(() => {
-      item.resolve(null)
-    }).finally(() => {
-      _running--
-      flush()
-    })
+    start(_idleQueue.pop()!)
   }
+}
+
+function start(item: QueueItem): void {
+  if (item.cacheResult && _imgCache.has(item.key)) {
+    item.resolve(_imgCache.get(item.key) ?? null)
+    return
+  }
+  _running++
+  item.fn().then(result => {
+    if (item.cacheResult) _imgCache.set(item.key, result)
+    item.resolve(result)
+  }).catch(() => {
+    item.resolve(null)
+  }).finally(() => {
+    _running--
+    flush()
+  })
 }
 
 // 鈹€鈹€ Shared caches 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -180,9 +249,11 @@ export function loadIcon(path: string): Promise<string | null> {
   if (_iconCache.has(path)) return Promise.resolve(_iconCache.get(path) ?? null)
   return enqueue('icon:' + path, async () => {
     const src = await window.api.files.getAppIcon(path)
-    if (src) _iconCache.set(path, src)
+    // Cache failures too. Missing executables and shell-internal helpers otherwise
+    // trigger a new PowerShell extraction whenever their card remounts.
+    _iconCache.set(path, src)
     return src
-  })
+  }, 'idle')
 }
 
 /** Get cached icon (if available). */
@@ -194,11 +265,19 @@ export function getCachedIcon(path: string): string | null | undefined {
 export function hasSavedCover(id: string): boolean { return _savedCovers.has(id) }
 export function markCoverSaved(id: string): void { _savedCovers.add(id) }
 
+/** Persist an automatically generated cover only after the UI has been idle. */
+export function saveGeneratedCover(resourceId: string, dataUrl: string): Promise<string | null> {
+  return enqueue(`cover-write:${resourceId}`, () => window.api.files.saveCover(resourceId, dataUrl), 'idle', false)
+}
+
 /** Cancel pending loads but keep cached images (for view switching 鈥?preserves preloaded data). */
 export function cancelPendingLoads(): void {
   while (_queue.length > 0) {
     const item = _queue.shift()!
     item.resolve(null)
+  }
+  while (_idleQueue.length > 0) {
+    _idleQueue.shift()!.resolve(null)
   }
 }
 
@@ -209,6 +288,9 @@ export function clearImageCache(): void {
   while (_queue.length > 0) {
     const item = _queue.shift()!
     item.resolve(null)
+  }
+  while (_idleQueue.length > 0) {
+    _idleQueue.shift()!.resolve(null)
   }
 }
 
@@ -222,7 +304,7 @@ export function preload(paths: string[]): void {
 
 /** Cache stats for debugging. */
 export function cacheStats() {
-  return { images: _imgCache.size, icons: _iconCache.size, queue: _queue.length, running: _running }
+  return { images: _imgCache.size, icons: _iconCache.size, queue: _queue.length, idleQueue: _idleQueue.length, running: _running }
 }
 
 const dlog = (...args: unknown[]) => { try { (window as any).__debugLog?.(...args) } catch {} }

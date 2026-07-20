@@ -25,6 +25,8 @@ export interface Resource {
   file_size?: number
   is_private?: number
   private_at?: number
+  missing_at?: number
+  last_path_check_at?: number
   tags?: Tag[]
 }
 
@@ -73,6 +75,8 @@ export function upsertResource(
     : 'DO NOTHING'
 
   const fileSize = getPathSize(data.file_path)
+  const relocated = restoreMovedResource(data.file_path, fileSize)
+  if (relocated) return relocated
   const info = db.prepare(`
     INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, file_size)
     VALUES (@id, @type, @title, @file_path, @cover_path, @rating, @note, @meta, @added_at, @updated_at, @file_size)
@@ -106,6 +110,38 @@ export function updateResource(id: string, data: Partial<Resource>): void {
 }
 
 /** 进程启动时调用：open_count +1，更新 last_run_at，返回更新后的资源（stat_paused=1 时跳过统计） */
+/**
+ * A recently imported file may be the same library resource after the user moved it.
+ * Reuse the old record only when its old path is gone and the filename + byte size make
+ * the match unique. This retains tags, covers, notes, and usage statistics.
+ */
+export function restoreMovedResource(filePath: string, fileSize: number): Resource | null {
+  if (!fileSize || !existsSync(filePath)) return null
+
+  const db = getDb()
+  const name = basename(filePath).toLocaleLowerCase()
+  const candidates = db.prepare(`
+    SELECT * FROM resources
+    WHERE file_size = ? AND LOWER(file_path) != LOWER(?)
+  `).all(fileSize, filePath) as Resource[]
+
+  const matches = candidates.filter((candidate) => {
+    if (candidate.type === 'webpage') return false
+    if (basename(candidate.file_path).toLocaleLowerCase() !== name) return false
+    return !existsSync(candidate.file_path)
+  })
+  if (matches.length !== 1) return null
+
+  const match = matches[0]
+  const now = Date.now()
+  db.prepare(`
+    UPDATE resources
+    SET file_path = ?, file_size = ?, missing_at = 0, last_path_check_at = ?, updated_at = ?
+    WHERE id = ?
+  `).run(filePath, fileSize, now, now, match.id)
+  return getResourceById(match.id)
+}
+
 export function recordProcessStart(resourceId: string): Resource | null {
   const now = Date.now()
   getDb().prepare(`
@@ -140,6 +176,8 @@ export function addManualResource(data: {
   const id = randomUUID()
   const now = Date.now()
   const fileSize = getPathSize(data.file_path)
+  const relocated = restoreMovedResource(data.file_path, fileSize)
+  if (relocated) return { resource: relocated, existed: true }
   db.prepare(`
     INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, file_size)
     VALUES (@id, @type, @title, @file_path, NULL, 0, @note, @meta, @added_at, @updated_at, @file_size)

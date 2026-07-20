@@ -549,6 +549,7 @@ export default {
       neverOpened: 'Never opened',
       untagged: 'Untagged',
       hasTag: 'Has tags',
+      missing: 'Removed files',
     },
   },
   resource: {
@@ -593,6 +594,7 @@ export default {
     setPrivate: 'Set as private',
     unsetPrivate: 'Remove privacy',
     private: 'Private',
+    missing: 'File removed',
     ignore: 'Ignore',
     ignoreTitle: 'Ignore this file',
     ignoreMsg: 'After ignoring, "{title}" will no longer be auto-imported. You can still add it manually.',

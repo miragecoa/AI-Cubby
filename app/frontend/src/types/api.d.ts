@@ -30,6 +30,7 @@ declare global {
         batchIgnore: (filePaths: string[]) => Promise<number>
         batchAdd: (items: Array<{ type: string; title: string; file_path: string; meta?: string }>) => Promise<{ added: import('../stores/resources').Resource[]; existing: import('../stores/resources').Resource[] }>
         getPresetApps: () => Promise<Array<{ type: string; title: string; file_path: string; tags: string[] }>>
+        checkHealth: () => Promise<{ checked: number; missing: number; relocated: number }>
       }
       documents: {
         create: (request: { kind: 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'; title: string }) => Promise<{ resource: import('../stores/resources').Resource; existed: boolean }>

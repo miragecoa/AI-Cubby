@@ -10,12 +10,17 @@ const appDir = resolve(__dirname, '..')
 const repoDir = resolve(appDir, '..')
 const mainEntry = join(appDir, 'out', 'main', 'main.js')
 const artifactsDir = join(repoDir, 'artifacts', 'perf-app-tab')
-const profileRoot = join(os.tmpdir(), `ai-cubby-perf-app-tab-${Date.now()}`)
+const profileRoot = process.env.AI_CUBBY_PERF_PROFILE_ROOT
+  ? resolve(process.env.AI_CUBBY_PERF_PROFILE_ROOT)
+  : join(os.tmpdir(), `ai-cubby-perf-app-tab-${Date.now()}`)
 const profileDir = join(profileRoot, 'profiles', 'default')
 const fixtureDir = join(profileRoot, 'fixtures')
 const coverDir = join(fixtureDir, 'covers')
 const shortcutDir = join(fixtureDir, 'shortcuts')
 const sampleMs = Number(process.env.AI_CUBBY_PERF_SAMPLE_MS || 8000)
+const settleMs = Number(process.env.AI_CUBBY_PERF_SETTLE_MS || 5000)
+const pageSize = Number(process.env.AI_CUBBY_PERF_PAGE_SIZE || 50)
+const targetTab = process.env.AI_CUBBY_PERF_TARGET_TAB || 'app'
 const appCount = Number(process.env.AI_CUBBY_PERF_APP_COUNT || 240)
 const minRealApps = Number(process.env.AI_CUBBY_PERF_MIN_REAL_APPS || 20)
 
@@ -38,6 +43,9 @@ const report = {
   profileRoot,
   appCount,
   sampleMs,
+  settleMs,
+  pageSize,
+  targetTab,
   checks: [],
 }
 
@@ -185,6 +193,11 @@ try {
   })
 
   const page = await electronApp.firstWindow({ timeout: 30_000 })
+  // Keep the isolated off-screen window from Chromium's background frame throttling.
+  // This preserves a realistic renderer-frame measurement without stealing focus.
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.setBackgroundThrottling(false)
+  })
   await page.waitForLoadState('domcontentloaded', { timeout: 20_000 })
   await page.waitForTimeout(1000)
 
@@ -224,18 +237,22 @@ try {
   } else {
     report.source = 'real-history'
   }
+  await page.evaluate(async (size) => {
+    await window.api.settings.set('pageSize', String(size))
+  }, pageSize)
   report.coverPaths = coverPaths
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.app', { timeout: 20_000 })
   await page.waitForTimeout(1000)
 
-  const navClicked = await page.evaluate(() => {
+  const navClicked = await page.evaluate((tab) => {
     const items = Array.from(document.querySelectorAll('.nav-item'))
-    const appItem = items.find(el => /应用|App/i.test(el.textContent || ''))
-    if (!appItem) return false
-    appItem.click()
+    const matcher = tab === 'all' ? /全部|All/i : /应用|App/i
+    const item = items.find(el => matcher.test(el.textContent || ''))
+    if (!item) return false
+    item.click()
     return true
-  })
+  }, targetTab)
   addCheck('app nav clicked', navClicked)
   await page.waitForTimeout(4000)
 
@@ -246,18 +263,52 @@ try {
     pinCells: document.querySelectorAll('.pb-cell').length,
     renderedImages: document.querySelectorAll('.card img, .list-row img').length,
     placeholders: document.querySelectorAll('.cover-placeholder, .lr-placeholder').length,
+    iconWarmupVisible: Boolean(document.querySelector('.icon-warmup-bar')),
     bodyTextLength: document.body.innerText.length,
   }))
   report.pageState = state
-  addCheck('app tab opened', /应用|App/i.test(state.activeNav), state.activeNav)
+  addCheck('target tab opened', targetTab === 'all' ? /全部|All/i.test(state.activeNav) : /应用|App/i.test(state.activeNav), state.activeNav)
   addCheck('app resources rendered', state.cards + state.listRows + state.pinCells > 20, `cards=${state.cards}, rows=${state.listRows}, cells=${state.pinCells}`)
-  addCheck('mixed cover/icon state rendered', state.renderedImages > 0 && state.placeholders > 0, `images=${state.renderedImages}, placeholders=${state.placeholders}`)
+  addCheck('resource covers/icons rendered', state.renderedImages > 0, `images=${state.renderedImages}, placeholders=${state.placeholders}`)
+  addObservation('cached or pending icon state observed', state.placeholders > 0 || state.renderedImages > 0, `images=${state.renderedImages}, placeholders=${state.placeholders}`)
+
+  // Searching/scrolling should remain responsive while uncached Shell icons are queued.
+  const searchInput = page.locator('.search')
+  const inputStartedAt = Date.now()
+  await searchInput.fill('Perf App')
+  report.interaction = {
+    searchFillMs: Date.now() - inputStartedAt,
+    rafAfterScrollMs: await page.evaluate(async () => {
+      const scroller = document.querySelector('.grid-scroll')
+      if (!scroller) return null
+      const startedAt = performance.now()
+      scroller.scrollTop = Math.min(120, scroller.scrollHeight)
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      return performance.now() - startedAt
+    }),
+  }
+  addCheck('search remains responsive while icons are queued', report.interaction.searchFillMs < 700, `${report.interaction.searchFillMs}ms`)
+  addCheck('scroll frame remains responsive while icons are queued', report.interaction.rafAfterScrollMs !== null && report.interaction.rafAfterScrollMs < 100, `${report.interaction.rafAfterScrollMs}ms`)
+  await searchInput.fill('')
 
   const pid = await rendererPid(electronApp)
   addCheck('renderer pid detected', Number.isInteger(pid), `pid=${pid}`)
+  const mainPid = await electronApp.evaluate(() => process.pid)
+  addCheck('main pid detected', Number.isInteger(mainPid), `pid=${mainPid}`)
 
-  await page.waitForTimeout(1000)
-  report.current = await sampleCpu(pid, sampleMs)
+  // Let startup indexing and queued image work settle before measuring idle CPU.
+  await page.waitForTimeout(settleMs)
+  report.idleState = await page.evaluate(async () => ({
+    aiStatus: await window.api.ai.getStatus(),
+    renderedImages: document.querySelectorAll('.card img, .list-row img').length,
+    placeholders: document.querySelectorAll('.cover-placeholder, .lr-placeholder').length,
+  }))
+  const [rendererCpu, mainCpu] = await Promise.all([
+    sampleCpu(pid, sampleMs),
+    sampleCpu(mainPid, sampleMs),
+  ])
+  report.current = rendererCpu
+  report.mainCpu = mainCpu
 
   await page.evaluate(() => {
     window.__aiCubbyPerfTimers?.forEach(clearInterval)

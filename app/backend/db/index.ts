@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
+import { createHash } from 'crypto'
 import { join, basename, normalize } from 'path'
-import { mkdirSync, unlinkSync, existsSync } from 'fs'
+import { mkdirSync, unlinkSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { SCHEMA_SQL } from './schema'
 import { loadManifest, getProfileDir } from './profiles'
 import { pinyin } from 'pinyin-pro'
@@ -9,6 +10,39 @@ import { getPathSize } from '../utils/path-size'
 let db: Database.Database
 export let dbPath = ''
 export let dataDir = ''
+
+function dedupeAutomaticCovers(): void {
+  const state = (db.prepare(`SELECT value FROM settings WHERE key = 'auto_cover_dedupe_v1'`).get() as any)?.value
+  if (state === '1') return
+
+  const coversDir = join(dataDir, 'covers')
+  mkdirSync(coversDir, { recursive: true })
+  const rows = db.prepare(`
+    SELECT id, cover_path FROM resources
+    WHERE cover_path IS NOT NULL AND COALESCE(user_modified, 0) = 0
+  `).all() as Array<{ id: string; cover_path: string }>
+  const update = db.prepare(`UPDATE resources SET cover_path = ? WHERE id = ?`)
+  let reused = 0
+
+  db.transaction(() => {
+    for (const row of rows) {
+      try {
+        if (!existsSync(row.cover_path)) continue
+        const png = readFileSync(row.cover_path)
+        const hash = createHash('sha256').update(png).digest('hex')
+        const sharedPath = join(coversDir, `auto-${hash}.png`)
+        if (!existsSync(sharedPath)) writeFileSync(sharedPath, png)
+        if (normalize(row.cover_path) !== normalize(sharedPath)) {
+          update.run(sharedPath, row.id)
+          reused++
+        }
+      } catch { /* retain the original path when a legacy cover cannot be read */ }
+    }
+  })()
+
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_cover_dedupe_v1', '1')`).run()
+  console.log(`[migration] auto cover dedupe: ${reused}/${rows.length} paths now share content-addressed covers`)
+}
 
 export function initDatabase(profileId?: string): Database.Database {
   const manifest = loadManifest()
@@ -60,6 +94,8 @@ export function initDatabase(profileId?: string): Database.Database {
     'ALTER TABLE resources ADD COLUMN in_quickpanel INTEGER DEFAULT 0',
     'ALTER TABLE resources ADD COLUMN is_private INTEGER DEFAULT 0',
     'ALTER TABLE resources ADD COLUMN private_at INTEGER DEFAULT 0',
+    'ALTER TABLE resources ADD COLUMN missing_at INTEGER DEFAULT 0',
+    'ALTER TABLE resources ADD COLUMN last_path_check_at INTEGER DEFAULT 0',
     'ALTER TABLE ignored_paths ADD COLUMN added_at INTEGER DEFAULT 0',
   ]) {
     try { db.exec(sql) } catch { /* column already exists */ }
@@ -154,6 +190,10 @@ export function initDatabase(profileId?: string): Database.Database {
       console.log(`[file_size] backfill: ${filled}/${rows.length}`)
     }
   }
+
+  // One-time, non-destructive migration: matching automatic PNGs share one path.
+  // User-picked covers remain private to their resource.
+  dedupeAutomaticCovers()
 
   console.log('Database initialized at:', dbPath)
   return db

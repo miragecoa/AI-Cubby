@@ -25,6 +25,8 @@ export interface Resource {
   stat_paused?: number
   is_private?: number
   private_at?: number
+  missing_at?: number
+  last_path_check_at?: number
   tags?: Array<{ id: number; name: string; source: string }>
 }
 

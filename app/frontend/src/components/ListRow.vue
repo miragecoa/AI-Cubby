@@ -27,6 +27,7 @@
       <input v-if="batchMode" type="checkbox" :checked="batchSelected" class="lr-checkbox" />
       {{ resource.title }}
       <svg v-if="resource.is_private" class="lr-private-icon" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" :title="t('resource.private')"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+      <span v-if="resource.missing_at" class="lr-missing-badge" :title="t('resource.missing')">{{ t('resource.missing') }}</span>
       <span v-if="aiMatch" class="lr-ai-badge">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z" fill="currentColor"/><path d="M19 13l.75 2.25L22 16l-2.25.75L19 19l-.75-2.25L16 16l2.25-.75L19 13z" fill="currentColor" opacity=".6"/></svg>
         AI
@@ -53,7 +54,7 @@
 <script setup lang="ts">
 import { ref, computed, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getCachedAnySize, getCachedIcon, loadImage, loadImageSmall, loadIcon, hasSavedCover, markCoverSaved } from '../utils/image-cache'
+import { getCachedAnySize, getCachedIcon, loadImage, loadImageSmall, loadIcon, hasSavedCover, markCoverSaved, saveGeneratedCover } from '../utils/image-cache'
 import { useResourceStore } from '../stores/resources'
 import type { Resource } from '../stores/resources'
 
@@ -138,7 +139,7 @@ watchEffect(async () => {
     thumbSrc.value = icon
     if (icon && !hasSavedCover(r.id)) {
       markCoverSaved(r.id)
-      window.api.files.saveCover(r.id, icon).then((path: string | null) => {
+      saveGeneratedCover(r.id, icon).then((path: string | null) => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
     }
@@ -149,7 +150,7 @@ watchEffect(async () => {
     thumbSrc.value = thumb
     if (thumb && !hasSavedCover(r.id)) {
       markCoverSaved(r.id)
-      window.api.files.saveCover(r.id, thumb).then((path: string | null) => {
+      saveGeneratedCover(r.id, thumb).then((path: string | null) => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
     }
@@ -163,7 +164,7 @@ watchEffect(async () => {
     thumbSrc.value = thumb
     if (thumb && !hasSavedCover(r.id)) {
       markCoverSaved(r.id)
-      window.api.files.saveCover(r.id, thumb).then((path: string | null) => {
+      saveGeneratedCover(r.id, thumb).then((path: string | null) => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
     }
@@ -174,7 +175,7 @@ watchEffect(async () => {
     thumbSrc.value = icon
     if (icon && !hasSavedCover(r.id)) {
       markCoverSaved(r.id)
-      window.api.files.saveCover(r.id, icon).then((path: string | null) => {
+      saveGeneratedCover(r.id, icon).then((path: string | null) => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
     }
@@ -235,5 +236,18 @@ const displayTags = computed(() => (props.resource.tags || []).slice(0, 3))
   line-height: 1;
   vertical-align: middle;
   flex-shrink: 0;
+}
+.lr-missing-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  border-radius: 4px;
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.28);
+  font-size: 10px;
+  line-height: 15px;
+  vertical-align: middle;
 }
 </style>

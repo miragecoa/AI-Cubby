@@ -1941,6 +1941,34 @@ const iconWarmupPercent = computed(() => iconWarmupTotal.value > 0 ? Math.round(
 const iconWarmupAttempted = new Set<string>()
 let iconWarmupRunning = false
 let iconWarmupTimer: ReturnType<typeof setTimeout> | null = null
+const ICON_WARMUP_FAILURES_KEY = 'iconWarmupFailuresV1'
+const ICON_WARMUP_FAILURE_COOLDOWN = 7 * 24 * 60 * 60 * 1000
+const iconWarmupFailures = new Map<string, number>()
+
+try {
+  const saved = JSON.parse(localStorage.getItem(ICON_WARMUP_FAILURES_KEY) || '{}') as Record<string, number>
+  for (const [id, failedAt] of Object.entries(saved)) {
+    if (Date.now() - failedAt < ICON_WARMUP_FAILURE_COOLDOWN) iconWarmupFailures.set(id, failedAt)
+  }
+} catch { /* a malformed legacy value simply starts a fresh cooldown list */ }
+
+function persistIconWarmupFailures() {
+  localStorage.setItem(ICON_WARMUP_FAILURES_KEY, JSON.stringify(Object.fromEntries(iconWarmupFailures)))
+}
+
+function hasRecentIconWarmupFailure(resourceId: string): boolean {
+  const failedAt = iconWarmupFailures.get(resourceId)
+  if (!failedAt) return false
+  if (Date.now() - failedAt < ICON_WARMUP_FAILURE_COOLDOWN) return true
+  iconWarmupFailures.delete(resourceId)
+  persistIconWarmupFailures()
+  return false
+}
+
+function recordIconWarmupFailure(resourceId: string) {
+  iconWarmupFailures.set(resourceId, Date.now())
+  persistIconWarmupFailures()
+}
 
 function onAiPanelToggle() {
   showAiPanel.value = !showAiPanel.value
@@ -2540,6 +2568,8 @@ function onContentWheel(e: WheelEvent) {
 }
 
 function onContentScroll() {
+  // Keep scroll frames free of non-essential icon extraction and cover writes.
+  deferIdleWork()
   if (_scrollRaf) return
   _scrollRaf = requestAnimationFrame(() => {
     _scrollRaf = 0
@@ -2598,7 +2628,7 @@ function onColSort(col: 'name'|'type'|'date'|'count'|'size') {
 }
 
 // 快速筛选（前置声明，listSortedFiltered 依赖它）
-const QUICK_FILTER_KEYS = ['neverOpened', 'untagged', 'hasTag'] as const
+const QUICK_FILTER_KEYS = ['neverOpened', 'untagged', 'hasTag', 'missing'] as const
 type QuickFilterKey = typeof QUICK_FILTER_KEYS[number]
 const quickFilters = ref<QuickFilterKey[]>([])
 
@@ -2610,6 +2640,7 @@ const listSortedFiltered = computed(() => {
       if (key === 'neverOpened') return item.open_count === 0
       if (key === 'untagged')    return !item.tags || item.tags.length === 0
       if (key === 'hasTag')      return item.tags && item.tags.length > 0
+      if (key === 'missing')     return !!item.missing_at
       return true
     }))
   }
@@ -2669,7 +2700,7 @@ const visibleItems = computed(() => {
 })
 
 // 过滤条件变化时重置到第一页
-watch(() => [store.activeType, store.searchQuery, store.activeTags], () => {
+watch(() => [store.activeType, store.searchQuery, store.activeTags, quickFilters.value], () => {
   currentPage.value = 1
 })
 
@@ -2679,6 +2710,8 @@ let _hadSearchContent = false
 let _contentSearchTimer: ReturnType<typeof setTimeout> | null = null
 let _contentSearchSeq = 0
 watch(() => store.searchQuery, (q) => {
+  // Icon extraction yields while the user is typing.
+  deferIdleWork()
   const hasContent = !!q.trim()
   if (hasContent) {
     _hadSearchContent = true
@@ -3588,6 +3621,7 @@ const quickFilterDefs = computed(() => [
   { key: 'neverOpened' as QuickFilterKey, label: t('library.quickFilter.neverOpened') },
   { key: 'untagged'    as QuickFilterKey, label: t('library.quickFilter.untagged') },
   { key: 'hasTag'      as QuickFilterKey, label: t('library.quickFilter.hasTag') },
+  { key: 'missing'     as QuickFilterKey, label: t('library.quickFilter.missing') },
 ])
 const showQfDropdown = ref(false)
 function toggleQuickFilter(key: QuickFilterKey) {
@@ -3626,7 +3660,8 @@ async function runInitialIconWarmup() {
     (r.type === 'app' || r.type === 'game') &&
     !r.cover_path &&
     !r.user_modified &&
-    !iconWarmupAttempted.has(r.id)
+    !iconWarmupAttempted.has(r.id) &&
+    !hasRecentIconWarmupFailure(r.id)
   )
   if (!candidates.length) return
 
@@ -3639,13 +3674,15 @@ async function runInitialIconWarmup() {
     for (const resource of candidates) {
       iconWarmupAttempted.add(resource.id)
       try {
-        const icon = await window.api.files.getAppIcon(resource.file_path)
+        const icon = await loadIcon(resource.file_path)
         if (icon) {
-          const coverPath = await window.api.files.saveCover(resource.id, icon)
+          const coverPath = await saveGeneratedCover(resource.id, icon)
           if (coverPath) {
             const current = store.items.find(r => r.id === resource.id)
             store.addOrUpdate({ ...(current || resource), cover_path: coverPath })
           }
+        } else {
+          recordIconWarmupFailure(resource.id)
         }
       } catch { /* keep warming the rest */ }
       iconWarmupDone.value++
@@ -4035,7 +4072,7 @@ function onColResizeEnd() {
 }
 
 // ListRow 组件自行管理缩略图（同 ResourceCard），此处只需 preload/clearImageCache
-import { getCached, loadImage, loadImageSmall, preload, clearImageCache, cancelPendingLoads, cancelQueued, reverseQueue, onQueueIdle, resizeImageCache, setGridThumbSize, setPaused } from '../utils/image-cache'
+import { getCached, loadImage, loadImageSmall, loadIcon, preload, clearImageCache, cancelPendingLoads, cancelQueued, reverseQueue, onQueueIdle, resizeImageCache, setGridThumbSize, setPaused, deferIdleWork, saveGeneratedCover } from '../utils/image-cache'
 
 // 切换视图时：回到顶部、重置渲染窗口、清理上一模式资源
 watch(() => viewMode.value, (mode) => {

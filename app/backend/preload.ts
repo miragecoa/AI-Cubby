@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('resources:batchAdd', items),
     getPresetApps: (): Promise<Array<{ type: string; title: string; file_path: string; tags: string[] }>> =>
       ipcRenderer.invoke('resources:getPresetApps'),
+    checkHealth: (): Promise<{ checked: number; missing: number; relocated: number }> =>
+      ipcRenderer.invoke('resources:checkHealth'),
   },
 
   // 标签

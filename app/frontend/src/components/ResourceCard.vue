@@ -44,6 +44,9 @@
       <div v-if="resource.is_private && !selectable" class="private-badge" :class="{ 'badge-compact': compact }" :title="t('resource.private')">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
       </div>
+      <div v-if="resource.missing_at && !selectable" class="missing-badge" :title="t('resource.missing')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.5 13.5a4 4 0 0 0 5.66.08l2.12-2.12a4 4 0 0 0-5.66-5.66l-1.22 1.22"/><path d="M13.5 10.5a4 4 0 0 0-5.66-.08l-2.12 2.12a4 4 0 0 0 5.66 5.66l1.22-1.22"/><path d="M4 4l16 16"/></svg>
+      </div>
       <!-- AI 语义匹配徽章：右下角 -->
       <div v-if="aiMatch && !selectable" class="ai-match-badge">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z" fill="currentColor"/><path d="M19 13l.75 2.25L22 16l-2.25.75L19 19l-.75-2.25L16 16l2.25-.75L19 13z" fill="currentColor" opacity=".6"/></svg>
@@ -191,9 +194,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watchEffect, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, watchEffect, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getCached, getCachedAnySize, loadImage, loadIcon, getCachedIcon, hasSavedCover, markCoverSaved } from '../utils/image-cache'
+import { getCached, getCachedAnySize, loadImage, loadIcon, getCachedIcon, hasSavedCover, markCoverSaved, saveGeneratedCover } from '../utils/image-cache'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
 import { useSettingsStore } from '../stores/settings'
@@ -408,11 +411,6 @@ async function getCachedAppIcon(path: string): Promise<string | null> {
 }
 
 
-const MAX_ICON_RETRIES = 3
-const iconRetries = ref(0)
-let iconRetryTimer: ReturnType<typeof setTimeout> | null = null
-onUnmounted(() => { if (iconRetryTimer) { clearTimeout(iconRetryTimer); iconRetryTimer = null } })
-
 const showMenu = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
@@ -437,8 +435,6 @@ const thumbSrc = ref<string | null>(null)
 // 通过 IPC / Canvas 加载预览图
 watchEffect(async () => {
   const r = props.resource
-  void iconRetries.value  // 加入响应式依赖，重试时触发重跑
-
   // 同步缓存命中 → 立即设值，不走 await 微任务（切换视图时瞬间显示）
   const syncPath = r.cover_path || ((r.type === 'image' || r.type === 'video') ? r.file_path : '')
   if (syncPath) {
@@ -473,16 +469,10 @@ watchEffect(async () => {
       // 首次获取成功后保存到磁盘，下次启动直接走 cover_path 分支
       if (!r.cover_path && !hasSavedCover(r.id)) {
         markCoverSaved(r.id)
-        window.api.files.saveCover(r.id, icon).then(path => {
+        saveGeneratedCover(r.id, icon).then(path => {
           if (path) store.addOrUpdate({ ...r, cover_path: path })
         }).catch(() => {})
       }
-    } else if (iconRetries.value < MAX_ICON_RETRIES && !iconRetryTimer) {
-      // 失败时延迟重试，避免频繁调用
-      iconRetryTimer = setTimeout(() => {
-        iconRetryTimer = null
-        iconRetries.value++
-      }, 5000)
     }
     return
   }
@@ -493,7 +483,7 @@ watchEffect(async () => {
     thumbSrc.value = thumb
     if (thumb && !r.cover_path && !hasSavedCover(r.id)) {
       markCoverSaved(r.id)
-      window.api.files.saveCover(r.id, thumb).then(path => {
+      saveGeneratedCover(r.id, thumb).then(path => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
     }
@@ -510,7 +500,7 @@ watchEffect(async () => {
     thumbSrc.value = thumb
     if (thumb && !r.cover_path && !hasSavedCover(r.id)) {
       markCoverSaved(r.id)
-      window.api.files.saveCover(r.id, thumb).then(path => {
+      saveGeneratedCover(r.id, thumb).then(path => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
     }
@@ -525,7 +515,7 @@ watchEffect(async () => {
     thumbSrc.value = thumb
     if (thumb && !r.cover_path && !hasSavedCover(r.id)) {
       markCoverSaved(r.id)
-      window.api.files.saveCover(r.id, thumb).then(path => {
+      saveGeneratedCover(r.id, thumb).then(path => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
     }
@@ -536,7 +526,7 @@ watchEffect(async () => {
     thumbSrc.value = icon
     if (icon && !r.cover_path && !hasSavedCover(r.id)) {
       markCoverSaved(r.id)
-      window.api.files.saveCover(r.id, icon).then(path => {
+      saveGeneratedCover(r.id, icon).then(path => {
         if (path) store.addOrUpdate({ ...r, cover_path: path })
       }).catch(() => {})
     }
@@ -1036,6 +1026,22 @@ function openInExplorer() {
   right: 3px;
 }
 .private-badge.badge-compact svg { width: 8px; height: 8px; }
+
+.missing-badge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: #f87171;
+  background: rgba(127, 29, 29, 0.82);
+  border: 1px solid rgba(248, 113, 113, 0.7);
+  border-radius: 6px;
+  pointer-events: none;
+}
 
 /* ── AI 匹配原因 snippet ── */
 .ai-snippet {

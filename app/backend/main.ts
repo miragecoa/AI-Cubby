@@ -36,6 +36,7 @@ import { ensureProfiles, getProfileDir, loadManifest } from './db/profiles'
 import { registerIpcHandlers, resolveDroppedPaths, setOnLanguageChange } from './ipc/index'
 import { startMonitor, flushRunningSessions } from './monitor/recent-files'
 import type { RunningEvent } from './monitor/recent-files'
+import { checkResourceHealth } from './monitor/resource-health'
 import { initAutoUpdater } from './updater'
 import { initHeartbeat, flushAndStop, incShortcutMain, incShortcutClip, incWakeCount, incDrawerWake } from './heartbeat'
 import { initAiManager, enableAi, disableAi, getAiStatus, isModelInstalled, semanticSearch, queueResourceContent, onStatusChange, onProgress, forceReindex, pauseIndex, resumeIndex, isIndexPaused } from './ai/ai-manager'
@@ -1661,6 +1662,15 @@ ipcRenderer.on('debug:log',(_,l)=>addLine(l));
       }
     }
   )
+
+  // Run after the UI settles. This only probes stored paths and known library folders;
+  // it never performs a whole-disk scan or removes user records.
+  setTimeout(() => {
+    checkResourceHealth().then((result) => {
+      if (result.missing || result.relocated) mainWindow?.webContents.send('resources:reload')
+      if (result.missing || result.relocated) console.log('[ResourceHealth]', result)
+    }).catch((error) => console.warn('[ResourceHealth] check failed:', error))
+  }, 8000)
 
   // 自动更新检查
   if (!isSmokeTest) initAutoUpdater(mainWindow!)

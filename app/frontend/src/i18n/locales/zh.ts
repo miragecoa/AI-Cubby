@@ -549,6 +549,7 @@ export default {
       neverOpened: '从未打开',
       untagged: '未分类',
       hasTag: '有标签',
+      missing: '已移除的文件',
     },
   },
   resource: {
@@ -593,6 +594,7 @@ export default {
     setPrivate: '设为隐私文件',
     unsetPrivate: '取消隐私',
     private: '隐私文件',
+    missing: '文件已移除',
     ignore: '忽略此文件',
     ignoreTitle: '忽略此文件',
     ignoreMsg: '忽略后，「{title}」将不再被自动入库。如需重新添加，可通过「手动添加」功能操作，不受影响。',

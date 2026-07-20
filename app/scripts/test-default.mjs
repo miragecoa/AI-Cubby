@@ -129,12 +129,14 @@ test('resource cards do not create one timer per card for visibility polling', (
   assert.doesNotMatch(source, /\bisIndexVisible\b/)
 })
 
-test('first-use app and game icon warmup is visible and throttled', () => {
+test('first-use app and game icon warmup is visible and uses the idle icon queue', () => {
   const source = read('frontend/src/pages/LibraryPage.vue')
   assert.match(source, /iconWarmupVisible/)
   assert.match(source, /runInitialIconWarmup/)
-  assert.match(source, /window\.api\.files\.getAppIcon\(resource\.file_path\)/)
-  assert.match(source, /window\.api\.files\.saveCover\(resource\.id, icon\)/)
+  assert.match(source, /loadIcon\(resource\.file_path\)/)
+  assert.match(source, /saveGeneratedCover\(resource\.id, icon\)/)
+  assert.match(source, /ICON_WARMUP_FAILURE_COOLDOWN/)
+  assert.match(source, /recordIconWarmupFailure\(resource\.id\)/)
   assert.match(source, /iconWarmupDone\.value\+\+/)
   assert.match(source, /setTimeout\(resolve, 120\)/)
   assert.match(source, /t\('library\.iconWarmup\.title'\)/)
@@ -196,10 +198,34 @@ test('quick panel resource context menu mirrors normal resource actions', () => 
 
 test('image and icon loading stays concurrency limited', () => {
   const imageCache = read('frontend/src/utils/image-cache.ts')
+  const library = read('frontend/src/pages/LibraryPage.vue')
+  const card = read('frontend/src/components/ResourceCard.vue')
+  const row = read('frontend/src/components/ListRow.vue')
   const ipc = read('backend/ipc/index.ts')
   assert.match(imageCache, /const MAX_CONCURRENT = 2\b/)
+  assert.match(imageCache, /const _idleQueue/)
+  assert.match(imageCache, /function inputIsPending\(\)/)
+  assert.match(imageCache, /loadIcon[\s\S]*?\}, 'idle'\)/)
+  assert.match(imageCache, /_iconCache\.set\(path, src\)/)
+  assert.match(imageCache, /function saveGeneratedCover\(/)
+  assert.match(library, /deferIdleWork\(\)/)
+  assert.match(card, /saveGeneratedCover\(r\.id,/)
+  assert.doesNotMatch(card, /MAX_ICON_RETRIES/)
+  assert.match(row, /saveGeneratedCover\(r\.id,/)
   assert.match(ipc, /const THUMB_MAX_CONCURRENT = 2\b/)
   assert.match(ipc, /const PS_MAX_CONCURRENT = 1\b/)
+})
+
+test('automatic covers are content-addressed while user-picked covers remain isolated', () => {
+  const ipc = read('backend/ipc/index.ts')
+  const db = read('backend/db/index.ts')
+  assert.match(ipc, /createHash\('sha256'\)\.update\(finalBuffer\)\.digest\('hex'\)/)
+  assert.match(ipc, /auto-\$\{createHash\('sha256'\)/)
+  assert.match(ipc, /if \(!existsSync\(coverPath\)\) writeFileSync\(coverPath, finalBuffer\)/)
+  assert.match(ipc, /if \(userPicked\) try \{[\s\S]*?f\.startsWith/)
+  assert.match(db, /function dedupeAutomaticCovers\(\)/)
+  assert.match(db, /auto_cover_dedupe_v1/)
+  assert.match(db, /COALESCE\(user_modified, 0\) = 0/)
 })
 
 test('updater compares beta semver versions correctly', () => {

@@ -1,6 +1,6 @@
 {
   "name": "ai-cubby",
-  "version": "0.4.17",
+  "version": "0.4.18-beta.1",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "test": "node scripts/test-default.mjs",
     "perf:app-tab": "npm run build && node scripts/perf-app-tab.mjs",
+    "test:resource-health": "npm run build && node scripts/test-resource-health.mjs",
     "visual:smoke": "npm run build && node scripts/visual-smoke.mjs",
     "visual:open": "npm run build && node scripts/visual-open.mjs",
     "package": "electron-vite build && electron-builder && node ../scripts/repack.cjs",
