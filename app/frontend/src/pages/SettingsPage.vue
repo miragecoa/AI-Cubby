@@ -634,6 +634,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { showConfirm } from '../utils/confirm-dialog'
 import { useSettingsStore, DARK_THEME, COLOR_PALETTES } from '../stores/settings'
 import type { PaletteId, BrightnessMode } from '../stores/settings'
 
@@ -910,7 +911,13 @@ async function onCreateProfile() {
 async function onDeleteProfile() {
   if (activeProfileId.value === 'default' || profiles.value.length <= 1) return
   const current = profiles.value.find(p => p.id === activeProfileId.value)
-  if (!confirm(t('settings.data.deleteConfirm', { name: current?.name }))) return
+  if (!await showConfirm({
+    title: t('library.confirmTitle'),
+    message: t('settings.data.deleteConfirm', { name: current?.name }),
+    confirmText: t('library.confirmBtn'),
+    cancelText: t('library.cancelBtn'),
+    danger: true,
+  })) return
   await window.api.profiles.delete(activeProfileId.value)
   // 切换到第一个剩余配置
   const remaining = profiles.value.filter(p => p.id !== activeProfileId.value)

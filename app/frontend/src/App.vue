@@ -82,6 +82,7 @@
       </main>
     </div>
   </div>
+  <ConfirmDialog />
 </template>
 
 <script setup lang="ts">
@@ -97,6 +98,7 @@ import MasonryWindow from './components/MasonryWindow.vue'
 import TipsMarquee from './components/TipsMarquee.vue'
 import { useTips } from './composables/useTips'
 import DropImportWindow from './components/DropImportWindow.vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
 
 const windowParam = new URLSearchParams(window.location.search).get('window')
 const isMasonryWindow = windowParam === 'masonry'

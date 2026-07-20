@@ -16,6 +16,8 @@ const anchorPath = join(movedDir, 'known-folder-anchor.txt')
 const reimportOriginalPath = join(originalDir, 'auto-reimport.txt')
 const reimportMovedPath = join(movedDir, 'auto-reimport.txt')
 const ignoredPath = join(originalDir, 'ignored-missing.txt')
+const allMissingPath = join(originalDir, 'all-missing.txt')
+const allIgnoredPath = join(originalDir, 'all-ignored-missing.txt')
 
 if (!existsSync(mainEntry)) throw new Error('Build output missing. Run npm run build first.')
 mkdirSync(originalDir, { recursive: true })
@@ -24,6 +26,8 @@ writeFileSync(originalPath, 'same content survives a move', 'utf8')
 writeFileSync(anchorPath, 'destination directory is already in the library', 'utf8')
 writeFileSync(reimportOriginalPath, 'recent import should restore this record', 'utf8')
 writeFileSync(ignoredPath, 'ignored path cleanup fixture', 'utf8')
+writeFileSync(allMissingPath, 'one-click missing cleanup fixture', 'utf8')
+writeFileSync(allIgnoredPath, 'one-click ignored cleanup fixture', 'utf8')
 
 let electronApp
 try {
@@ -112,10 +116,24 @@ try {
     throw new Error(`missing resource cleanup failed: ${JSON.stringify({ missingCleanup, missingAfterCleanup, webAfterCleanup })}`)
   }
 
+  const oneClickFixtures = await page.evaluate(async ({ allMissingPath, allIgnoredPath }) => {
+    const missing = await window.api.resources.add({ type: 'document', title: 'one-click missing', file_path: allMissingPath })
+    const ignored = await window.api.resources.add({ type: 'document', title: 'one-click ignored', file_path: allIgnoredPath })
+    await window.api.resources.ignore(allIgnoredPath, ignored.resource.id)
+    return { missingId: missing.resource.id }
+  }, { allMissingPath, allIgnoredPath })
+  rmSync(allMissingPath)
+  rmSync(allIgnoredPath)
   const allCleanup = await page.evaluate(() => window.api.resources.cleanup('all'))
   const resourcesAfterAllCleanup = await page.evaluate(() => window.api.resources.getAll())
-  if (allCleanup.resources < 2 || resourcesAfterAllCleanup.length !== 0) {
-    throw new Error(`full library cleanup failed: ${JSON.stringify({ allCleanup, remaining: resourcesAfterAllCleanup.length })}`)
+  const ignoredAfterAllCleanup = await page.evaluate(() => window.api.ignoredPaths.getAll())
+  const normalResourcesPreserved = resourcesAfterAllCleanup.some(r => r.id === created.anchor.resource.id)
+    && resourcesAfterAllCleanup.some(r => r.id === webResource.resource.id)
+  if (allCleanup.resources !== 1 || allCleanup.ignored !== 1
+    || resourcesAfterAllCleanup.some(r => r.id === oneClickFixtures.missingId)
+    || ignoredAfterAllCleanup.includes(allIgnoredPath.toLowerCase())
+    || !normalResourcesPreserved) {
+    throw new Error(`one-click cleanup failed: ${JSON.stringify({ allCleanup, remaining: resourcesAfterAllCleanup.length, ignoredAfterAllCleanup, normalResourcesPreserved })}`)
   }
 
   console.log(JSON.stringify({ relocation, deletion, ignoredCleanup, missingCleanup, allCleanup, missingLabel }, null, 2))

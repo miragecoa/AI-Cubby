@@ -206,9 +206,7 @@
           </button>
           <div class="cleanup-wrap">
             <button class="scan-sys-toolbar-btn cleanup-trigger" @click="showCleanupMenu = !showCleanupMenu" :title="t('library.cleanupTitle')">
-              <span class="btn-icon" v-html="deleteSvg" />
-              <span class="btn-text">{{ t('library.cleanup') }}</span>
-              <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="btn-icon" v-html="cleanupSvg" />
             </button>
             <div v-if="showCleanupMenu" class="cleanup-menu">
               <button class="cleanup-menu-item cleanup-menu-item--danger" :disabled="cleanupBusy" @click="runCleanup('all')">
@@ -1822,6 +1820,7 @@ import DropImportModal from '../components/DropImportModal.vue'
 import type { DropItem } from '../components/DropImportModal.vue'
 import ResourceDetailPanel from '../components/ResourceDetailPanel.vue'
 import { match as pinyinMatch } from 'pinyin-pro'
+import { showConfirm } from '../utils/confirm-dialog'
 
 const { t, locale } = useI18n()
 const store = useResourceStore()
@@ -4187,6 +4186,7 @@ const typeSvg         = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const pathSvg         = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>`
 const ignoreSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`
 const deleteSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`
+const cleanupSvg      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 6-6"/><path d="m5 21 3-3"/><path d="m14 4 3 3"/><path d="m3 7 7 7"/><path d="M5 21h8a3 3 0 0 0 3-3v-5"/></svg>`
 const arrowSvg        = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>`
 const aiSvg           = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l2.4 7.2H22l-6 4.8 2.4 7.2L12 16.4l-6.4 4.8 2.4-7.2-6-4.8h7.6z"/></svg>`
 const scanSysSvg      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
@@ -4209,7 +4209,14 @@ async function runCleanup(mode: CleanupMode) {
     missing: 'library.cleanupConfirmMissing',
     ignoredMissing: 'library.cleanupConfirmIgnoredMissing',
   }
-  if (!window.confirm(t(confirmKey[mode]))) return
+  showCleanupMenu.value = false
+  if (!await showConfirm({
+    title: t('library.confirmTitle'),
+    message: t(confirmKey[mode]),
+    confirmText: t('library.confirmBtn'),
+    cancelText: t('library.cancelBtn'),
+    danger: true,
+  })) return
 
   cleanupBusy.value = true
   cleanupNotice.value = ''
@@ -4780,8 +4787,14 @@ async function openLocalNote(resource: Resource, touchUsage = true) {
   noteSurfaceRef.value?.focus()
 }
 
-function closeNoteEditor() {
-  if (noteEditor.dirty && !confirm(t('library.documents.discardConfirm'))) return
+async function closeNoteEditor() {
+  if (noteEditor.dirty && !await showConfirm({
+    title: t('library.confirmTitle'),
+    message: t('library.documents.discardConfirm'),
+    confirmText: t('library.confirmBtn'),
+    cancelText: t('library.cancelBtn'),
+    danger: true,
+  })) return
   noteEditor.show = false
   noteEditor.resource = null
   noteEditor.blocks = []
@@ -5425,7 +5438,7 @@ async function deleteIgnored(filePath: string) {
 .scan-sys-toolbar-btn .btn-icon { width: 16px; height: 16px; }
 
 .cleanup-wrap { position: relative; }
-.cleanup-trigger { gap: 4px; }
+.cleanup-trigger { width: 30px; justify-content: center; padding: 5px; }
 .cleanup-menu {
   position: absolute;
   z-index: 120;

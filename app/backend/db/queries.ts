@@ -266,36 +266,44 @@ function removeOrphanTags(): void {
 /** Removes library records only. Original files on disk are never changed. */
 export function cleanupResources(mode: ResourceCleanupMode): ResourceCleanupResult {
   const db = getDb()
+  const missingResourceIds = getAllResources()
+    .filter(resource => isLocalPath(resource.file_path) && !existsSync(resource.file_path))
+    .map(resource => resource.id)
+  const missingIgnoredPaths = getAllIgnoredPaths()
+    .filter(filePath => isLocalPath(filePath) && !existsSync(filePath))
+
+  const removeMissingResources = () => {
+    if (missingResourceIds.length === 0) return 0
+    const placeholders = missingResourceIds.map(() => '?').join(', ')
+    return db.prepare(`DELETE FROM resources WHERE id IN (${placeholders})`).run(...missingResourceIds).changes
+  }
+  const removeMissingIgnoredPaths = () => {
+    if (missingIgnoredPaths.length === 0) return 0
+    const remove = db.prepare('DELETE FROM ignored_paths WHERE path = ?')
+    for (const filePath of missingIgnoredPaths) remove.run(filePath)
+    return missingIgnoredPaths.length
+  }
 
   if (mode === 'all') {
     return db.transaction(() => {
-      const resources = db.prepare('DELETE FROM resources').run().changes
+      const resources = removeMissingResources()
+      const ignored = removeMissingIgnoredPaths()
+      removeOrphanTags()
+      return { resources, ignored }
+    })()
+  }
+
+  if (mode === 'missing') {
+    if (missingResourceIds.length === 0) return { resources: 0, ignored: 0 }
+    return db.transaction(() => {
+      const resources = removeMissingResources()
       removeOrphanTags()
       return { resources, ignored: 0 }
     })()
   }
 
-  if (mode === 'missing') {
-    const ids = getAllResources()
-      .filter(resource => isLocalPath(resource.file_path) && !existsSync(resource.file_path))
-      .map(resource => resource.id)
-    if (ids.length === 0) return { resources: 0, ignored: 0 }
-    return db.transaction(() => {
-      const placeholders = ids.map(() => '?').join(', ')
-      db.prepare(`DELETE FROM resources WHERE id IN (${placeholders})`).run(...ids)
-      removeOrphanTags()
-      return { resources: ids.length, ignored: 0 }
-    })()
-  }
-
-  const ignoredPaths = getAllIgnoredPaths()
-    .filter(filePath => isLocalPath(filePath) && !existsSync(filePath))
-  if (ignoredPaths.length === 0) return { resources: 0, ignored: 0 }
-  db.transaction(() => {
-    const remove = db.prepare('DELETE FROM ignored_paths WHERE path = ?')
-    for (const filePath of ignoredPaths) remove.run(filePath)
-  })()
-  return { resources: 0, ignored: ignoredPaths.length }
+  if (missingIgnoredPaths.length === 0) return { resources: 0, ignored: 0 }
+  return { resources: 0, ignored: db.transaction(removeMissingIgnoredPaths)() }
 }
 
 // ── 黑名单目录 ───────────────────────────────────────────
