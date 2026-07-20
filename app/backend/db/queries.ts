@@ -243,6 +243,61 @@ export function removeResourceByPath(filePath: string): void {
   getDb().prepare('DELETE FROM resources WHERE file_path = ?').run(filePath)
 }
 
+export type ResourceCleanupMode = 'all' | 'missing' | 'ignoredMissing'
+
+export interface ResourceCleanupResult {
+  resources: number
+  ignored: number
+}
+
+function isLocalPath(filePath: string): boolean {
+  return !/^(?:https?:|steam:)/i.test(filePath)
+}
+
+function removeOrphanTags(): void {
+  getDb().prepare(`
+    DELETE FROM tags
+    WHERE NOT EXISTS (
+      SELECT 1 FROM resource_tags WHERE resource_tags.tag_id = tags.id
+    )
+  `).run()
+}
+
+/** Removes library records only. Original files on disk are never changed. */
+export function cleanupResources(mode: ResourceCleanupMode): ResourceCleanupResult {
+  const db = getDb()
+
+  if (mode === 'all') {
+    return db.transaction(() => {
+      const resources = db.prepare('DELETE FROM resources').run().changes
+      removeOrphanTags()
+      return { resources, ignored: 0 }
+    })()
+  }
+
+  if (mode === 'missing') {
+    const ids = getAllResources()
+      .filter(resource => isLocalPath(resource.file_path) && !existsSync(resource.file_path))
+      .map(resource => resource.id)
+    if (ids.length === 0) return { resources: 0, ignored: 0 }
+    return db.transaction(() => {
+      const placeholders = ids.map(() => '?').join(', ')
+      db.prepare(`DELETE FROM resources WHERE id IN (${placeholders})`).run(...ids)
+      removeOrphanTags()
+      return { resources: ids.length, ignored: 0 }
+    })()
+  }
+
+  const ignoredPaths = getAllIgnoredPaths()
+    .filter(filePath => isLocalPath(filePath) && !existsSync(filePath))
+  if (ignoredPaths.length === 0) return { resources: 0, ignored: 0 }
+  db.transaction(() => {
+    const remove = db.prepare('DELETE FROM ignored_paths WHERE path = ?')
+    for (const filePath of ignoredPaths) remove.run(filePath)
+  })()
+  return { resources: 0, ignored: ignoredPaths.length }
+}
+
 // ── 黑名单目录 ───────────────────────────────────────────
 
 let _blockedDirsCache: string[] | null = null

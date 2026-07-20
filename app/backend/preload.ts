@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('api', {
     ignore: (filePath: string, resourceId?: string) => ipcRenderer.invoke('resources:ignore', filePath, resourceId),
     add: (data: object) => ipcRenderer.invoke('resources:add', data),
     batchRemove: (ids: string[]): Promise<number> => ipcRenderer.invoke('resources:batchRemove', ids),
+    cleanup: (mode: 'all' | 'missing' | 'ignoredMissing'): Promise<{ resources: number; ignored: number }> =>
+      ipcRenderer.invoke('resources:cleanup', mode),
     batchUpdate: (ids: string[], data: object): Promise<any[]> => ipcRenderer.invoke('resources:batchUpdate', ids, data),
     batchReplacePath: (oldPrefix: string, newPrefix: string): Promise<{ count: number; resources: any[] }> =>
       ipcRenderer.invoke('resources:batchReplacePath', oldPrefix, newPrefix),

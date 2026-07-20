@@ -25,6 +25,7 @@ declare global {
         ignore: (filePath: string, resourceId?: string) => Promise<void>
         add: (data: { type: string; title: string; file_path: string; note?: string }) => Promise<{ resource: import('../stores/resources').Resource; existed: boolean }>
         batchRemove: (ids: string[]) => Promise<number>
+        cleanup: (mode: 'all' | 'missing' | 'ignoredMissing') => Promise<{ resources: number; ignored: number }>
         batchUpdate: (ids: string[], data: Partial<import('../stores/resources').Resource>) => Promise<import('../stores/resources').Resource[]>
         batchReplacePath: (oldPrefix: string, newPrefix: string) => Promise<{ count: number; resources: import('../stores/resources').Resource[] }>
         batchIgnore: (filePaths: string[]) => Promise<number>

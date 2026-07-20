@@ -15,6 +15,7 @@ const movedPath = join(movedDir, 'tracked-resource.txt')
 const anchorPath = join(movedDir, 'known-folder-anchor.txt')
 const reimportOriginalPath = join(originalDir, 'auto-reimport.txt')
 const reimportMovedPath = join(movedDir, 'auto-reimport.txt')
+const ignoredPath = join(originalDir, 'ignored-missing.txt')
 
 if (!existsSync(mainEntry)) throw new Error('Build output missing. Run npm run build first.')
 mkdirSync(originalDir, { recursive: true })
@@ -22,6 +23,7 @@ mkdirSync(movedDir, { recursive: true })
 writeFileSync(originalPath, 'same content survives a move', 'utf8')
 writeFileSync(anchorPath, 'destination directory is already in the library', 'utf8')
 writeFileSync(reimportOriginalPath, 'recent import should restore this record', 'utf8')
+writeFileSync(ignoredPath, 'ignored path cleanup fixture', 'utf8')
 
 let electronApp
 try {
@@ -87,7 +89,36 @@ try {
   const missingLabel = await page.locator('.lr-missing-badge, .missing-badge').first().getAttribute('title')
   if (!missingLabel) throw new Error('missing resource badge is not visible in the library')
 
-  console.log(JSON.stringify({ relocation, deletion, resourceId: afterDelete.id, missingLabel }, null, 2))
+  const ignored = await page.evaluate(async (filePath) => {
+    const created = await window.api.resources.add({ type: 'document', title: 'ignored', file_path: filePath })
+    await window.api.resources.ignore(filePath, created.resource.id)
+    return window.api.ignoredPaths.getAll()
+  }, ignoredPath)
+  if (!ignored.includes(ignoredPath.toLowerCase())) throw new Error('ignored cleanup fixture was not added')
+  rmSync(ignoredPath)
+  const ignoredCleanup = await page.evaluate(() => window.api.resources.cleanup('ignoredMissing'))
+  const ignoredAfterCleanup = await page.evaluate(() => window.api.ignoredPaths.getAll())
+  if (ignoredCleanup.ignored !== 1 || ignoredAfterCleanup.includes(ignoredPath.toLowerCase())) {
+    throw new Error(`ignored path cleanup failed: ${JSON.stringify({ ignoredCleanup, ignoredAfterCleanup })}`)
+  }
+
+  const webResource = await page.evaluate(() => window.api.resources.add({
+    type: 'webpage', title: 'web cleanup fixture', file_path: 'https://example.com/cleanup-fixture',
+  }))
+  const missingCleanup = await page.evaluate(() => window.api.resources.cleanup('missing'))
+  const missingAfterCleanup = await page.evaluate((id) => window.api.resources.getById(id), created.tracked.resource.id)
+  const webAfterCleanup = await page.evaluate((id) => window.api.resources.getById(id), webResource.resource.id)
+  if (missingCleanup.resources !== 1 || missingAfterCleanup || !webAfterCleanup) {
+    throw new Error(`missing resource cleanup failed: ${JSON.stringify({ missingCleanup, missingAfterCleanup, webAfterCleanup })}`)
+  }
+
+  const allCleanup = await page.evaluate(() => window.api.resources.cleanup('all'))
+  const resourcesAfterAllCleanup = await page.evaluate(() => window.api.resources.getAll())
+  if (allCleanup.resources < 2 || resourcesAfterAllCleanup.length !== 0) {
+    throw new Error(`full library cleanup failed: ${JSON.stringify({ allCleanup, remaining: resourcesAfterAllCleanup.length })}`)
+  }
+
+  console.log(JSON.stringify({ relocation, deletion, ignoredCleanup, missingCleanup, allCleanup, missingLabel }, null, 2))
 } finally {
   if (electronApp) await electronApp.close()
   rmSync(profileRoot, { recursive: true, force: true })

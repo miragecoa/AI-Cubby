@@ -13,7 +13,7 @@ import {
   getAllTags, getTagsForType, getAllTagsForManage, updateTagName, setTagPinned, createTag, removeTag, touchTag, addTagToResource, removeTagFromResource,
   searchResources, getSetting, setSetting, setShowDirTags, reFetchDirTags,
   addIgnoredPath, getAllIgnoredPaths, removeIgnoredPath, removeResourceByPath,
-  batchRemoveResources, batchReplacePath,
+  batchRemoveResources, batchReplacePath, cleanupResources,
   getBlockedDirs, addBlockedDir, removeBlockedDir
 } from '../db/queries'
 import { scanRecentFolder, scanProcesses, setMonitorPaused, getRunningSessions, killRunningResource, trackRunningProcess } from '../monitor/recent-files'
@@ -693,6 +693,11 @@ export function registerIpcHandlers(): void {
   // ── 批量操作 ──────────────────────────────────────────
   ipcMain.handle('resources:batchRemove', (_e, ids: string[]) => {
     return batchRemoveResources(ids)
+  })
+
+  ipcMain.handle('resources:cleanup', (_e, mode: 'all' | 'missing' | 'ignoredMissing') => {
+    if (!['all', 'missing', 'ignoredMissing'].includes(mode)) throw new Error('Invalid cleanup mode')
+    return cleanupResources(mode)
   })
 
   ipcMain.handle('resources:batchUpdate', (_e, ids: string[], data: object) => {

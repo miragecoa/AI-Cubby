@@ -204,6 +204,28 @@
             <span class="btn-icon" v-html="scanSysSvg" />
             <span class="btn-text">{{ t('library.scanHistory') }}</span>
           </button>
+          <div class="cleanup-wrap">
+            <button class="scan-sys-toolbar-btn cleanup-trigger" @click="showCleanupMenu = !showCleanupMenu" :title="t('library.cleanupTitle')">
+              <span class="btn-icon" v-html="deleteSvg" />
+              <span class="btn-text">{{ t('library.cleanup') }}</span>
+              <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div v-if="showCleanupMenu" class="cleanup-menu">
+              <button class="cleanup-menu-item cleanup-menu-item--danger" :disabled="cleanupBusy" @click="runCleanup('all')">
+                <span>{{ t('library.cleanupAll') }}</span>
+                <small>{{ t('library.cleanupAllDesc') }}</small>
+              </button>
+              <button class="cleanup-menu-item" :disabled="cleanupBusy" @click="runCleanup('missing')">
+                <span>{{ t('library.cleanupMissing') }}</span>
+                <small>{{ t('library.cleanupMissingDesc') }}</small>
+              </button>
+              <button class="cleanup-menu-item" :disabled="cleanupBusy" @click="runCleanup('ignoredMissing')">
+                <span>{{ t('library.cleanupIgnoredMissing') }}</span>
+                <small>{{ t('library.cleanupIgnoredMissingDesc') }}</small>
+              </button>
+              <div v-if="cleanupNotice" class="cleanup-notice">{{ cleanupNotice }}</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1888,6 +1910,9 @@ const showAiComingSoon = ref(false)
 const showAiSearchComingSoon = ref(false)
 const showAiInstallModal = ref(false)
 const showAiPanel = ref(false)
+const showCleanupMenu = ref(false)
+const cleanupBusy = ref(false)
+const cleanupNotice = ref('')
 const aiDiscovered = ref(localStorage.getItem('ai_discovered') === '1')
 type DocumentCreateKind = 'note' | 'txt' | 'md' | 'csv' | 'docx' | 'xlsx' | 'pptx'
 type NoteBlock =
@@ -4176,6 +4201,34 @@ const checkSvg        = `<svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" s
 const updateSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
 const aiLargeSvg      = `<svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M24 4l4.8 14.4H44l-12 9.6 4.8 14.4L24 32.8l-12.8 9.6 4.8-14.4-12-9.6h15.2z"/><circle cx="24" cy="20" r="3" fill="var(--accent)" opacity="0.3"/></svg>`
 
+type CleanupMode = 'all' | 'missing' | 'ignoredMissing'
+
+async function runCleanup(mode: CleanupMode) {
+  const confirmKey: Record<CleanupMode, string> = {
+    all: 'library.cleanupConfirmAll',
+    missing: 'library.cleanupConfirmMissing',
+    ignoredMissing: 'library.cleanupConfirmIgnoredMissing',
+  }
+  if (!window.confirm(t(confirmKey[mode]))) return
+
+  cleanupBusy.value = true
+  cleanupNotice.value = ''
+  try {
+    const result = await window.api.resources.cleanup(mode)
+    const count = result.resources + result.ignored
+    cleanupNotice.value = count > 0 ? t('library.cleanupDone', { n: count }) : t('library.cleanupNone')
+    if (result.resources > 0) {
+      selectedId.value = null
+      await Promise.all([store.loadAll(), pinBoardRef.value?.reload()])
+    }
+  } catch (error) {
+    console.error('cleanup resources failed', error)
+    cleanupNotice.value = String(error)
+  } finally {
+    cleanupBusy.value = false
+  }
+}
+
 async function openScanModal() {
   sysScanResult.value = null
   sysScanning.value = false
@@ -5370,6 +5423,40 @@ async function deleteIgnored(filePath: string) {
 }
 .scan-sys-toolbar-btn:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--text); }
 .scan-sys-toolbar-btn .btn-icon { width: 16px; height: 16px; }
+
+.cleanup-wrap { position: relative; }
+.cleanup-trigger { gap: 4px; }
+.cleanup-menu {
+  position: absolute;
+  z-index: 120;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 264px;
+  padding: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+.cleanup-menu-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 8px 9px;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cleanup-menu-item span { font-size: 13px; font-weight: 600; }
+.cleanup-menu-item small { margin-top: 2px; color: var(--text-3); font-size: 11px; line-height: 1.35; }
+.cleanup-menu-item:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.cleanup-menu-item--danger { color: var(--danger, #ef5350); }
+.cleanup-menu-item:disabled { cursor: wait; opacity: 0.55; }
+.cleanup-notice { padding: 7px 9px 3px; color: var(--text-3); font-size: 12px; }
 
 /* 系统扫描弹窗 */
 .scan-modal {
