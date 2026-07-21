@@ -4186,7 +4186,7 @@ const typeSvg         = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const pathSvg         = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>`
 const ignoreSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`
 const deleteSvg       = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`
-const cleanupSvg      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 6-6"/><path d="m5 21 3-3"/><path d="m14 4 3 3"/><path d="m3 7 7 7"/><path d="M5 21h8a3 3 0 0 0 3-3v-5"/></svg>`
+const cleanupSvg      = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 2h4v2h-1v7h-2V4h-1V2Zm-4 10h12l2 9H4l2-9Zm2.2 2-.9 5h1.4l.4-5H8.2Zm3.1 0-.1 5h1.6l-.1-5h-1.4Zm3.7 0 .4 5h1.4l-.9-5h-.9Z"/></svg>`
 const arrowSvg        = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>`
 const aiSvg           = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l2.4 7.2H22l-6 4.8 2.4 7.2L12 16.4l-6.4 4.8 2.4-7.2-6-4.8h7.6z"/></svg>`
 const scanSysSvg      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
@@ -5321,8 +5321,8 @@ async function deleteIgnored(filePath: string) {
   }
 }
 
-.btn-icon { width: 13px; height: 13px; display: flex; flex-shrink: 0; }
-.btn-icon :deep(svg) { width: 13px; height: 13px; }
+.btn-icon { width: 13px; height: 13px; display: flex; flex-shrink: 0; align-items: center; justify-content: center; line-height: 1; }
+.btn-icon :deep(svg) { display: block; width: 13px; height: 13px; }
 
 .add-btn {
   display: flex;
@@ -5422,13 +5422,16 @@ async function deleteIgnored(filePath: string) {
 .scan-sys-toolbar-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  min-height: 30px;
   padding: 5px 12px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-dim);
   font-size: 13px;
+  line-height: 1;
   font-family: inherit;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -5436,9 +5439,10 @@ async function deleteIgnored(filePath: string) {
 }
 .scan-sys-toolbar-btn:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--text); }
 .scan-sys-toolbar-btn .btn-icon { width: 16px; height: 16px; }
+.scan-sys-toolbar-btn .btn-icon :deep(svg) { display: block; width: 16px; height: 16px; }
 
 .cleanup-wrap { position: relative; }
-.cleanup-trigger { width: 30px; justify-content: center; padding: 5px; }
+.cleanup-trigger { flex: 0 0 30px; width: 30px; padding: 5px; }
 .cleanup-menu {
   position: absolute;
   z-index: 120;
