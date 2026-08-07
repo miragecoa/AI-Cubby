@@ -359,6 +359,7 @@ test('low-end defaults keep page size and thumbnail resolution modest', () => {
 
 test('document category can create managed notes and profile documents', () => {
   const ipc = read('backend/ipc/index.ts')
+  const queries = read('backend/db/queries.ts')
   const preload = read('backend/preload.ts')
   const apiTypes = read('frontend/src/types/api.d.ts')
   const library = read('frontend/src/pages/LibraryPage.vue')
@@ -373,6 +374,8 @@ test('document category can create managed notes and profile documents', () => {
   assert.match(ipc, /activeProfileDocumentsDir\(kind: DocumentKind\)/)
   assert.match(ipc, /join\(getProfileDir\(manifest\.active\), 'documents'\)/)
   assert.match(ipc, /managed_note: kind === 'note'/)
+  assert.match(ipc, /dir_tag_exempt: kind === 'note'/)
+  assert.match(ipc, /skipDirTags: kind === 'note'/)
   assert.match(ipc, /note: '\.aicnote'/)
   assert.match(ipc, /function migrateLegacyManagedNote/)
   assert.match(ipc, /migrated_from: resource\.file_path/)
@@ -382,6 +385,10 @@ test('document category can create managed notes and profile documents', () => {
   assert.match(ipc, /ipcMain\.handle\('documents:readText'/)
   assert.match(ipc, /ipcMain\.handle\('documents:writeText'/)
   assert.match(ipc, /return touchResourceUsageResult\(result\)/)
+  assert.match(queries, /skipDirTags\?: boolean/)
+  assert.match(queries, /if \(!data\.skipDirTags\) autoTagByDir/)
+  assert.match(queries, /function cleanupDirTagsForManagedNotes\(\)/)
+  assert.match(queries, /JSON\.parse\(row\.meta\)\?\.managed_note/)
   assert.match(ipc, /ipcMain\.handle\('documents:touch'/)
   assert.match(ipc, /writeOfficeDocument\(filePath, kind\)/)
   assert.match(preload, /documents: \{/)

@@ -167,6 +167,7 @@ export function addManualResource(data: {
   file_path: string
   note?: string
   meta?: string
+  skipDirTags?: boolean
 }): { resource: Resource; existed: boolean } {
   const db = getDb()
   const existing = db.prepare('SELECT * FROM resources WHERE file_path = ?').get(data.file_path) as Resource | undefined
@@ -182,7 +183,7 @@ export function addManualResource(data: {
     INSERT INTO resources (id, type, title, file_path, cover_path, rating, note, meta, added_at, updated_at, file_size)
     VALUES (@id, @type, @title, @file_path, NULL, 0, @note, @meta, @added_at, @updated_at, @file_size)
   `).run({ id, type: data.type, title: data.title, file_path: data.file_path, note: data.note ?? null, meta: data.meta ?? null, added_at: now, updated_at: now, file_size: fileSize })
-  autoTagByDir(id, data.file_path, data.type as Resource['type'])
+  if (!data.skipDirTags) autoTagByDir(id, data.file_path, data.type as Resource['type'])
   return { resource: getResourceById(id)!, existed: false }
 }
 
@@ -553,17 +554,34 @@ export function reFetchDirTags(): void {
   db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('dir_tag_v1', '1')`).run()
 }
 
+/** Remove old path tags from in-app notes created before they became exempt. */
+export function cleanupDirTagsForManagedNotes(): number {
+  const db = getDb()
+  const rows = db.prepare(`SELECT id, meta FROM resources WHERE meta IS NOT NULL AND meta != ''`).all() as Array<{ id: string; meta: string }>
+  const ids = rows.flatMap((row) => {
+    try { return JSON.parse(row.meta)?.managed_note ? [row.id] : [] } catch { return [] }
+  })
+  if (!ids.length) return 0
+  const placeholders = ids.map(() => '?').join(', ')
+  return db.prepare(`DELETE FROM resource_tags WHERE source = 'dir' AND resource_id IN (${placeholders})`).run(...ids).changes
+}
+
+function isDirTagExempt(meta: string | null | undefined): boolean {
+  try { return Boolean(meta && JSON.parse(meta)?.managed_note) } catch { return false }
+}
+
 function _applyDirTagsToAll(db: ReturnType<typeof getDb>): void {
   const rows = db.prepare(`
-    SELECT r.id, r.file_path, r.type FROM resources r
+    SELECT r.id, r.file_path, r.type, r.meta FROM resources r
     WHERE r.file_path IS NOT NULL AND r.file_path != ''
       AND r.type != 'webpage'
-  `).all() as Array<{ id: string; file_path: string; type: Resource['type'] }>
+  `).all() as Array<{ id: string; file_path: string; type: Resource['type']; meta: string | null }>
   // Temporarily force-enable so tags are always written to DB
   // (visibility is controlled separately by _showDirTags at query time)
   const prev = _showDirTags
   _showDirTags = true
   for (const r of rows) {
+    if (isDirTagExempt(r.meta)) continue
     try { autoTagByDir(r.id, r.file_path, r.type) } catch { /* skip malformed paths */ }
   }
   _showDirTags = prev

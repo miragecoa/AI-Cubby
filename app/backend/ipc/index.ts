@@ -317,7 +317,7 @@ function createManagedDocument(kind: DocumentKind, rawTitle: string): { filePath
   return {
     filePath,
     title,
-    meta: JSON.stringify({ created_by: 'ai-cubby', document_kind: kind, managed_note: kind === 'note', internal_note_version: kind === 'note' ? 1 : undefined }),
+    meta: JSON.stringify({ created_by: 'ai-cubby', document_kind: kind, managed_note: kind === 'note', dir_tag_exempt: kind === 'note', internal_note_version: kind === 'note' ? 1 : undefined }),
   }
 }
 
@@ -741,6 +741,7 @@ export function registerIpcHandlers(): void {
       title: doc.title,
       file_path: doc.filePath,
       meta: doc.meta,
+      skipDirTags: kind === 'note',
     })
     return touchResourceUsageResult(result)
   })
