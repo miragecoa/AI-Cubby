@@ -739,6 +739,8 @@ export default {
       or: 'or',
       orBrowse: 'or click to browse',
       dragHint: 'Drag a file or folder here',
+      chooseFile: 'Choose file',
+      chooseFolder: 'Choose folder',
       titlePlaceholder: 'Resource name...',
       notePlaceholder: 'Optional note...',
       descLabel: 'Description',

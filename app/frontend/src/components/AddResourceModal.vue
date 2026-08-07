@@ -144,7 +144,7 @@
               <div
                 class="drop-zone"
                 :class="{ 'has-file': !!form.file_path, 'drag-over': isDragOver }"
-                @click="pickFileOrFolder"
+                @click="pickFile"
                 @dragover.prevent="isDragOver = true"
                 @dragleave.prevent="isDragOver = false"
                 @drop.prevent="onDrop"
@@ -167,6 +167,14 @@
                   <span class="dz-upload-icon" v-html="uploadIcon" />
                   <span class="dz-text">{{ t('addModal.file.dragHint') }}</span>
                   <span class="dz-hint">{{ t('addModal.file.orBrowse') }}</span>
+                  <div class="file-choice-actions" @click.stop>
+                    <button type="button" class="file-choice-btn" @click="pickFile">
+                      <span v-html="uploadIcon" />{{ t('addModal.file.chooseFile') }}
+                    </button>
+                    <button type="button" class="file-choice-btn" @click="pickFolder">
+                      <span v-html="folderIcon" />{{ t('addModal.file.chooseFolder') }}
+                    </button>
+                  </div>
                 </template>
               </div>
               <div class="path-row">
@@ -176,7 +184,7 @@
                   :placeholder="t('addModal.file.placeholder')"
                   @change="onPathChange"
                 />
-                <button class="browse-btn" @click.stop="pickFileOrFolder" v-html="folderIcon" :title="t('addModal.file.browse')" />
+                <button class="browse-btn" @click.stop="pickFile" v-html="folderIcon" :title="t('addModal.file.browse')" />
               </div>
             </div>
 
@@ -614,9 +622,14 @@ async function createDocument() {
 }
 
 // ── 单个文件操作 ────────────────────────────────────────
-async function pickFileOrFolder() {
-  const selection = await window.api.files.pickFileOrFolder()
-  if (selection) applyPathSelection(selection.path, selection.isDirectory)
+async function pickFile() {
+  const path = await window.api.files.pickFile()
+  if (path) applyPathSelection(path, false)
+}
+
+async function pickFolder() {
+  const path = await window.api.files.pickFolder()
+  if (path) applyPathSelection(path, true)
 }
 
 function onDrop(e: DragEvent) {
@@ -721,7 +734,6 @@ async function submitWebpage() {
   }
 }
 
-// ── 文件夹操作 ──────────────────────────────────────────
 // ── 扫描目录操作 ────────────────────────────────────────
 async function pickScanDir() {
   const path = await window.api.files.pickFolder()
@@ -1110,6 +1122,11 @@ const scanDirIcon   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
   font-size: 11px;
   color: var(--text-3);
 }
+
+.file-choice-actions { display: flex; gap: 8px; margin-top: 4px; }
+.file-choice-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2); color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; }
+.file-choice-btn:hover { border-color: var(--accent); color: var(--text); }
+.file-choice-btn :deep(svg) { width: 14px; height: 14px; }
 
 .spinner {
   width: 24px;

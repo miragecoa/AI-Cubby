@@ -739,6 +739,8 @@ export default {
       or: '或',
       orBrowse: '或点击浏览',
       dragHint: '拖入文件或文件夹到此处',
+      chooseFile: '选择文件',
+      chooseFolder: '选择文件夹',
       titlePlaceholder: '资源名称...',
       notePlaceholder: '可选的备注描述...',
       descLabel: '描述',
