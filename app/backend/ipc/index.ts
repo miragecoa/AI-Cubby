@@ -1071,6 +1071,17 @@ export function registerIpcHandlers(): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
+  // 同一个选择框允许选择单个文件或文件夹，前端据此自动使用正确资源类型。
+  ipcMain.handle('files:pickFileOrFolder', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择文件或文件夹',
+      properties: ['openFile', 'openDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const filePath = result.filePaths[0]
+    return { path: filePath, isDirectory: statSync(filePath).isDirectory() }
+  })
+
   // 打开图片文件选择对话框（用于设置自定义封面）
   ipcMain.handle('files:pickImage', async () => {
     const result = await dialog.showOpenDialog({

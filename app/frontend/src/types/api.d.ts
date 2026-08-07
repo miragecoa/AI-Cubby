@@ -67,6 +67,7 @@ declare global {
         getAppIcon: (filePath: string) => Promise<string | null>
         saveCover: (resourceId: string, dataUrl: string, userPicked?: boolean) => Promise<string | null>
         pickFile: () => Promise<string | null>
+        pickFileOrFolder: () => Promise<{ path: string; isDirectory: boolean } | null>
         pickImage: () => Promise<string | null>
         pickFolder: () => Promise<string | null>
         pickMultipleFiles: () => Promise<string[] | null>

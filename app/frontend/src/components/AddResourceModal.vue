@@ -135,81 +135,49 @@
           </div>
         </template>
 
-        <!-- ====== 单个文件 / 文件夹 共用左右布局 ====== -->
-        <template v-if="mode === 'file' || mode === 'folder'">
+        <!-- ====== 文件 / 文件夹 ====== -->
+        <template v-if="mode === 'file'">
           <div class="modal-body">
 
             <!-- 左栏 -->
             <div class="left-col">
-              <!-- 单个文件模式 -->
-              <template v-if="mode === 'file'">
-                <div
-                  class="drop-zone"
-                  :class="{ 'has-file': !!form.file_path, 'drag-over': isDragOver }"
-                  @click="pickFile"
-                  @dragover.prevent="isDragOver = true"
-                  @dragleave.prevent="isDragOver = false"
-                >
-                  <template v-if="form.file_path">
-                    <img
-                      v-if="previewSrc"
-                      class="dz-img"
-                      :class="{ 'is-icon': inferType(form.file_path) === 'app' }"
-                      :src="previewSrc"
-                    />
-                    <div v-else-if="previewLoading" class="dz-center">
-                      <div class="spinner" />
-                    </div>
-                    <div v-else class="dz-center">
-                      <span class="dz-type-icon" v-html="currentTypeIcon" />
-                    </div>
-                  </template>
-                  <template v-else>
-                    <span class="dz-upload-icon" v-html="uploadIcon" />
-                    <span class="dz-text">{{ t('addModal.file.dragHint') }}</span>
-                    <span class="dz-hint">{{ t('addModal.file.orBrowse') }}</span>
-                  </template>
-                </div>
-                <div class="path-row">
-                  <input
-                    v-model="form.file_path"
-                    class="path-input"
-                    :placeholder="t('addModal.file.placeholder')"
-                    @change="onPathChange"
+              <div
+                class="drop-zone"
+                :class="{ 'has-file': !!form.file_path, 'drag-over': isDragOver }"
+                @click="pickFileOrFolder"
+                @dragover.prevent="isDragOver = true"
+                @dragleave.prevent="isDragOver = false"
+                @drop.prevent="onDrop"
+              >
+                <template v-if="form.file_path">
+                  <img
+                    v-if="previewSrc"
+                    class="dz-img"
+                    :class="{ 'is-icon': form.type === 'app' }"
+                    :src="previewSrc"
                   />
-                  <button class="browse-btn" @click.stop="pickFile" v-html="folderIcon" :title="t('addModal.file.browse')" />
-                </div>
-              </template>
-
-              <!-- 文件夹模式 -->
-              <template v-else>
-                <div
-                  class="drop-zone folder-zone"
-                  :class="{ 'has-file': !!folderPath, 'drag-over': isDragOver }"
-                  @click="pickFolderForImport"
-                  @dragover.prevent="isDragOver = true"
-                  @dragleave.prevent="isDragOver = false"
-                >
-                  <template v-if="folderPath">
-                    <span class="dz-folder-big" v-html="bigFolderIcon" />
-                    <span class="dz-folder-name">{{ folderBasename }}</span>
-                  </template>
-                  <template v-else>
-                    <span class="dz-upload-icon" v-html="folderPlusIcon" />
-                    <span class="dz-text">{{ t('addModal.folder.dragHint') }}</span>
-                    <span class="dz-hint">{{ t('addModal.folder.orBrowse') }}</span>
-                  </template>
-                </div>
-                <div class="path-row">
-                  <input
-                    v-model="folderPath"
-                    class="path-input"
-                    :placeholder="t('addModal.folder.pathPlaceholder')"
-                    @change="onFolderPathChange"
-                  />
-                  <button class="browse-btn" @click.stop="pickFolderForImport" v-html="folderIcon" :title="t('addModal.scan.browse')" />
-                </div>
-              </template>
+                  <div v-else-if="previewLoading" class="dz-center">
+                    <div class="spinner" />
+                  </div>
+                  <div v-else class="dz-center">
+                    <span class="dz-type-icon" v-html="currentTypeIcon" />
+                  </div>
+                </template>
+                <template v-else>
+                  <span class="dz-upload-icon" v-html="uploadIcon" />
+                  <span class="dz-text">{{ t('addModal.file.dragHint') }}</span>
+                  <span class="dz-hint">{{ t('addModal.file.orBrowse') }}</span>
+                </template>
+              </div>
+              <div class="path-row">
+                <input
+                  v-model="form.file_path"
+                  class="path-input"
+                  :placeholder="t('addModal.file.placeholder')"
+                  @change="onPathChange"
+                />
+                <button class="browse-btn" @click.stop="pickFileOrFolder" v-html="folderIcon" :title="t('addModal.file.browse')" />
+              </div>
             </div>
 
             <!-- 右栏：表单字段（共用） -->
@@ -393,12 +361,11 @@ const store = useResourceStore()
 
 // ── 模式 ─────────────────────────────────────────────────
 type DocumentCreateKind = 'note' | 'txt' | 'csv' | 'docx' | 'xlsx' | 'pptx'
-const mode = ref<'document' | 'file' | 'folder' | 'scan-dir' | 'webpage'>('file')
+const mode = ref<'document' | 'file' | 'scan-dir' | 'webpage'>('file')
 
 const modeTabs = computed(() => [
   { key: 'document' as const, label: t('addModal.tabs.document'), icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h8M8 17h6"/></svg>` },
-  { key: 'file' as const,     label: t('addModal.tabs.singleFile'), icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>` },
-  { key: 'folder' as const,   label: t('addModal.tabs.folder'),     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>` },
+  { key: 'file' as const,     label: t('addModal.tabs.fileOrFolder'), icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M4 18.5V20a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5"/></svg>` },
   { key: 'scan-dir' as const, label: t('addModal.tabs.scanDir'),    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="12" y1="11" x2="12" y2="17"/></svg>` },
   { key: 'webpage' as const,  label: t('addModal.tabs.webpage'),    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>` },
 ])
@@ -423,6 +390,7 @@ const TYPE_ICONS: Record<string, string> = {
   image: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`,
   game:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M6 12h4M8 10v4"/><circle cx="15.5" cy="11.5" r=".6" fill="currentColor"/><circle cx="17.5" cy="13.5" r=".6" fill="currentColor"/><path d="M21 12c0 5-2.5 8-9 8S3 17 3 12 5.5 4 12 4s9 3 9 8z"/></svg>`,
   app:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><circle cx="7" cy="7" r=".8" fill="currentColor"/><circle cx="10" cy="7" r=".8" fill="currentColor"/></svg>`,
+  folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
   video: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3V10z"/></svg>`,
   comic: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="3" width="8" height="11" rx="1"/><rect x="13" y="3" width="8" height="11" rx="1"/><rect x="3" y="16" width="8" height="5" rx="1"/><rect x="13" y="16" width="8" height="5" rx="1"/></svg>`,
   music: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
@@ -439,6 +407,7 @@ const TYPES = computed(() => [
   { value: 'comic',    label: t('resource.types.comic') },
   { value: 'novel',    label: t('resource.types.novel') },
   { value: 'document', label: t('resource.types.document') },
+  { value: 'folder',   label: t('resource.types.folder') },
 ])
 
 const documentKind = ref<DocumentCreateKind>('note')
@@ -469,7 +438,7 @@ const filteredTags = computed(() => {
   )
 })
 const errorMsg = ref('')
-const pendingOverwrite = ref<{ resource: any; mode: 'file' | 'webpage' | 'folder' } | null>(null)
+const pendingOverwrite = ref<{ resource: any; mode: 'file' | 'webpage' } | null>(null)
 const submitting = ref(false)
 const isDragOver = ref(false)
 
@@ -484,7 +453,7 @@ watch(() => form.value.file_path, async (path) => {
   if (!path) return
   previewLoading.value = true
   try {
-    const type = inferType(path)
+    const type = form.value.type
     if (type === 'image' || type === 'video') {
       previewSrc.value = await window.api.files.readImage(path)
     } else if (type === 'app') {
@@ -495,22 +464,15 @@ watch(() => form.value.file_path, async (path) => {
   }
 })
 
-// ── 文件夹模式状态 ──────────────────────────────────────
-const folderPath = ref('')
-const folderForm = ref({ title: '', type: 'image' as ResourceType, note: '' })
-const folderBasename = computed(() => folderPath.value.replace(/[\\/]$/, '').replace(/^.*[\\/]/, ''))
-
 // ── 共用表单计算属性 ────────────────────────────────────
-const currentForm = computed(() => mode.value === 'folder' ? folderForm.value : form.value)
+const currentForm = computed(() => form.value)
 
 const activeFormType = computed(() => {
   if (mode.value === 'webpage') return 'webpage'
-  if (mode.value === 'folder') return folderForm.value.type
   return form.value.type
 })
 
 const canSubmit = computed(() => form.value.file_path.trim() !== '' && form.value.title.trim() !== '')
-const canSubmitFolder = computed(() => folderPath.value.trim() !== '' && folderForm.value.title.trim() !== '')
 
 // ── 网页模式状态 ─────────────────────────────────────────
 const webForm = ref({ url: '', title: '' })
@@ -552,14 +514,12 @@ const canSubmitWebpage = computed(() => {
 })
 
 const canSubmitCurrent = computed(() => {
-  if (mode.value === 'folder') return canSubmitFolder.value
   if (mode.value === 'webpage') return canSubmitWebpage.value
   return canSubmit.value
 })
 
 function submitCurrent() {
-  if (mode.value === 'folder') submitFolder()
-  else if (mode.value === 'webpage') submitWebpage()
+  if (mode.value === 'webpage') submitWebpage()
   else submitFile()
 }
 
@@ -615,8 +575,6 @@ watch(() => props.modelValue, (val) => {
 function resetAll() {
   mode.value = 'file'
   form.value = { file_path: '', title: '', type: props.defaultType ?? 'app', note: '' }
-  folderPath.value = ''
-  folderForm.value = { title: '', type: props.defaultType ?? 'image', note: '' }
   selectedTagIds.value = []
   newTagInput.value = ''
   errorMsg.value = ''
@@ -656,9 +614,9 @@ async function createDocument() {
 }
 
 // ── 单个文件操作 ────────────────────────────────────────
-async function pickFile() {
-  const path = await window.api.files.pickFile()
-  if (path) applyFile(path)
+async function pickFileOrFolder() {
+  const selection = await window.api.files.pickFileOrFolder()
+  if (selection) applyPathSelection(selection.path, selection.isDirectory)
 }
 
 function onDrop(e: DragEvent) {
@@ -669,15 +627,12 @@ function onDrop(e: DragEvent) {
   if (!path) return
 
   switch (mode.value) {
-    case 'file':
-      applyFile(path)
+    case 'file': {
+      const item = e.dataTransfer?.items?.[0]
+      const entry = (item as any)?.webkitGetAsEntry?.()
+      applyPathSelection(path, Boolean(entry?.isDirectory))
       break
-    case 'folder':
-      folderPath.value = path
-      if (!folderForm.value.title) {
-        folderForm.value.title = path.replace(/[\\/]$/, '').replace(/^.*[\\/]/, '')
-      }
-      break
+    }
     case 'scan-dir':
       scanDirPath.value = path
       scanDirLoading.value = true
@@ -691,17 +646,17 @@ function onDrop(e: DragEvent) {
 
 function onPathChange() {
   const p = form.value.file_path.trim()
-  if (p) {
-    if (!form.value.title) form.value.title = stemName(p)
-    const inferred = inferType(p)
-    // If in game context and file is a generic exe/app, keep game type
-    form.value.type = (inferred === 'app' && props.defaultType === 'game') ? 'game' : inferred
-  }
+  if (p) applyPathSelection(p, form.value.type === 'folder')
 }
 
-function applyFile(path: string) {
+function applyPathSelection(path: string, isDirectory: boolean) {
   form.value.file_path = path
-  if (!form.value.title) form.value.title = stemName(path)
+  if (!form.value.title) form.value.title = isDirectory ? baseName(path) : stemName(path)
+  if (isDirectory) {
+    form.value.type = 'folder'
+    errorMsg.value = ''
+    return
+  }
   const inferred = inferType(path)
   form.value.type = (inferred === 'app' && props.defaultType === 'game') ? 'game' : inferred
   errorMsg.value = ''
@@ -767,49 +722,6 @@ async function submitWebpage() {
 }
 
 // ── 文件夹操作 ──────────────────────────────────────────
-async function pickFolderForImport() {
-  const path = await window.api.files.pickFolder()
-  if (path) {
-    folderPath.value = path
-    if (!folderForm.value.title) {
-      folderForm.value.title = path.replace(/[\\/]$/, '').replace(/^.*[\\/]/, '')
-    }
-  }
-}
-
-function onFolderPathChange() {
-  const p = folderPath.value.trim()
-  if (p && !folderForm.value.title) {
-    folderForm.value.title = p.replace(/[\\/]$/, '').replace(/^.*[\\/]/, '')
-  }
-}
-
-async function submitFolder() {
-  if (newTagInput.value.trim()) await createAndAddTag()
-  if (!canSubmitFolder.value || submitting.value) return
-  submitting.value = true
-  errorMsg.value = ''
-  try {
-    const { resource, existed } = await window.api.resources.add({
-      type: folderForm.value.type,
-      title: folderForm.value.title.trim(),
-      file_path: folderPath.value.trim(),
-      note: folderForm.value.note.trim() || undefined,
-    })
-    if (existed) {
-      pendingOverwrite.value = { resource, mode: 'folder' }
-      errorMsg.value = t('addModal.existsOverwrite')
-      submitting.value = false
-      return
-    }
-    await applyTagsAndFinish(resource)
-  } catch (e: any) {
-    errorMsg.value = e?.message ?? t('addModal.errorAddFailed')
-  } finally {
-    submitting.value = false
-  }
-}
-
 // ── 扫描目录操作 ────────────────────────────────────────
 async function pickScanDir() {
   const path = await window.api.files.pickFolder()
@@ -940,6 +852,10 @@ function stemName(path: string) {
   return dot > 0 ? base.slice(0, dot) : base
 }
 
+function baseName(path: string) {
+  return path.replace(/[\\/]$/, '').replace(/^.*[\\/]/, '')
+}
+
 function close() {
   pendingOverwrite.value = null
   errorMsg.value = ''
@@ -950,8 +866,6 @@ function close() {
 const closeIcon     = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
 const uploadIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`
 const folderIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`
-const bigFolderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`
-const folderPlusIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>`
 const scanDirIcon   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="12" y1="11" x2="12" y2="17"/></svg>`
 </script>
 
@@ -1149,11 +1063,6 @@ const scanDirIcon   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
   padding: 0;
 }
 
-.folder-zone.has-file {
-  padding: 20px;
-  gap: 10px;
-}
-
 .dz-img {
   width: 100%;
   height: 100%;
@@ -1200,22 +1109,6 @@ const scanDirIcon   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 .dz-hint {
   font-size: 11px;
   color: var(--text-3);
-}
-
-.dz-folder-big {
-  width: 48px;
-  height: 48px;
-  color: var(--accent-2);
-  display: flex;
-}
-.dz-folder-big :deep(svg) { width: 48px; height: 48px; }
-
-.dz-folder-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  text-align: center;
-  word-break: break-all;
 }
 
 .spinner {
