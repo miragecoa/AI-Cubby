@@ -20,6 +20,47 @@
           </button>
         </div>
 
+        <!-- ====== 新建文档模式 ====== -->
+        <template v-if="mode === 'document'">
+          <div class="document-create-body">
+            <div class="document-create-intro">
+              <span class="document-create-icon" v-html="documentIcon" />
+              <div>
+                <strong>{{ t('library.documents.modalTitle') }}</strong>
+                <p>{{ t('library.documents.createCardHint') }}</p>
+              </div>
+            </div>
+            <div class="document-create-types">
+              <button
+                v-for="opt in documentCreateOptions"
+                :key="opt.kind"
+                type="button"
+                class="document-type-option"
+                :class="{ active: documentKind === opt.kind }"
+                @click="documentKind = opt.kind"
+              >
+                <span class="document-type-icon" v-html="opt.icon" />
+                <span class="document-type-copy"><strong>{{ opt.label }}</strong><small>{{ opt.desc }}</small></span>
+              </button>
+            </div>
+            <input
+              v-model="documentTitle"
+              class="document-title-input"
+              :placeholder="t('library.documents.titlePlaceholder')"
+              @keydown.enter.prevent="createDocument"
+            />
+          </div>
+          <div class="modal-footer">
+            <span v-if="errorMsg" class="error-msg">{{ errorMsg }}</span>
+            <div class="footer-actions">
+              <button class="btn-cancel" @click="close">{{ t('common.cancel') }}</button>
+              <button class="btn-add" :disabled="submitting" @click="createDocument">
+                {{ submitting ? t('library.documents.creating') : t('library.confirmBtn') }}
+              </button>
+            </div>
+          </div>
+        </template>
+
         <!-- ====== 网页模式 ====== -->
         <template v-if="mode === 'webpage'">
           <div class="modal-body">
@@ -324,31 +365,6 @@
           </div>
         </template>
 
-        <!-- ====== 系统扫描模式 ====== -->
-        <template v-if="mode === 'scan-sys'">
-          <div class="modal-body-full scan-sys-body">
-            <template v-if="!sysScanning && sysScanResult === null">
-              <span class="scan-sys-icon" v-html="scanSysIcon" />
-              <p class="scan-sys-desc">{{ t('addModal.scan.sysScanDesc') }}</p>
-              <button class="scan-sys-btn" @click="doSystemScan">{{ t('addModal.scan.start') }}</button>
-            </template>
-            <template v-else-if="sysScanning">
-              <div class="spinner lg" />
-              <p class="scan-sys-desc">{{ t('addModal.scan.scanning') }}</p>
-            </template>
-            <template v-else>
-              <span class="scan-sys-done" v-html="checkIcon" />
-              <p class="scan-sys-desc">
-                {{ sysScanResult! > 0 ? t('addModal.scan.foundNew', { n: sysScanResult }) : t('addModal.scan.noNew') }}
-              </p>
-              <div class="scan-sys-actions">
-                <button class="scan-sys-btn secondary" @click="doSystemScan">{{ t('addModal.scan.rescan') }}</button>
-                <button class="btn-add" @click="close">{{ t('addModal.scan.done') }}</button>
-              </div>
-            </template>
-          </div>
-        </template>
-
       </div>
     </div>
   </Teleport>
@@ -370,18 +386,20 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   added: [resource: object]
+  'document-created': [payload: { resource: object; kind: DocumentCreateKind }]
 }>()
 
 const store = useResourceStore()
 
 // ── 模式 ─────────────────────────────────────────────────
-const mode = ref<'file' | 'folder' | 'scan-dir' | 'scan-sys' | 'webpage'>('file')
+type DocumentCreateKind = 'note' | 'txt' | 'csv' | 'docx' | 'xlsx' | 'pptx'
+const mode = ref<'document' | 'file' | 'folder' | 'scan-dir' | 'webpage'>('file')
 
 const modeTabs = computed(() => [
+  { key: 'document' as const, label: t('addModal.tabs.document'), icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h8M8 17h6"/></svg>` },
   { key: 'file' as const,     label: t('addModal.tabs.singleFile'), icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>` },
   { key: 'folder' as const,   label: t('addModal.tabs.folder'),     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>` },
   { key: 'scan-dir' as const, label: t('addModal.tabs.scanDir'),    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="12" y1="11" x2="12" y2="17"/></svg>` },
-  { key: 'scan-sys' as const, label: t('addModal.tabs.scanSys'),    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>` },
   { key: 'webpage' as const,  label: t('addModal.tabs.webpage'),    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>` },
 ])
 
@@ -421,6 +439,21 @@ const TYPES = computed(() => [
   { value: 'comic',    label: t('resource.types.comic') },
   { value: 'novel',    label: t('resource.types.novel') },
   { value: 'document', label: t('resource.types.document') },
+])
+
+const documentKind = ref<DocumentCreateKind>('note')
+const documentTitle = ref('')
+const documentIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/></svg>`
+const noteIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>`
+const sheetIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 3h16v18H4z"/><path d="M4 9h16M4 15h16M10 3v18M16 3v18"/></svg>`
+const slideIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16v12H4z"/><path d="M9 21h6M12 17v4"/><path d="M8 9h8M8 12h5"/></svg>`
+const documentCreateOptions = computed(() => [
+  { kind: 'note' as const, label: t('library.documents.localNote'), desc: t('library.documents.localNoteDesc'), icon: noteIcon },
+  { kind: 'txt' as const, label: '.txt', desc: t('library.documents.textDesc'), icon: documentIcon },
+  { kind: 'docx' as const, label: '.docx', desc: t('library.documents.wordDesc'), icon: documentIcon },
+  { kind: 'xlsx' as const, label: '.xlsx', desc: t('library.documents.excelDesc'), icon: sheetIcon },
+  { kind: 'pptx' as const, label: '.pptx', desc: t('library.documents.pptDesc'), icon: slideIcon },
+  { kind: 'csv' as const, label: '.csv', desc: t('library.documents.csvDesc'), icon: sheetIcon },
 ])
 
 // ── 单个文件模式状态 ────────────────────────────────────
@@ -560,10 +593,6 @@ const scanAllSelected = computed(() =>
   filteredScanResults.value.length > 0 && filteredScanResults.value.every(r => r.selected)
 )
 
-// ── 系统扫描模式状态 ────────────────────────────────────
-const sysScanning = ref(false)
-const sysScanResult = ref<number | null>(null)
-
 // ── 标签 ────────────────────────────────────────────────
 async function loadTagsForCurrentType() {
   allTags.value = await window.api.tags.getForType(activeFormType.value, 'lastAssigned')
@@ -598,14 +627,32 @@ function resetAll() {
   scanResults.value = []
   scanDirLoading.value = false
   scanTypeFilter.value = 'all'
-  sysScanning.value = false
-  sysScanResult.value = null
   submitting.value = false
   pendingOverwrite.value = null
   webForm.value = { url: '', title: '' }
   webFavicon.value = null
   webFaviconLoading.value = false
   webAutoTitle.value = ''
+  documentKind.value = 'note'
+  documentTitle.value = ''
+}
+
+async function createDocument() {
+  if (submitting.value) return
+  submitting.value = true
+  errorMsg.value = ''
+  try {
+    const result = await window.api.documents.create({ kind: documentKind.value, title: documentTitle.value })
+    if (result?.resource) {
+      store.addOrUpdate(result.resource)
+      emit('document-created', { resource: result.resource, kind: documentKind.value })
+      close()
+    }
+  } catch (error: any) {
+    errorMsg.value = t('library.documents.createFailed', { msg: error?.message ?? '' })
+  } finally {
+    submitting.value = false
+  }
 }
 
 // ── 单个文件操作 ────────────────────────────────────────
@@ -828,19 +875,6 @@ function typeLabel(type: string): string {
   return label !== key ? label : type
 }
 
-// ── 系统扫描操作 ────────────────────────────────────────
-async function doSystemScan() {
-  sysScanning.value = true
-  sysScanResult.value = null
-  try {
-    const found = await window.api.monitor.scanNow()
-    for (const r of found) store.addOrUpdate(r as any)
-    sysScanResult.value = found.length
-  } finally {
-    sysScanning.value = false
-  }
-}
-
 // ── 标签操作 ────────────────────────────────────────────
 function toggleTag(id: number) {
   const idx = selectedTagIds.value.indexOf(id)
@@ -919,8 +953,6 @@ const folderIcon    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const bigFolderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`
 const folderPlusIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>`
 const scanDirIcon   = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="12" y1="11" x2="12" y2="17"/></svg>`
-const scanSysIcon   = `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="22" cy="22" r="14"/><line x1="42" y1="42" x2="33" y2="33"/><path d="M22 14v8l6 3"/></svg>`
-const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" stroke-width="3"><circle cx="24" cy="24" r="20" stroke-opacity="0.2"/><path d="M14 24l7 7 13-13"/></svg>`
 </script>
 
 <style scoped>
@@ -987,7 +1019,10 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
   padding: 12px 18px 0;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.mode-tabs::-webkit-scrollbar { display: none; }
 
 .mode-tab {
   display: flex;
@@ -1003,6 +1038,7 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   transition: color 0.12s, border-color 0.12s;
+  flex: 0 0 auto;
 }
 .mode-tab:hover { color: var(--text-2); }
 .mode-tab.active {
@@ -1017,6 +1053,30 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
   flex-shrink: 0;
 }
 .mode-tab-icon :deep(svg) { width: 14px; height: 14px; }
+
+/* ── 新建文档 ───────────────────────────────────────── */
+.document-create-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px;
+}
+.document-create-intro { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.document-create-intro strong { display: block; color: var(--text); font-size: 15px; }
+.document-create-intro p { margin: 3px 0 0; color: var(--text-3); font-size: 12px; }
+.document-create-icon { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 6px; color: var(--accent-2); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.document-create-icon :deep(svg) { width: 19px; height: 19px; }
+.document-create-types { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.document-type-option { display: flex; align-items: center; gap: 10px; min-height: 68px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
+.document-type-option:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); color: var(--text); }
+.document-type-option.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); color: var(--text); }
+.document-type-icon { display: flex; flex: 0 0 26px; color: var(--accent-2); }
+.document-type-icon :deep(svg) { width: 26px; height: 26px; }
+.document-type-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.document-type-copy strong { font-size: 13px; font-weight: 600; }
+.document-type-copy small { overflow: hidden; color: var(--text-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.document-title-input { width: 100%; box-sizing: border-box; margin-top: 14px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
+.document-title-input:focus { border-color: var(--accent); }
 
 /* ── 主体双栏 ───────────────────────────────────────── */
 .modal-body {
@@ -1657,64 +1717,6 @@ const checkIcon     = `<svg viewBox="0 0 48 48" fill="none" stroke="#10b981" str
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-}
-
-/* ── 系统扫描 ────────────────────────────────────────── */
-.scan-sys-body {
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 40px;
-}
-
-.scan-sys-icon {
-  width: 56px;
-  height: 56px;
-  color: var(--text-3);
-  opacity: 0.5;
-  display: flex;
-}
-.scan-sys-icon :deep(svg) { width: 56px; height: 56px; }
-
-.scan-sys-desc {
-  font-size: 14px;
-  color: var(--text-2);
-  text-align: center;
-  max-width: 320px;
-  line-height: 1.5;
-}
-
-.scan-sys-btn {
-  padding: 10px 28px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.scan-sys-btn:hover { opacity: 0.85; }
-.scan-sys-btn.secondary {
-  background: var(--surface-3);
-  border-color: var(--border);
-  color: var(--text-2);
-}
-.scan-sys-btn.secondary:hover { background: var(--border); color: var(--text); }
-
-.scan-sys-done {
-  width: 48px;
-  height: 48px;
-  display: flex;
-}
-.scan-sys-done :deep(svg) { width: 48px; height: 48px; }
-
-.scan-sys-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 6px;
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }

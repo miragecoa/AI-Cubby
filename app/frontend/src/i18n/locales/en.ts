@@ -714,12 +714,12 @@ export default {
   },
   addModal: {
     tabs: {
+      document: 'New document',
       webpage: 'Webpage',
       file: 'File',
       singleFile: 'Single file',
       folder: 'Folder',
       scanDir: 'Scan dir',
-      scanSys: 'History',
       scan: 'Bulk scan',
     },
     webpage: {

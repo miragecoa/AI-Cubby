@@ -714,12 +714,12 @@ export default {
   },
   addModal: {
     tabs: {
+      document: '新建文档',
       webpage: '网页',
       file: '文件',
       singleFile: '单个文件',
       folder: '文件夹',
       scanDir: '扫描目录',
-      scanSys: '使用历史',
       scan: '批量扫描',
     },
     webpage: {
