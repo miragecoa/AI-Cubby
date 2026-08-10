@@ -485,6 +485,21 @@ test('search includes managed note text content as low priority matches', () => 
   assert.match(targetSmoke, /top search box did not show note matched by body text/)
 })
 
+test('main search synchronizes tag filtering and activates matching tag suggestions', () => {
+  const library = read('frontend/src/pages/LibraryPage.vue')
+  const zh = read('frontend/src/i18n/locales/zh.ts')
+  const en = read('frontend/src/i18n/locales/en.ts')
+  assert.match(library, /const searchTagSuggestions = computed\(\(\) =>/)
+  assert.match(library, /pinyinMatch\(tag\.name, query\)/)
+  assert.match(library, /tagSearch\.value = query/)
+  assert.match(library, /function activateSearchTag\(tag:/)
+  assert.match(library, /store\.activeTags\.push\(tag\.id\)/)
+  assert.match(library, /class="search-tag-suggestions"/)
+  assert.match(library, /@mousedown\.prevent="activateSearchTag\(tag\)"/)
+  assert.match(zh, /searchTagSuggestions: '匹配标签'/)
+  assert.match(en, /searchTagSuggestions: 'Matching tags'/)
+})
+
 test('AI recommendations stay separate from stable search results', () => {
   const resourceStore = read('frontend/src/stores/resources.ts')
   const aiStore = read('frontend/src/stores/ai.ts')

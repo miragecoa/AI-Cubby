@@ -21,6 +21,9 @@
             class="search combine-left"
             :placeholder="t('library.searchPlaceholder')"
             type="search"
+            @focus="showSearchTagSuggestions = true"
+            @input="showSearchTagSuggestions = true"
+            @blur="hideSearchTagSuggestions"
             @keydown.enter="aiStore.searchNow(store.searchQuery)"
           />
           <button v-if="store.searchQuery" class="search-clear" @click="store.searchQuery = ''" :title="t('library.clearSearch')">
@@ -44,6 +47,20 @@
             <span v-else class="btn-text">{{ t('library.aiPanel.btnLabel') }}</span>
             <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" style="flex-shrink:0;opacity:0.5"><path d="M1 2.5l3 3 3-3"/></svg>
           </button>
+          <div v-if="showSearchTagSuggestions && searchTagSuggestions.length" class="search-tag-suggestions">
+            <div class="search-tag-suggestions-title">{{ t('library.searchTagSuggestions') }}</div>
+            <button
+              v-for="tag in searchTagSuggestions"
+              :key="tag.id"
+              type="button"
+              class="search-tag-suggestion"
+              @mousedown.prevent="activateSearchTag(tag)"
+            >
+              <span class="search-tag-suggestion-icon" v-html="tagSvg" />
+              <span class="search-tag-suggestion-name">{{ tag.name }}</span>
+              <span class="search-tag-suggestion-count">{{ tag.count }}</span>
+            </button>
+          </div>
           <!-- AI 设置面板 + 遮罩 -->
           <Teleport to="body">
             <Transition name="fade-in">
@@ -3415,6 +3432,46 @@ const tagPanelWidth = ref(212)
 const tagPanelResizing = ref(false)
 const dbTags = ref<Array<{ id: number; name: string; count: number; pinned: number }>>([])
 const tagSearch = ref('')
+const showSearchTagSuggestions = ref(false)
+
+const searchTagSuggestions = computed(() => {
+  const query = store.searchQuery.trim().toLowerCase()
+  if (!query) return []
+  const tagMap = new Map(dbTags.value.map(tag => [tag.id, { ...tag }]))
+  for (const resource of store.items) {
+    for (const tag of resource.tags ?? []) {
+      if (!tagMap.has(tag.id)) tagMap.set(tag.id, { id: tag.id, name: tag.name, count: 0, pinned: 0 })
+    }
+  }
+  return [...tagMap.values()]
+    .map((tag) => {
+      const name = tag.name.toLowerCase()
+      const exact = name === query
+      const startsAt = name.indexOf(query)
+      const pinyinIndices = query.length > 1 ? pinyinMatch(tag.name, query) : null
+      const score = exact ? 0 : startsAt === 0 ? 1 : startsAt > 0 ? 2 : pinyinIndices?.[0] === 0 ? 3 : 4
+      return { ...tag, score, matches: exact || startsAt >= 0 || pinyinIndices !== null }
+    })
+    .filter((tag) => tag.matches)
+    .sort((a, b) => a.score - b.score || b.pinned - a.pinned || b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, 5)
+})
+
+function hideSearchTagSuggestions() {
+  window.setTimeout(() => { showSearchTagSuggestions.value = false }, 120)
+}
+
+function activateSearchTag(tag: { id: number; name: string; count: number; pinned: number }) {
+  const excludedIndex = store.excludedTags.indexOf(tag.id)
+  if (excludedIndex >= 0) store.excludedTags.splice(excludedIndex, 1)
+  if (!store.activeTags.includes(tag.id)) store.activeTags.push(tag.id)
+  showSearchTagSuggestions.value = false
+  window.api.tags.touch(tag.id).then(() => loadTags()).catch(() => {})
+}
+
+watch(() => store.searchQuery, (query) => {
+  tagSearch.value = query
+}, { immediate: true })
 
 // ── 标签管理 ──
 const tagManageMode = ref(false)
@@ -4180,6 +4237,7 @@ async function onDocumentCreated(payload: { resource: object; kind: DocumentCrea
 
 const dropSvg        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
 const searchSvg      = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`
+const tagSvg         = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1"/></svg>`
 const addSvg         = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
 const sortSvg        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M3 12h12M3 18h6"/></svg>`
 const gridSvg        = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`
@@ -5063,6 +5121,44 @@ async function deleteIgnored(filePath: string) {
   align-items: stretch;
   min-width: 140px;
 }
+
+.search-tag-suggestions {
+  position: absolute;
+  z-index: 220;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+}
+.search-tag-suggestions-title {
+  padding: 7px 10px 5px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.search-tag-suggestion {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.search-tag-suggestion:hover { background: var(--surface-2); color: var(--text); }
+.search-tag-suggestion-icon { display: flex; color: var(--accent-2); }
+.search-tag-suggestion-icon :deep(svg) { width: 15px; height: 15px; }
+.search-tag-suggestion-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-tag-suggestion-count { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 .search.combine-left {
   flex: 1; /* 让输入框占用剩余空间 */

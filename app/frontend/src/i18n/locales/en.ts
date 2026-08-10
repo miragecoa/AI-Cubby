@@ -228,6 +228,7 @@ export default {
     batchTitle: 'Batch operations',
     searchPlaceholder: "Search, or describe: e.g. 'a website for drawing flowcharts'",
     clearSearch: 'Clear search',
+    searchTagSuggestions: 'Matching tags',
     aiSearch: 'AI Search',
     aiSearchTitle: 'AI semantic search: describe what you\'re looking for in natural language',
     aiRecommendations: 'AI recommendations',
