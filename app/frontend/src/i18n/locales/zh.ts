@@ -228,7 +228,6 @@ export default {
     batchTitle: '批量操作',
     searchPlaceholder: "搜索资源，或描述用途：例如'用来画流程图的网站'",
     clearSearch: '清除搜索',
-    searchTagSuggestions: '匹配标签',
     aiSearch: 'AI 搜索',
     aiSearchTitle: 'AI 模糊搜索资源：通过自然语言描述轻松找到文件',
     aiRecommendations: 'AI 引擎推荐',

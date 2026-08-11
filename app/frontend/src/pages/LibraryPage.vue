@@ -48,7 +48,6 @@
             <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" style="flex-shrink:0;opacity:0.5"><path d="M1 2.5l3 3 3-3"/></svg>
           </button>
           <div v-if="showSearchTagSuggestions && searchTagSuggestions.length" class="search-tag-suggestions">
-            <div class="search-tag-suggestions-title">{{ t('library.searchTagSuggestions') }}</div>
             <div class="search-tag-suggestion-list">
               <button
                 v-for="tag in searchTagSuggestions"
@@ -3435,8 +3434,6 @@ const tagPanelResizing = ref(false)
 const dbTags = ref<Array<{ id: number; name: string; count: number; pinned: number }>>([])
 const tagSearch = ref('')
 const showSearchTagSuggestions = ref(false)
-// Tags selected from a search suggestion are transient: clearing the query restores prior filters.
-const searchActivatedTags = new Map<number, boolean>()
 
 const searchTagSuggestions = computed(() => {
   const query = store.searchQuery.trim().toLowerCase()
@@ -3467,29 +3464,15 @@ function hideSearchTagSuggestions() {
 
 function activateSearchTag(tag: { id: number; name: string; count: number; pinned: number }) {
   const excludedIndex = store.excludedTags.indexOf(tag.id)
-  const wasExcluded = excludedIndex >= 0
-  if (wasExcluded) store.excludedTags.splice(excludedIndex, 1)
-  if (!store.activeTags.includes(tag.id)) {
-    store.activeTags.push(tag.id)
-    searchActivatedTags.set(tag.id, wasExcluded)
-  }
+  if (excludedIndex >= 0) store.excludedTags.splice(excludedIndex, 1)
+  if (!store.activeTags.includes(tag.id)) store.activeTags.push(tag.id)
   showSearchTagSuggestions.value = false
   window.api.tags.touch(tag.id).then(() => loadTags()).catch(() => {})
-}
-
-function clearSearchTagFilters() {
-  for (const [tagId, restoreExcluded] of searchActivatedTags) {
-    const activeIndex = store.activeTags.indexOf(tagId)
-    if (activeIndex >= 0) store.activeTags.splice(activeIndex, 1)
-    if (restoreExcluded && !store.excludedTags.includes(tagId)) store.excludedTags.push(tagId)
-  }
-  searchActivatedTags.clear()
 }
 
 function clearMainSearch() {
   store.searchQuery = ''
   showSearchTagSuggestions.value = false
-  clearSearchTagFilters()
 }
 
 function clearSearchAndTags() {
@@ -3500,10 +3483,7 @@ function clearSearchAndTags() {
 
 watch(() => store.searchQuery, (query) => {
   tagSearch.value = query
-  if (!query.trim()) {
-    showSearchTagSuggestions.value = false
-    clearSearchTagFilters()
-  }
+  if (!query.trim()) showSearchTagSuggestions.value = false
 }, { immediate: true })
 
 // ── 标签管理 ──
@@ -5166,11 +5146,6 @@ async function deleteIgnored(filePath: string) {
   border-radius: 6px;
   background: var(--surface);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
-}
-.search-tag-suggestions-title {
-  padding: 7px 10px 5px;
-  color: var(--text-3);
-  font-size: 11px;
 }
 .search-tag-suggestion-list {
   display: grid;

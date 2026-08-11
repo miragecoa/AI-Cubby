@@ -487,24 +487,19 @@ test('search includes managed note text content as low priority matches', () => 
 
 test('main search synchronizes tag filtering and activates matching tag suggestions', () => {
   const library = read('frontend/src/pages/LibraryPage.vue')
-  const zh = read('frontend/src/i18n/locales/zh.ts')
-  const en = read('frontend/src/i18n/locales/en.ts')
   assert.match(library, /const searchTagSuggestions = computed\(\(\) =>/)
   assert.match(library, /pinyinMatch\(tag\.name, query\)/)
   assert.match(library, /tagSearch\.value = query/)
   assert.match(library, /function activateSearchTag\(tag:/)
-  assert.match(library, /const searchActivatedTags = new Map<number, boolean>\(\)/)
   assert.match(library, /store\.activeTags\.push\(tag\.id\)/)
-  assert.match(library, /function clearSearchTagFilters\(\)/)
   assert.match(library, /clearMainSearch\(\)/)
   assert.match(library, /function clearSearchAndTags\(\)[\s\S]*?store\.activeTags\.splice\(0\)[\s\S]*?store\.excludedTags\.splice\(0\)/)
   assert.match(library, /@click="clearSearchAndTags"/)
+  assert.doesNotMatch(library, /watch\(\(\) => store\.searchQuery,[\s\S]{0,300}store\.activeTags\.splice/)
   assert.match(library, /\.slice\(0, 4\)/)
   assert.match(library, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/)
   assert.match(library, /class="search-tag-suggestions"/)
   assert.match(library, /@mousedown\.prevent="activateSearchTag\(tag\)"/)
-  assert.match(zh, /searchTagSuggestions: '匹配标签'/)
-  assert.match(en, /searchTagSuggestions: 'Matching tags'/)
 })
 
 test('AI recommendations stay separate from stable search results', () => {
