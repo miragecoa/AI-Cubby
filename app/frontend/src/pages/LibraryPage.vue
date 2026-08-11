@@ -26,7 +26,7 @@
             @blur="hideSearchTagSuggestions"
             @keydown.enter="aiStore.searchNow(store.searchQuery)"
           />
-          <button v-if="store.searchQuery" class="search-clear" @click="store.searchQuery = ''" :title="t('library.clearSearch')">
+          <button v-if="store.searchQuery" class="search-clear" @click="clearSearchAndTags" :title="t('library.clearSearch')">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
           <button
@@ -49,17 +49,19 @@
           </button>
           <div v-if="showSearchTagSuggestions && searchTagSuggestions.length" class="search-tag-suggestions">
             <div class="search-tag-suggestions-title">{{ t('library.searchTagSuggestions') }}</div>
-            <button
-              v-for="tag in searchTagSuggestions"
-              :key="tag.id"
-              type="button"
-              class="search-tag-suggestion"
-              @mousedown.prevent="activateSearchTag(tag)"
-            >
-              <span class="search-tag-suggestion-icon" v-html="tagSvg" />
-              <span class="search-tag-suggestion-name">{{ tag.name }}</span>
-              <span class="search-tag-suggestion-count">{{ tag.count }}</span>
-            </button>
+            <div class="search-tag-suggestion-list">
+              <button
+                v-for="tag in searchTagSuggestions"
+                :key="tag.id"
+                type="button"
+                class="search-tag-suggestion"
+                @mousedown.prevent="activateSearchTag(tag)"
+              >
+                <span class="search-tag-suggestion-icon" v-html="tagSvg" />
+                <span class="search-tag-suggestion-name">{{ tag.name }}</span>
+                <span class="search-tag-suggestion-count">{{ tag.count }}</span>
+              </button>
+            </div>
           </div>
           <!-- AI 设置面板 + 遮罩 -->
           <Teleport to="body">
@@ -3433,6 +3435,8 @@ const tagPanelResizing = ref(false)
 const dbTags = ref<Array<{ id: number; name: string; count: number; pinned: number }>>([])
 const tagSearch = ref('')
 const showSearchTagSuggestions = ref(false)
+// Tags selected from a search suggestion are transient: clearing the query restores prior filters.
+const searchActivatedTags = new Map<number, boolean>()
 
 const searchTagSuggestions = computed(() => {
   const query = store.searchQuery.trim().toLowerCase()
@@ -3454,7 +3458,7 @@ const searchTagSuggestions = computed(() => {
     })
     .filter((tag) => tag.matches)
     .sort((a, b) => a.score - b.score || b.pinned - a.pinned || b.count - a.count || a.name.localeCompare(b.name))
-    .slice(0, 5)
+    .slice(0, 4)
 })
 
 function hideSearchTagSuggestions() {
@@ -3463,14 +3467,43 @@ function hideSearchTagSuggestions() {
 
 function activateSearchTag(tag: { id: number; name: string; count: number; pinned: number }) {
   const excludedIndex = store.excludedTags.indexOf(tag.id)
-  if (excludedIndex >= 0) store.excludedTags.splice(excludedIndex, 1)
-  if (!store.activeTags.includes(tag.id)) store.activeTags.push(tag.id)
+  const wasExcluded = excludedIndex >= 0
+  if (wasExcluded) store.excludedTags.splice(excludedIndex, 1)
+  if (!store.activeTags.includes(tag.id)) {
+    store.activeTags.push(tag.id)
+    searchActivatedTags.set(tag.id, wasExcluded)
+  }
   showSearchTagSuggestions.value = false
   window.api.tags.touch(tag.id).then(() => loadTags()).catch(() => {})
 }
 
+function clearSearchTagFilters() {
+  for (const [tagId, restoreExcluded] of searchActivatedTags) {
+    const activeIndex = store.activeTags.indexOf(tagId)
+    if (activeIndex >= 0) store.activeTags.splice(activeIndex, 1)
+    if (restoreExcluded && !store.excludedTags.includes(tagId)) store.excludedTags.push(tagId)
+  }
+  searchActivatedTags.clear()
+}
+
+function clearMainSearch() {
+  store.searchQuery = ''
+  showSearchTagSuggestions.value = false
+  clearSearchTagFilters()
+}
+
+function clearSearchAndTags() {
+  clearMainSearch()
+  store.activeTags.splice(0)
+  store.excludedTags.splice(0)
+}
+
 watch(() => store.searchQuery, (query) => {
   tagSearch.value = query
+  if (!query.trim()) {
+    showSearchTagSuggestions.value = false
+    clearSearchTagFilters()
+  }
 }, { immediate: true })
 
 // ── 标签管理 ──
@@ -3878,7 +3911,7 @@ onMounted(async () => {
 })
 
 const unsubWake = window.api.onWake(() => {
-  store.searchQuery = ''
+  clearMainSearch()
   nextTick(() => {
     searchInputRef.value?.focus()
   })
@@ -3891,7 +3924,7 @@ let _trayHintTimer: ReturnType<typeof setTimeout> | null = null
 const TRAY_HINT_KEY = 'trayHintLastDate'
 
 const unsubTrayWake = window.api.onTrayWake(() => {
-  store.searchQuery = ''
+  clearMainSearch()
   const today = new Date().toDateString()
   if (localStorage.getItem(TRAY_HINT_KEY) === today) return
   localStorage.setItem(TRAY_HINT_KEY, today)
@@ -5139,14 +5172,20 @@ async function deleteIgnored(filePath: string) {
   color: var(--text-3);
   font-size: 11px;
 }
-.search-tag-suggestion {
+.search-tag-suggestion-list {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 0 6px 6px;
+}
+.search-tag-suggestion {
+  display: flex;
   align-items: center;
-  width: 100%;
-  gap: 7px;
-  padding: 7px 10px;
+  min-width: 0;
+  gap: 5px;
+  padding: 6px 7px;
   border: 0;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-2);
   font: inherit;
@@ -5156,9 +5195,10 @@ async function deleteIgnored(filePath: string) {
 }
 .search-tag-suggestion:hover { background: var(--surface-2); color: var(--text); }
 .search-tag-suggestion-icon { display: flex; color: var(--accent-2); }
-.search-tag-suggestion-icon :deep(svg) { width: 15px; height: 15px; }
+.search-tag-suggestion-icon { flex-shrink: 0; }
+.search-tag-suggestion-icon :deep(svg) { width: 14px; height: 14px; }
 .search-tag-suggestion-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.search-tag-suggestion-count { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.search-tag-suggestion-count { flex-shrink: 0; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 .search.combine-left {
   flex: 1; /* 让输入框占用剩余空间 */
