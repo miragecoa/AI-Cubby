@@ -29,6 +29,7 @@ test('package exposes default, build, and visual smoke scripts', () => {
 
 test('clipboard history scrollbar has a usable mouse target', () => {
   const clipboard = read('frontend/public/clipboard.html')
+  assert.match(clipboard, /\.list \{[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/)
   assert.match(clipboard, /\.list::\-webkit-scrollbar \{ width: 12px; \}/)
   assert.match(clipboard, /\.list::\-webkit-scrollbar-thumb \{[\s\S]*?min-height: 48px;/)
   assert.match(clipboard, /\.list::\-webkit-scrollbar-thumb:hover/)
