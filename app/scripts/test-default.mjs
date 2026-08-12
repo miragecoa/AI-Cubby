@@ -27,6 +27,14 @@ test('package exposes default, build, and visual smoke scripts', () => {
   assert.ok(pkg.scripts['visual:open']?.includes('scripts/visual-open.mjs'))
 })
 
+test('clipboard history scrollbar has a usable mouse target', () => {
+  const clipboard = read('frontend/public/clipboard.html')
+  assert.match(clipboard, /\.list::\-webkit-scrollbar \{ width: 12px; \}/)
+  assert.match(clipboard, /\.list::\-webkit-scrollbar-thumb \{[\s\S]*?min-height: 48px;/)
+  assert.match(clipboard, /\.list::\-webkit-scrollbar-thumb:hover/)
+  assert.match(clipboard, /scrollbar-gutter: stable;/)
+})
+
 test('webpage metadata follows VPN proxy config and uses the page title', () => {
   const source = read('backend/ipc/index.ts')
   const preload = read('backend/preload.ts')
