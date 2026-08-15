@@ -8,6 +8,8 @@ import { createInterface } from 'readline'
 import { upsertResource, updateResource, isIgnored, isBlockedDir, recordProcessStart, recordProcessStop, getResourceByPath, upgradeSteamGame, getAllAppResources } from '../db/queries'
 import type { Resource } from '../db/queries'
 import { detectSteamGame } from './steam-detector'
+import { recordSearchResourceOpen } from '../search-learning'
+import type { SearchOpenSource } from '../search-learning-core'
 
 export interface RunningEvent {
   resourceId: string
@@ -217,7 +219,7 @@ function startPidCheck(): void {
 }
 
 /** 手动注册一个外部启动的进程（如管理员模式启动），纳入运行会话追踪 */
-export function trackRunningProcess(filePath: string, pid: number): Resource | null {
+export function trackRunningProcess(filePath: string, pid: number, learningSource: SearchOpenSource = 'app'): Resource | null {
   const resource = getResourceByPath(filePath)
   if (!resource) return null
   const alreadyTracking = [...runningSessions.values()].some(s => s.resourceId === resource.id)
@@ -227,6 +229,7 @@ export function trackRunningProcess(filePath: string, pid: number): Resource | n
   startPidCheck()
   try {
     const updated = recordProcessStart(resource.id)
+    if (updated && !updated.stat_paused) recordSearchResourceOpen(resource.id, learningSource)
     onRunningChangeCb?.({ resourceId: resource.id, running: true, startTime, resource: updated ?? undefined })
     return updated
   } catch (e) {
@@ -335,6 +338,7 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
         console.log('[Monitor] Process skipped (blocked):', exePath)
         return
       }
+      const openedFilePaths = cmdLine ? parseFileArgsFromCmdLine(cmdLine, exePath) : []
 
       // 已入库的资源直接走追踪逻辑；新进程需先检查图标（无图标 = 辅助进程，跳过）
       const existingResource = getResourceByPath(lower)
@@ -379,6 +383,9 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
               startPidCheck()
               try {
                 const updated = recordProcessStart(trackResource.id)
+                if (openedFilePaths.length === 0 && updated && !updated.stat_paused) {
+                  recordSearchResourceOpen(trackResource.id, 'external')
+                }
                 onRunningChangeCb?.({ resourceId: trackResource.id, running: true, startTime, resource: updated ?? undefined })
               } catch (e) {
                 console.error('[Monitor] recordProcessStart failed:', e)
@@ -391,17 +398,19 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
       }
 
       // 解析命令行参数，捕获被打开的文件（图片、视频、文档等）
-      if (cmdLine) {
-        const filePaths = parseFileArgsFromCmdLine(cmdLine, exePath)
-        for (const filePath of filePaths) {
+      if (openedFilePaths.length > 0) {
+        for (const filePath of openedFilePaths) {
           const ext = extname(filePath).toLowerCase()
           const type = EXT_MAP[ext]!
           const fileTitle = basename(filePath, ext)
           try {
-            const fileResource = upsertResource({ type, title: fileTitle, file_path: filePath, rating: 0 })
+            const insertedResource = upsertResource({ type, title: fileTitle, file_path: filePath, rating: 0 })
+            const fileResource = insertedResource ?? getResourceByPath(filePath)
             if (fileResource) {
               console.log('[Monitor] File opened via args:', type, fileTitle)
-              onNewEntry(fileResource)
+              const updated = recordProcessStart(fileResource.id)
+              if (updated && !updated.stat_paused) recordSearchResourceOpen(fileResource.id, 'external')
+              onNewEntry(updated ?? fileResource)
             }
           } catch (e) {
             console.error('[Monitor] upsertResource failed for file arg:', filePath, e)

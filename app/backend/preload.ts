@@ -47,7 +47,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('documents:writeNote', resourceId, note),
     writeText: (filePath: string, content: string): Promise<any | null> =>
       ipcRenderer.invoke('documents:writeText', filePath, content),
-    touch: (resourceId: string): Promise<any | null> => ipcRenderer.invoke('documents:touch', resourceId),
+    touch: (resourceId: string, searchQuery?: string): Promise<any | null> => ipcRenderer.invoke('documents:touch', resourceId, searchQuery),
   },
 
   tags: {
@@ -94,7 +94,19 @@ contextBridge.exposeInMainWorld('api', {
   // 搜索
   search: {
     query: (q: string, type?: string) => ipcRenderer.invoke('search:query', q, type),
+    learned: (q: string, type?: string): Promise<Array<{ resourceId: string; score: number }>> => ipcRenderer.invoke('search:learned', q, type),
+    close: (q?: string): Promise<boolean> => ipcRenderer.invoke('search:close', q),
+    learningStatus: (): Promise<{ available: boolean; enabled: boolean; count: number; pendingCount: number }> => ipcRenderer.invoke('search:learningStatus'),
+    setLearningEnabled: (enabled: boolean): Promise<{ available: boolean; enabled: boolean; count: number; pendingCount: number }> => ipcRenderer.invoke('search:setLearningEnabled', enabled),
+    clearLearning: (): Promise<{ available: boolean; enabled: boolean; count: number; pendingCount: number }> => ipcRenderer.invoke('search:clearLearning'),
     incSearch: () => ipcRenderer.invoke('search:incSearch'),
+  },
+
+  account: {
+    status: (force?: boolean): Promise<{ authenticated: boolean; email: string; tier: string; betaAccess: boolean; checkedAt: number }> => ipcRenderer.invoke('account:status', force),
+    startLogin: (lang?: string): Promise<{ authorizationUrl: string; expiresAt: string }> => ipcRenderer.invoke('account:startLogin', lang),
+    pollLogin: (): Promise<{ pending: boolean; status: { authenticated: boolean; email: string; tier: string; betaAccess: boolean; checkedAt: number } }> => ipcRenderer.invoke('account:pollLogin'),
+    logout: (): Promise<{ authenticated: boolean; email: string; tier: string; betaAccess: boolean; checkedAt: number }> => ipcRenderer.invoke('account:logout'),
   },
 
   // 设置
@@ -106,8 +118,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // 文件操作
   files: {
-    openPath: (filePath: string, meta?: string, resourceId?: string) => ipcRenderer.invoke('files:openPath', filePath, meta, resourceId),
-    openAsAdmin: (filePath: string, resourceId?: string) => ipcRenderer.invoke('files:openAsAdmin', filePath, resourceId),
+    openPath: (filePath: string, meta?: string, resourceId?: string, searchQuery?: string) => ipcRenderer.invoke('files:openPath', filePath, meta, resourceId, searchQuery),
+    openAsAdmin: (filePath: string, resourceId?: string, searchQuery?: string) => ipcRenderer.invoke('files:openAsAdmin', filePath, resourceId, searchQuery),
     openInExplorer: (filePath: string) => ipcRenderer.invoke('files:openInExplorer', filePath),
     resolveDropped: (paths: string[]): Promise<Array<{ type: string; title: string; file_path: string; meta?: string }>> =>
       ipcRenderer.invoke('files:resolveDropped', paths),

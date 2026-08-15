@@ -39,7 +39,7 @@ declare global {
         readNote: (resourceId: string) => Promise<{ resource: import('../stores/resources').Resource; note: ManagedNoteDocument }>
         writeNote: (resourceId: string, note: ManagedNoteDocument) => Promise<import('../stores/resources').Resource | null>
         writeText: (filePath: string, content: string) => Promise<import('../stores/resources').Resource | null>
-        touch: (resourceId: string) => Promise<import('../stores/resources').Resource | null>
+        touch: (resourceId: string, searchQuery?: string) => Promise<import('../stores/resources').Resource | null>
       }
       tags: {
         getAll: () => Promise<Array<{ id: number; name: string }>>
@@ -51,7 +51,18 @@ declare global {
       }
       search: {
         query: (q: string, type?: string) => Promise<import('../stores/resources').Resource[]>
+        learned: (q: string, type?: string) => Promise<Array<{ resourceId: string; score: number }>>
+        close: (q?: string) => Promise<boolean>
+        learningStatus: () => Promise<{ available: boolean; enabled: boolean; count: number; pendingCount: number }>
+        setLearningEnabled: (enabled: boolean) => Promise<{ available: boolean; enabled: boolean; count: number; pendingCount: number }>
+        clearLearning: () => Promise<{ available: boolean; enabled: boolean; count: number; pendingCount: number }>
         incSearch: () => Promise<void>
+      }
+      account: {
+        status: (force?: boolean) => Promise<{ authenticated: boolean; email: string; tier: string; betaAccess: boolean; checkedAt: number }>
+        startLogin: (lang?: string) => Promise<{ authorizationUrl: string; expiresAt: string }>
+        pollLogin: () => Promise<{ pending: boolean; status: { authenticated: boolean; email: string; tier: string; betaAccess: boolean; checkedAt: number } }>
+        logout: () => Promise<{ authenticated: boolean; email: string; tier: string; betaAccess: boolean; checkedAt: number }>
       }
       settings: {
         get: (key: string) => Promise<string | null>
@@ -59,8 +70,8 @@ declare global {
         reFetchDirTags: () => Promise<void>
       }
       files: {
-        openPath: (filePath: string, meta?: string, resourceId?: string) => Promise<import('../stores/resources').Resource | null>
-        openAsAdmin: (filePath: string, resourceId?: string) => Promise<import('../stores/resources').Resource | null>
+        openPath: (filePath: string, meta?: string, resourceId?: string, searchQuery?: string) => Promise<import('../stores/resources').Resource | null>
+        openAsAdmin: (filePath: string, resourceId?: string, searchQuery?: string) => Promise<import('../stores/resources').Resource | null>
         openInExplorer: (filePath: string) => Promise<void>
         readImage: (filePath: string, size?: number) => Promise<string | null>
         readFullImage: (filePath: string) => Promise<string | null>

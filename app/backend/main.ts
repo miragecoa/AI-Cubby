@@ -40,6 +40,8 @@ import { checkResourceHealth, relocateMissingResources } from './monitor/resourc
 import { initAutoUpdater } from './updater'
 import { initHeartbeat, flushAndStop, incShortcutMain, incShortcutClip, incWakeCount, incDrawerWake } from './heartbeat'
 import { initAiManager, enableAi, disableAi, getAiStatus, isModelInstalled, semanticSearch, queueResourceContent, onStatusChange, onProgress, forceReindex, pauseIndex, resumeIndex, isIndexPaused } from './ai/ai-manager'
+import { refreshAccountStatus } from './account'
+import { processPendingSearchJudgments } from './search-learning'
 
 let mainWindow: BrowserWindow | null = null
 let masonryWindow: BrowserWindow | null = null
@@ -858,8 +860,8 @@ function createWindow(): void {
   }
 }
 
-// 单实例锁：防止重复启动，第二个实例会聚焦已有窗口
-const gotLock = app.requestSingleInstanceLock()
+// Smoke runs use an isolated profile and must coexist with the installed app.
+const gotLock = isSmokeTest || app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
   // app.quit() 是异步的，不会阻止后续同步代码执行
@@ -968,6 +970,9 @@ app.whenReady().then(() => {
   clipboardImgDir = join(dataDir, 'clipboard')
   mkdirSync(clipboardImgDir, { recursive: true })
   registerIpcHandlers()
+  void refreshAccountStatus(true).then(status => {
+    if (status.betaAccess) void processPendingSearchJudgments()
+  }).catch(error => console.warn('[account] startup refresh failed:', error instanceof Error ? error.message : error))
   setOnLanguageChange(() => tray?.setContextMenu(buildTrayMenu()))
 
   // ── AI Manager ────────────────────────────────────────────

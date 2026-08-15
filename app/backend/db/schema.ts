@@ -86,4 +86,41 @@ export const SCHEMA_SQL = `
     PRIMARY KEY (resource_id, chunk_index),
     FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS search_resource_affinity (
+    query_key        TEXT NOT NULL,
+    query_text       TEXT NOT NULL,
+    resource_id      TEXT NOT NULL,
+    score            REAL NOT NULL DEFAULT 1,
+    positive_count   INTEGER NOT NULL DEFAULT 0,
+    exposure_count   INTEGER NOT NULL DEFAULT 0,
+    skip_count       INTEGER NOT NULL DEFAULT 0,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    last_positive_at INTEGER NOT NULL,
+    PRIMARY KEY (query_key, resource_id),
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_search_affinity_query_score
+    ON search_resource_affinity(query_key, score DESC);
+
+  CREATE TABLE IF NOT EXISTS search_learning_judgments (
+    id                   TEXT PRIMARY KEY,
+    resource_id          TEXT NOT NULL,
+    source               TEXT NOT NULL,
+    candidate_queries    TEXT NOT NULL,
+    resource_snapshot    TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'pending',
+    matched_query_key    TEXT,
+    confidence           REAL,
+    model                TEXT,
+    created_at           INTEGER NOT NULL,
+    expires_at           INTEGER NOT NULL,
+    resolved_at          INTEGER,
+    FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_search_judgments_status_created
+    ON search_learning_judgments(status, created_at DESC);
 `

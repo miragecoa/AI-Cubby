@@ -25,6 +25,23 @@ import { checkForUpdate, downloadUpdate, applyAndRestart, skipUpdate, forceUpdat
 import { listProfiles, createProfile, deleteProfile, loadManifest, saveManifest, getProfileDir, getProfileDataLocation } from '../db/profiles'
 import { listDrives, diskScan, isGuiExe, type DiskScanSignal } from '../disk-scan'
 import { incLaunchCount, incSearchCount, incTagUseCount, incPanelAdd, setResourceCount } from '../heartbeat'
+import {
+  clearSearchLearning,
+  closeLearnedSearch,
+  getLearnedSearchResults,
+  getSearchLearningStatus,
+  recordSearchResourceOpen,
+  setSearchLearningEnabled,
+  processPendingSearchJudgments,
+} from '../search-learning'
+import type { SearchOpenSource } from '../search-learning-core'
+import {
+  getCachedAccountStatus,
+  logoutDesktopAccount,
+  pollDesktopLogin,
+  refreshAccountStatus,
+  startDesktopLogin,
+} from '../account'
 
 // 主进程级缓存：进程生命周期内有效，避免重复调用系统 API
 // 扫描目录时可识别的文件扩展名 → 资源类型
@@ -541,8 +558,10 @@ function _doGetIcon(filePath: string): Promise<string | null> {
   })
 }
 
-function touchResourceUsage(resourceId: string) {
-  return recordProcessStart(resourceId)
+function touchResourceUsage(resourceId: string, learningSource?: SearchOpenSource, explicitQuery?: string) {
+  const resource = recordProcessStart(resourceId)
+  if (learningSource && resource && !resource.stat_paused) recordSearchResourceOpen(resourceId, learningSource, explicitQuery)
+  return resource
 }
 
 function touchResourceUsageResult<T extends { resource: any; existed: boolean }>(result: T): T {
@@ -790,8 +809,8 @@ export function registerIpcHandlers(): void {
     return null
   })
 
-  ipcMain.handle('documents:touch', (_e, resourceId: string) => {
-    return touchResourceUsage(resourceId)
+  ipcMain.handle('documents:touch', (_e, resourceId: string, searchQuery?: string) => {
+    return touchResourceUsage(resourceId, 'app', searchQuery)
   })
 
   ipcMain.handle('resources:getPresetApps', () => {
@@ -898,6 +917,37 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('search:query', (_e, q: string, type?: string) => {
     return searchResources(q, type)
   })
+  ipcMain.handle('search:learned', async (_e, q: string, type?: string) => {
+    await refreshAccountStatus()
+    return getLearnedSearchResults(q, type)
+  })
+  ipcMain.handle('search:close', (_e, q?: string) => {
+    closeLearnedSearch(q)
+    return true
+  })
+  ipcMain.handle('search:learningStatus', async () => {
+    await refreshAccountStatus()
+    return getSearchLearningStatus()
+  })
+  ipcMain.handle('search:setLearningEnabled', async (_e, enabled: boolean) => {
+    await refreshAccountStatus()
+    return setSearchLearningEnabled(enabled)
+  })
+  ipcMain.handle('search:clearLearning', () => clearSearchLearning())
+
+  ipcMain.handle('account:status', async (_e, force?: boolean) => refreshAccountStatus(!!force))
+  ipcMain.handle('account:startLogin', async (_e, lang?: string) => {
+    const result = await startDesktopLogin(lang === 'en' ? 'en' : 'zh')
+    await shell.openExternal(result.authorizationUrl)
+    return result
+  })
+  ipcMain.handle('account:pollLogin', async () => {
+    const result = await pollDesktopLogin()
+    if (!result.pending && result.status.betaAccess) void processPendingSearchJudgments()
+    return result
+  })
+  ipcMain.handle('account:logout', () => logoutDesktopAccount())
+  ipcMain.handle('account:cachedStatus', () => getCachedAccountStatus())
   ipcMain.handle('search:incSearch', () => { incSearchCount() })
 
   // ── 设置 ──────────────────────────────────────────────
@@ -931,7 +981,7 @@ export function registerIpcHandlers(): void {
   })
 
   // ── 文件操作 ──────────────────────────────────────────
-  ipcMain.handle('files:openPath', async (_e, filePath: string, meta?: string, resourceId?: string) => {
+  ipcMain.handle('files:openPath', async (_e, filePath: string, meta?: string, resourceId?: string, searchQuery?: string) => {
     incLaunchCount()
     const m = meta ? (() => { try { return JSON.parse(meta) } catch { return null } })() : null
     if (m?.steam_appid) {
@@ -946,9 +996,9 @@ export function registerIpcHandlers(): void {
     } else {
       shell.openPath(filePath).catch(() => { })
     }
-    if (resourceId) return touchResourceUsage(resourceId)
+    if (resourceId) return touchResourceUsage(resourceId, 'app', searchQuery)
     const resource = getResourceByPath(filePath)
-    return resource ? touchResourceUsage(resource.id) : null
+    return resource ? touchResourceUsage(resource.id, 'app', searchQuery) : null
   })
   ipcMain.handle('files:openInExplorer', (_e, filePath: string) => {
     incLaunchCount()
@@ -960,7 +1010,7 @@ export function registerIpcHandlers(): void {
 
   // 以管理员身份运行（Windows UAC 提权）
   // 使用 -PassThru 获取 PID，手动注册运行会话（UAC 提权进程的父进程是 svchost，WMI 监听会过滤掉）
-  ipcMain.handle('files:openAsAdmin', async (_e, filePath: string, resourceId?: string) => {
+  ipcMain.handle('files:openAsAdmin', async (_e, filePath: string, resourceId?: string, searchQuery?: string) => {
     let targetPath = filePath
     if (filePath.toLowerCase().endsWith('.lnk')) {
       try { targetPath = shell.readShortcutLink(filePath).target || filePath } catch { /* ignore */ }
@@ -976,7 +1026,7 @@ export function registerIpcHandlers(): void {
       })
       const pid = parseInt(stdout)
       if (pid && !isNaN(pid)) {
-        if (resourceId) return touchResourceUsage(resourceId)
+        if (resourceId) return touchResourceUsage(resourceId, 'app', searchQuery)
         return trackRunningProcess(targetPath, pid)
       }
     } catch { /* 用户取消 UAC 或其他错误 */ }

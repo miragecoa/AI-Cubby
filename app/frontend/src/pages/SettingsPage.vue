@@ -226,6 +226,24 @@
         <h2 class="section-title">{{ t('settings.ai.title') }}</h2>
         <div class="setting-row">
           <div class="setting-info">
+            <div class="setting-label">{{ t('settings.ai.account') }}</div>
+            <div v-if="accountStatus.authenticated" class="setting-desc account-summary">
+              <span>{{ accountStatus.email }}</span>
+              <span v-if="accountStatus.betaAccess" class="beta-badge">Beta</span>
+              <span v-else>{{ t('settings.ai.noBetaAccess') }}</span>
+            </div>
+            <div v-else class="setting-desc">{{ t('settings.ai.accountDesc') }}</div>
+            <div v-if="accountLoginError" class="setting-desc account-error">{{ t('settings.ai.loginFailed') }}</div>
+          </div>
+          <div class="search-learning-actions">
+            <button v-if="accountStatus.authenticated" class="profile-btn" @click="logoutAccount">{{ t('settings.ai.logout') }}</button>
+            <button v-else class="profile-btn" :disabled="accountLoginPending" @click="startAccountLogin">
+              {{ accountLoginPending ? t('settings.ai.waitingForLogin') : t('settings.ai.loginOrRegister') }}
+            </button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
             <div class="setting-label">{{ t('settings.ai.offline') }}</div>
             <div class="setting-desc">{{ t('settings.ai.offlineDesc') }}</div>
           </div>
@@ -236,6 +254,29 @@
           >
             <span class="toggle-thumb" />
           </button>
+        </div>
+        <div v-if="accountStatus.betaAccess" class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">{{ t('settings.ai.searchLearning') }}</div>
+            <div class="setting-desc">{{ t('settings.ai.searchLearningDesc') }}</div>
+            <div v-if="searchLearningCount > 0" class="setting-desc">{{ t('settings.ai.searchLearningCount', { count: searchLearningCount }) }}</div>
+            <div v-if="searchLearningPendingCount > 0" class="setting-desc">{{ t('settings.ai.searchLearningPending', { count: searchLearningPendingCount }) }}</div>
+          </div>
+          <div class="search-learning-actions">
+            <button
+              v-if="searchLearningCount > 0 || searchLearningPendingCount > 0"
+              class="profile-btn"
+              :disabled="searchLearningClearing"
+              @click="clearSearchLearning"
+            >{{ t('settings.ai.clearSearchLearning') }}</button>
+            <button
+              class="toggle"
+              :class="{ on: searchLearningEnabled }"
+              @click="toggleSearchLearning"
+            >
+              <span class="toggle-thumb" />
+            </button>
+          </div>
         </div>
       </section>
 
@@ -783,6 +824,81 @@ async function reFetchDirTags() {
   try { await window.api.settings.reFetchDirTags() } finally { reFetchingDirTags.value = false }
 }
 
+const searchLearningEnabled = ref(false)
+const searchLearningCount = ref(0)
+const searchLearningPendingCount = ref(0)
+const searchLearningClearing = ref(false)
+const accountStatus = ref({ authenticated: false, email: '', tier: 'free', betaAccess: false, checkedAt: 0 })
+const accountLoginPending = ref(false)
+const accountLoginError = ref(false)
+let accountPollTimer: ReturnType<typeof setInterval> | null = null
+
+function applySearchLearningStatus(status: { available: boolean; enabled: boolean; count: number; pendingCount: number }) {
+  searchLearningEnabled.value = status.enabled
+  searchLearningCount.value = status.count
+  searchLearningPendingCount.value = status.pendingCount
+}
+
+function stopAccountPolling() {
+  if (accountPollTimer) clearInterval(accountPollTimer)
+  accountPollTimer = null
+}
+
+async function startAccountLogin() {
+  accountLoginPending.value = true
+  accountLoginError.value = false
+  try {
+    await window.api.account.startLogin(settingsStore.language === 'en' ? 'en' : 'zh')
+  } catch {
+    accountLoginPending.value = false
+    accountLoginError.value = true
+    return
+  }
+  stopAccountPolling()
+  accountPollTimer = setInterval(async () => {
+    try {
+      const result = await window.api.account.pollLogin()
+      if (!result.pending) {
+        accountStatus.value = result.status
+        accountLoginPending.value = false
+        accountLoginError.value = false
+        stopAccountPolling()
+        applySearchLearningStatus(await window.api.search.learningStatus())
+      }
+    } catch {
+      accountLoginPending.value = false
+      accountLoginError.value = true
+      stopAccountPolling()
+    }
+  }, 2000)
+}
+
+async function logoutAccount() {
+  accountStatus.value = await window.api.account.logout()
+  accountLoginError.value = false
+  applySearchLearningStatus(await window.api.search.learningStatus())
+}
+
+async function toggleSearchLearning() {
+  applySearchLearningStatus(await window.api.search.setLearningEnabled(!searchLearningEnabled.value))
+}
+
+async function clearSearchLearning() {
+  if (!await showConfirm({
+    title: t('settings.ai.clearSearchLearning'),
+    message: t('settings.ai.clearSearchLearningConfirm'),
+    confirmText: t('settings.ai.clearSearchLearningConfirmBtn'),
+    cancelText: t('settings.data.resetCancelBtn'),
+    danger: true,
+  })) return
+  searchLearningClearing.value = true
+  try {
+    applySearchLearningStatus(await window.api.search.clearLearning())
+  } finally {
+    searchLearningClearing.value = false
+  }
+}
+
 const dbPath = ref('')
 const dataLocation = ref<Awaited<ReturnType<typeof window.api.app.getDataLocation>> | null>(null)
 const confirmReset = ref(false)
@@ -929,10 +1045,12 @@ async function onDeleteProfile() {
 const unsubProgress = window.api.onUpdateProgress((percent) => {
   updateDownloadPercent.value = percent
 })
-onUnmounted(() => { unsubProgress(); _unsubDlDone?.(); _unsubDlError?.() })
+onUnmounted(() => { unsubProgress(); _unsubDlDone?.(); _unsubDlError?.(); stopAccountPolling() })
 
 onMounted(async () => {
   await settingsStore.load()
+  accountStatus.value = await window.api.account.status(true)
+  applySearchLearningStatus(await window.api.search.learningStatus())
   dbPath.value = await window.api.app.getDbPath()
   dataLocation.value = await window.api.app.getDataLocation()
   appVersion.value = await window.api.app.getVersion()
@@ -1286,6 +1404,34 @@ function onColorChange(key: string, e: Event) {
 .toggle.on .toggle-thumb {
   transform: translateX(16px);
   background: #fff;
+}
+
+.search-learning-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-error {
+  color: #fca5a5;
+}
+
+.beta-badge {
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 4px;
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /* Zoom selector */

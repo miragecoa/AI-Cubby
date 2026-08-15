@@ -40,6 +40,9 @@ export const useResourceStore = defineStore('resources', () => {
   const contentSearchQuery = ref('')
   const contentSearchType = ref('')
   const contentSearchResults = ref<Resource[]>([])
+  const learnedSearchQuery = ref('')
+  const learnedSearchType = ref('')
+  const learnedSearchResults = ref<Array<{ resourceId: string; score: number }>>([])
 
   // 运行中状态：resourceId → startTime(ms)
   const runningMap = ref<Map<string, number>>(new Map())
@@ -171,6 +174,21 @@ export const useResourceStore = defineStore('resources', () => {
         }
       }
 
+      if (learnedSearchQuery.value === searchQuery.value.trim() && learnedSearchType.value === currentContentType) {
+        const byId = new Map(list.map(resource => [resource.id, resource]))
+        const matchedIds = new Set(matched.map(resource => resource.id))
+        for (const learned of learnedSearchResults.value) {
+          const resource = byId.get(learned.resourceId)
+          if (!resource) continue
+          if (!matchedIds.has(resource.id)) {
+            matched.push(resource)
+            matchedIds.add(resource.id)
+          }
+          const learnedRank = 6000 + Math.min(4, Math.max(0, learned.score)) * 100
+          relevanceMap.set(resource.id, Math.max(relevanceMap.get(resource.id) ?? -1, learnedRank))
+        }
+      }
+
       list = matched
     }
 
@@ -258,6 +276,12 @@ export const useResourceStore = defineStore('resources', () => {
     contentSearchResults.value = resources
   }
 
+  function setLearnedSearchResults(query: string, type: string, results: Array<{ resourceId: string; score: number }>) {
+    learnedSearchQuery.value = query
+    learnedSearchType.value = type
+    learnedSearchResults.value = results
+  }
+
   function addOrUpdate(resource: Resource) {
     const idx = items.value.findIndex((r) => r.id === resource.id)
     if (idx >= 0) {
@@ -308,7 +332,7 @@ export const useResourceStore = defineStore('resources', () => {
     items, activeType, searchQuery, activeTags, excludedTags, loading,
     runningMap, clockTick, setRunning,
     filtered, counts,
-    setContentSearchResults,
+    setContentSearchResults, setLearnedSearchResults,
     loadAll, addOrUpdate, remove, ignore, batchIgnore,
     batchRemove, batchUpdate, batchReplacePath
   }

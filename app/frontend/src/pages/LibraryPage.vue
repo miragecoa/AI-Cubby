@@ -2752,7 +2752,8 @@ watch(() => [store.activeType, store.searchQuery, store.activeTags, quickFilters
 let _hadSearchContent = false
 let _contentSearchTimer: ReturnType<typeof setTimeout> | null = null
 let _contentSearchSeq = 0
-watch(() => store.searchQuery, (q) => {
+let _settledLearnedQuery = ''
+watch(() => [store.searchQuery, store.activeType] as const, ([q]) => {
   // Icon extraction yields while the user is typing.
   deferIdleWork()
   const hasContent = !!q.trim()
@@ -2770,17 +2771,28 @@ watch(() => store.searchQuery, (q) => {
   const type = store.activeType === 'all' ? undefined : store.activeType
   if (!query) {
     store.setContentSearchResults('', type ?? '', [])
+    store.setLearnedSearchResults('', type ?? '', [])
+    if (_settledLearnedQuery) window.api.search.close(_settledLearnedQuery)
+    _settledLearnedQuery = ''
     return
   }
   const seq = ++_contentSearchSeq
   _contentSearchTimer = setTimeout(async () => {
     try {
-      const results = await window.api.search.query(query, type)
+      const [results, learned] = await Promise.all([
+        window.api.search.query(query, type),
+        window.api.search.learned(query, type),
+      ])
       if (seq === _contentSearchSeq && store.searchQuery.trim() === query) {
         store.setContentSearchResults(query, type ?? '', results)
+        store.setLearnedSearchResults(query, type ?? '', learned)
+        _settledLearnedQuery = query
       }
     } catch {
-      if (seq === _contentSearchSeq) store.setContentSearchResults(query, type ?? '', [])
+      if (seq === _contentSearchSeq) {
+        store.setContentSearchResults(query, type ?? '', [])
+        store.setLearnedSearchResults(query, type ?? '', [])
+      }
     }
   }, 180)
 })
@@ -2996,7 +3008,7 @@ function openListMenu(e: MouseEvent, item: Resource) {
 async function listMenuAdminRun() {
   if (!listMenu.item) return
   listMenu.show = false
-  const updated = await window.api.files.openAsAdmin(listMenu.item.file_path, listMenu.item.id)
+  const updated = await window.api.files.openAsAdmin(listMenu.item.file_path, listMenu.item.id, store.searchQuery.trim() || undefined)
   if (updated) store.addOrUpdate(updated)
 }
 
@@ -3028,7 +3040,7 @@ function openHeatMenu(e: MouseEvent, item: Resource) {
 async function heatMenuAdminRun() {
   if (!heatMenu.item) return
   heatMenu.show = false
-  const updated = await window.api.files.openAsAdmin(heatMenu.item.file_path, heatMenu.item.id)
+  const updated = await window.api.files.openAsAdmin(heatMenu.item.file_path, heatMenu.item.id, store.searchQuery.trim() || undefined)
   if (updated) store.addOrUpdate(updated)
 }
 
@@ -4840,7 +4852,7 @@ function stopNoteImageResize() {
 async function openLocalNote(resource: Resource, touchUsage = true) {
   let current = resource
   if (touchUsage) {
-    const touched = await window.api.documents.touch(resource.id)
+    const touched = await window.api.documents.touch(resource.id, store.searchQuery.trim() || undefined)
     if (touched) {
       current = touched
       store.addOrUpdate(touched)
@@ -4915,7 +4927,7 @@ async function openResource(resource: Resource) {
     await openLocalNote(resource)
     return
   }
-  const updated = await window.api.files.openPath(resource.file_path, resource.meta, resource.id)
+  const updated = await window.api.files.openPath(resource.file_path, resource.meta, resource.id, store.searchQuery.trim() || undefined)
   if (updated) store.addOrUpdate(updated)
 }
 
