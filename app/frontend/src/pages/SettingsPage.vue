@@ -159,12 +159,14 @@
               class="hotkey-input"
               :class="{ recording: hotkeyRecording, error: hotkeyError, 'is-unset': !hotkeyRecording && !settingsStore.hotkeyWake }"
               tabindex="0"
+              :title="t('settings.hotkey.pressDirectly')"
               @click="startRecording"
               @keydown.prevent="onHotkeyKeydown"
               @blur="cancelRecording"
             >
-              {{ hotkeyRecording ? (pendingHotkey || t('settings.hotkey.recording')) : (settingsStore.hotkeyWake || t('settings.hotkey.notSet')) }}
+              {{ hotkeyError ? t('settings.hotkey.unavailableShort') : (hotkeyRecording ? (displayAccelerator(pendingHotkey) || t('settings.hotkey.recording')) : (displayAccelerator(settingsStore.hotkeyWake) || t('settings.hotkey.notSet'))) }}
             </div>
+            <button v-if="!hotkeyRecording" class="hotkey-picker-open" @click="openHotkeyPicker('wake')">{{ t('settings.hotkey.choose') }}</button>
             <button v-if="!hotkeyRecording && settingsStore.hotkeyWake" class="hotkey-reset" @click="clearHotkey" :title="t('settings.hotkey.clear')">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/></svg>
             </button>
@@ -183,12 +185,14 @@
               class="hotkey-input"
               :class="{ recording: clipboardHotkeyRecording, error: clipboardHotkeyError, 'is-unset': !clipboardHotkeyRecording && !settingsStore.hotkeyClipboard }"
               tabindex="0"
+              :title="t('settings.hotkey.pressDirectly')"
               @click="startClipboardRecording"
               @keydown.prevent="onClipboardHotkeyKeydown"
               @blur="cancelClipboardRecording"
             >
-              {{ clipboardHotkeyRecording ? (pendingClipboardHotkey || t('settings.hotkey.recording')) : (settingsStore.hotkeyClipboard || t('settings.hotkey.notSet')) }}
+              {{ clipboardHotkeyError ? t('settings.hotkey.unavailableShort') : (clipboardHotkeyRecording ? (displayAccelerator(pendingClipboardHotkey) || t('settings.hotkey.recording')) : (displayAccelerator(settingsStore.hotkeyClipboard) || t('settings.hotkey.notSet'))) }}
             </div>
+            <button v-if="!clipboardHotkeyRecording" class="hotkey-picker-open" @click="openHotkeyPicker('clipboard')">{{ t('settings.hotkey.choose') }}</button>
             <button v-if="!clipboardHotkeyRecording && settingsStore.hotkeyClipboard" class="hotkey-reset" @click="clearClipboardHotkey" :title="t('settings.hotkey.clear')">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/></svg>
             </button>
@@ -208,18 +212,58 @@
               class="hotkey-input"
               :class="{ recording: pinboardHotkeyRecording, error: pinboardHotkeyError, 'is-unset': !pinboardHotkeyRecording && !settingsStore.hotkeyPinboard }"
               tabindex="0"
+              :title="t('settings.hotkey.pressDirectly')"
               @click="startPinboardRecording"
               @keydown.prevent="onPinboardHotkeyKeydown"
               @blur="cancelPinboardRecording"
             >
-              {{ pinboardHotkeyRecording ? (pendingPinboardHotkey || t('settings.hotkey.recording')) : (settingsStore.hotkeyPinboard || t('settings.hotkey.notSet')) }}
+              {{ pinboardHotkeyError ? t('settings.hotkey.unavailableShort') : (pinboardHotkeyRecording ? (displayAccelerator(pendingPinboardHotkey) || t('settings.hotkey.recording')) : (displayAccelerator(settingsStore.hotkeyPinboard) || t('settings.hotkey.notSet'))) }}
             </div>
+            <button v-if="!pinboardHotkeyRecording" class="hotkey-picker-open" @click="openHotkeyPicker('pinboard')">{{ t('settings.hotkey.choose') }}</button>
             <button v-if="!pinboardHotkeyRecording && settingsStore.hotkeyPinboard" class="hotkey-reset" @click="clearPinboardHotkey" :title="t('settings.hotkey.clear')">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/></svg>
             </button>
           </div>
         </div>
       </section>
+
+      <div v-if="hotkeyPickerTarget" class="modal-backdrop" @mousedown.self="closeHotkeyPicker">
+        <div ref="hotkeyPickerDialog" class="hotkey-picker" role="dialog" aria-modal="true" tabindex="-1" :aria-label="t('settings.hotkey.chooseTitle')" @keydown.esc.stop="closeHotkeyPicker" @keydown.tab="keepPickerFocus">
+          <div class="hotkey-picker-header">
+            <h3>{{ t('settings.hotkey.chooseTitle') }}</h3>
+            <button class="hotkey-picker-close" :disabled="pickerBusy" @click="closeHotkeyPicker" :title="t('common.close')">×</button>
+          </div>
+          <div class="hotkey-picker-label">{{ t('settings.hotkey.modifiers') }}</div>
+          <div class="hotkey-modifiers">
+            <button
+              v-for="modifier in HOTKEY_MODIFIERS"
+              :key="modifier.value"
+              class="hotkey-modifier"
+              :class="{ active: pickerModifiers.includes(modifier.value) }"
+              :aria-pressed="pickerModifiers.includes(modifier.value)"
+              :disabled="pickerBusy"
+              @click="togglePickerModifier(modifier.value)"
+            >{{ modifier.label }}</button>
+          </div>
+          <label class="hotkey-picker-label" for="hotkey-key-select">{{ t('settings.hotkey.key') }}</label>
+          <select id="hotkey-key-select" v-model="pickerKey" class="hotkey-key-select" :disabled="pickerBusy">
+            <option v-if="!HOTKEY_KEYS.includes(pickerKey)" :value="pickerKey">{{ pickerKey }}</option>
+            <option v-for="key in HOTKEY_KEYS" :key="key" :value="key">{{ key }}</option>
+          </select>
+          <div class="hotkey-preview">{{ displayAccelerator(pickerAccelerator) }}</div>
+          <label v-if="pickerSupported" class="hotkey-takeover">
+            <input v-model="pickerTakeover" type="checkbox" :disabled="pickerBusy" aria-describedby="hotkey-takeover-warning" @change="hotkeyPickerError = false" />
+            <span>{{ t('settings.hotkey.takeover') }}</span>
+          </label>
+          <p v-if="pickerSupported" id="hotkey-takeover-warning" class="hotkey-takeover-warning">{{ t('settings.hotkey.takeoverWarning') }}</p>
+          <div v-if="pickerSavedStatus" class="hotkey-saved-status" role="status">{{ pickerSavedStatus }}</div>
+          <div v-if="hotkeyPickerError" class="hotkey-picker-error">{{ t('settings.hotkey.unavailable') }}</div>
+          <div class="hotkey-picker-actions">
+            <button class="profile-btn" :disabled="pickerBusy" @click="closeHotkeyPicker">{{ t('common.close') }}</button>
+            <button class="profile-btn primary" :disabled="!pickerComplete || pickerBusy" @click="applyHotkeyPicker">{{ pickerBusy ? t('settings.hotkey.applying') : t('common.confirm') }}</button>
+          </div>
+        </div>
+      </div>
 
       <!-- 离线模式 -->
       <section class="section">
@@ -687,9 +731,10 @@ const hotkeyRecording = ref(false)
 const hotkeyError = ref(false)
 const pendingHotkey = ref('')
 
-const MODIFIER_KEYS = ['Control', 'Alt', 'Shift', 'Meta']
+const MODIFIER_KEYS = ['Control', 'Alt', 'Shift', 'Meta', 'OS']
 const KEY_MAP: Record<string, string> = {
   ' ': 'Space', 'Spacebar': 'Space',
+  '+': 'Plus',
   'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right',
 }
 
@@ -698,12 +743,108 @@ function electronAccelerator(e: KeyboardEvent): string {
   if (e.ctrlKey)  parts.push('Ctrl')
   if (e.altKey)   parts.push('Alt')
   if (e.shiftKey) parts.push('Shift')
-  if (e.metaKey)  parts.push('Meta')
+  if (e.metaKey)  parts.push('Super')
   const key = e.key
   if (!MODIFIER_KEYS.includes(key)) {
     parts.push(KEY_MAP[key] ?? (key.length === 1 ? key.toUpperCase() : key))
   }
   return parts.join('+')
+}
+
+function displayAccelerator(accelerator: string): string {
+  return accelerator.replace(/\b(?:Super|Meta)\b/g, 'Win')
+}
+
+type HotkeyTarget = 'wake' | 'clipboard' | 'pinboard'
+const HOTKEY_MODIFIERS = [
+  { value: 'Ctrl', label: 'Ctrl' },
+  { value: 'Alt', label: 'Alt' },
+  { value: 'Shift', label: 'Shift' },
+  { value: 'Super', label: 'Win' },
+]
+const HOTKEY_KEYS = [
+  'Space', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), ...'0123456789'.split(''),
+  ...Array.from({ length: 24 }, (_, index) => `F${index + 1}`),
+  'Up', 'Down', 'Left', 'Right', 'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'Delete', 'Backspace', 'Tab', 'Enter', 'Escape', 'Plus',
+]
+const hotkeyPickerTarget = ref<HotkeyTarget | null>(null)
+const hotkeyPickerDialog = ref<HTMLElement | null>(null)
+const pickerModifiers = ref<string[]>([])
+const pickerKey = ref('Space')
+const hotkeyPickerError = ref(false)
+const pickerTakeover = ref(false)
+const pickerSupported = ref(false)
+const pickerBusy = ref(false)
+const pickerSavedStatus = ref('')
+const pickerAccelerator = computed(() => [...pickerModifiers.value, pickerKey.value].filter(Boolean).join('+'))
+const pickerComplete = computed(() => pickerModifiers.value.length > 0 || /^F\d{1,2}$/.test(pickerKey.value))
+
+function currentHotkey(target: HotkeyTarget): string {
+  if (target === 'wake') return settingsStore.hotkeyWake
+  if (target === 'clipboard') return settingsStore.hotkeyClipboard
+  return settingsStore.hotkeyPinboard
+}
+
+async function openHotkeyPicker(target: HotkeyTarget) {
+  const parts = currentHotkey(target).replace(/\bMeta\b/g, 'Super').split('+').filter(Boolean)
+  pickerModifiers.value = HOTKEY_MODIFIERS.map(item => item.value).filter(value => parts.includes(value))
+  const selectedKey = parts.find(part => !pickerModifiers.value.includes(part))
+  pickerKey.value = selectedKey || 'Space'
+  hotkeyPickerError.value = false
+  hotkeyPickerTarget.value = target
+  pickerTakeover.value = false
+  pickerSavedStatus.value = ''
+  pickerBusy.value = true
+  try {
+    const status = await window.api.hotkey.status()
+    pickerSupported.value = status.supported
+    pickerTakeover.value = status[target].takeover
+    pickerSavedStatus.value = t(`settings.hotkey.status_${status[target].mode}`)
+  } catch { hotkeyPickerError.value = true }
+  finally { pickerBusy.value = false }
+  await nextTick()
+  hotkeyPickerDialog.value?.focus()
+}
+
+function keepPickerFocus(event: KeyboardEvent) {
+  const controls = Array.from(hotkeyPickerDialog.value?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)') ?? [])
+  const current = controls.indexOf(document.activeElement as HTMLElement)
+  event.preventDefault()
+  if (controls.length) controls[(current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus()
+}
+
+function closeHotkeyPicker() {
+  if (pickerBusy.value) return
+  hotkeyPickerTarget.value = null
+  hotkeyPickerError.value = false
+}
+
+function togglePickerModifier(modifier: string) {
+  pickerModifiers.value = pickerModifiers.value.includes(modifier)
+    ? pickerModifiers.value.filter(value => value !== modifier)
+    : [...pickerModifiers.value, modifier]
+  hotkeyPickerError.value = false
+}
+
+async function applyHotkeyPicker() {
+  const target = hotkeyPickerTarget.value
+  if (!target || pickerBusy.value || !pickerComplete.value) return
+  const accelerator = pickerAccelerator.value
+  pickerBusy.value = true
+  hotkeyPickerError.value = false
+  try {
+    const ok = target === 'wake'
+      ? await settingsStore.setHotkeyWake(accelerator, pickerTakeover.value)
+      : target === 'clipboard'
+        ? await settingsStore.setHotkeyClipboard(accelerator, pickerTakeover.value)
+        : await settingsStore.setHotkeyPinboard(accelerator, pickerTakeover.value)
+    if (!ok) hotkeyPickerError.value = true
+    const status = await window.api.hotkey.status()
+    pickerSavedStatus.value = t(`settings.hotkey.status_${status[target].mode}`)
+    pickerBusy.value = false
+    if (ok && status[target].mode === 'native') closeHotkeyPicker()
+  } catch { hotkeyPickerError.value = true }
+  finally { pickerBusy.value = false }
 }
 
 function isComplete(e: KeyboardEvent): boolean {
@@ -743,7 +884,7 @@ async function clearHotkey() {
 }
 
 async function resetHotkey() {
-  await settingsStore.setHotkeyWake('Alt+Space')
+  await settingsStore.setHotkeyWake('Alt+Space', false)
 }
 
 // ── 剪贴板快捷键录制 ──
@@ -781,7 +922,7 @@ async function clearClipboardHotkey() {
 }
 
 async function resetClipboardHotkey() {
-  await settingsStore.setHotkeyClipboard('Alt+V')
+  await settingsStore.setHotkeyClipboard('Alt+V', false)
 }
 
 // ── 快捷面板快捷键录制 ──
@@ -1266,6 +1407,18 @@ function onColorChange(key: string, e: Event) {
   transition: border-color 0.15s;
   user-select: none;
 }
+.hotkey-picker-open {
+  height: 28px;
+  padding: 0 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hotkey-picker-open:hover { color: var(--text); border-color: var(--accent); }
 .hotkey-input:hover { border-color: var(--accent); }
 .hotkey-input.recording {
   border-color: var(--accent);
@@ -1298,6 +1451,94 @@ function onColorChange(key: string, e: Event) {
   padding: 0;
 }
 .hotkey-reset:hover { color: var(--text); border-color: var(--accent); }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.54);
+}
+.hotkey-picker {
+  width: min(390px, 100%);
+  padding: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+.hotkey-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.hotkey-picker-header h3 { margin: 0; color: var(--text); font-size: 16px; font-weight: 600; }
+.hotkey-picker-close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 22px;
+  cursor: pointer;
+}
+.hotkey-picker-close:hover { color: var(--text); }
+.hotkey-picker-label {
+  display: block;
+  margin: 12px 0 7px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.hotkey-modifiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.hotkey-modifier {
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.hotkey-modifier:hover { border-color: var(--accent); color: var(--text); }
+.hotkey-modifier.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface-3)); color: var(--accent-2); }
+.hotkey-key-select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--surface-3);
+  color: var(--text);
+}
+.hotkey-key-select:focus { border-color: var(--accent); }
+.hotkey-preview {
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-family: monospace;
+  text-align: center;
+}
+.hotkey-picker-error { margin-top: 9px; color: var(--danger); font-size: 12px; text-align: center; }
+.hotkey-takeover { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--text); font-size: 13px; cursor: pointer; }
+.hotkey-takeover input { width: 16px; height: 16px; flex: 0 0 16px; accent-color: var(--accent); }
+.hotkey-takeover-warning { margin: 8px 0; color: var(--text-2); font-size: 12px; line-height: 1.6; }
+.hotkey-saved-status { margin-top: 10px; color: var(--accent); font-size: 12px; line-height: 1.5; }
+.hotkey-picker-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.profile-btn.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+.profile-btn.primary:hover:not(:disabled) { border-color: var(--accent-2); color: #fff; }
+
+@media (max-width: 760px) {
+  .setting-row { align-items: flex-start; flex-direction: column; }
+  .hotkey-input-wrap { width: 100%; flex-wrap: wrap; }
+  .hotkey-input { flex: 1; }
+}
 
 .setting-info {
   flex: 1;

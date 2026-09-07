@@ -1,4 +1,4 @@
-import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, session, globalShortcut, webContents, clipboard } from 'electron'
+import { ipcMain, shell, app, nativeImage, dialog, BrowserWindow, net, session, webContents, clipboard } from 'electron'
 import { createHash, randomUUID } from 'crypto'
 import * as mm from 'music-metadata'
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, statSync, unlinkSync } from 'fs'
@@ -1304,28 +1304,6 @@ export function registerIpcHandlers(): void {
     setSetting('autoStartDisabled', enable ? 'false' : 'true')
     setSetting('autoStartInitialized', 'true')
     return true
-  })
-
-  // ── 唤醒快捷键 ──────────────────────────────────────────
-  ipcMain.handle('hotkey:get', () => getSetting('hotkeyWake') ?? 'Alt+Space')
-  ipcMain.handle('hotkey:set', (e, accelerator: string) => {
-    // 只注销当前唤醒快捷键，不影响剪贴板快捷键
-    const prev = getSetting('hotkeyWake') ?? 'Alt+Space'
-    try { globalShortcut.unregister(prev) } catch { /* */ }
-    if (!accelerator) {
-      setSetting('hotkeyWake', '')  // 明确保存空串（区别于从未设置的 null）
-      return true
-    }
-    // 用 e.sender 精确引用发起请求的主窗口，避免 getAllWindows()[0] 非确定性问题
-    const mainWin = BrowserWindow.fromWebContents(e.sender)
-    try {
-      const ok = globalShortcut.register(accelerator, () => {
-        if (!mainWin || mainWin.isDestroyed()) return
-        if (mainWin.isVisible() && mainWin.isFocused()) { mainWin.hide() } else { mainWin.show(); mainWin.focus() }
-      })
-      if (ok) setSetting('hotkeyWake', accelerator)
-      return ok
-    } catch { return false }
   })
 
   // ── 监听控制 ──────────────────────────────────────────

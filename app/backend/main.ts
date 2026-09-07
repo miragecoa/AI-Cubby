@@ -42,6 +42,8 @@ import { initHeartbeat, flushAndStop, incShortcutMain, incShortcutClip, incWakeC
 import { initAiManager, enableAi, disableAi, getAiStatus, isModelInstalled, semanticSearch, queueResourceContent, onStatusChange, onProgress, forceReindex, pauseIndex, resumeIndex, isIndexPaused } from './ai/ai-manager'
 import { refreshAccountStatus } from './account'
 import { processPendingSearchJudgments } from './search-learning'
+import { ShortcutManager, SHORTCUT_IDS, type ShortcutId } from './hotkeys/shortcut-manager'
+import { WindowsShortcutHook } from './hotkeys/windows-hook'
 
 let mainWindow: BrowserWindow | null = null
 let masonryWindow: BrowserWindow | null = null
@@ -59,9 +61,29 @@ let _lastClipImgHash = ''   // SHA256 of last seen image PNG buffer
 let _clipboardPollTimer: ReturnType<typeof setInterval> | null = null
 
 // ── 快捷键跟踪（避免 unregisterAll 误杀其他快捷键） ──────────────
-let _wakeAccelerator = ''
-let _clipboardAccelerator = ''
-let _pinboardAccelerator = ''
+const shortcutSettings: Record<ShortcutId, string> = { wake: 'hotkeyWake', clipboard: 'hotkeyClipboard', pinboard: 'hotkeyPinboard' }
+const shortcutHook = new WindowsShortcutHook(id => shortcuts.trigger(id))
+const shortcuts = new ShortcutManager(globalShortcut, shortcutHook, {
+  wake: () => {
+    if (!mainWindow) return
+    if (mainWindow.isVisible() && mainWindow.isFocused()) hideMainToDrawer()
+    else {
+      incShortcutMain()
+      incWakeCount()
+      showMainWindow('wake-shortcut')
+      mainWindow.webContents.send('window:wake')
+    }
+  },
+  clipboard: toggleClipboardWindow,
+  pinboard: () => {
+    if (!mainWindow) return
+    if (mainWindow.isVisible() && mainWindow.isFocused()) hideMainToDrawer()
+    else showMainWindow('pinboard')
+  },
+}, (id, state) => {
+  setSetting(shortcutSettings[id], state.accelerator)
+  setSetting(`${shortcutSettings[id]}Takeover`, String(state.takeover))
+})
 let dropImportItems: Array<{ type: string; title: string; file_path: string; meta?: string }> = []
 let masonryPaths: Array<{ path: string; title: string }> = []
 let tray: Tray | null = null
@@ -99,6 +121,7 @@ app.on('before-quit', (event) => {
   if (willQuit) return  // 已经在退出流程中（由下方 app.quit() 触发的第二次调用）
   event.preventDefault()
   willQuit = true
+  shortcuts.dispose()
   flushRunningSessions()
   // 退出前同步保存窗口位置/大小，防止防抖定时器来不及触发
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1602,32 +1625,26 @@ ipcRenderer.on('debug:log',(_,l)=>addLine(l));
     })
   }
 
-  registerWakeShortcut(getSetting('hotkeyWake') ?? 'Alt+Space')
-  registerClipboardShortcut(getSetting('hotkeyClipboard') ?? 'Alt+V')
-  registerPinboardShortcut(getSetting('hotkeyPinboard') ?? '')
+  const shortcutDefaults = { wake: 'Alt+Space', clipboard: 'Alt+V', pinboard: '' }
+  const shortcutStartup = SHORTCUT_IDS.map(id => shortcuts.restore(id,
+    getSetting(shortcutSettings[id]) ?? shortcutDefaults[id],
+    getSetting(`${shortcutSettings[id]}Takeover`) === 'true'))
   startClipboardPolling()
 
-  // 快捷面板快捷键 IPC
-  ipcMain.handle('pinboard:getHotkey', () => getSetting('hotkeyPinboard') ?? '')
-  ipcMain.handle('pinboard:setHotkey', (_e, accelerator: string) => {
-    registerPinboardShortcut(accelerator)
-    if (!accelerator || _pinboardAccelerator === accelerator) {
-      setSetting('hotkeyPinboard', accelerator)
-      return true
-    }
-    return false
+  ipcMain.handle('hotkey:get', () => normalizeAccelerator(getSetting('hotkeyWake') ?? 'Alt+Space'))
+  ipcMain.handle('hotkey:status', async () => {
+    for (const startup of shortcutStartup) await startup
+    return { supported: process.platform === 'win32', wake: shortcuts.status('wake'), clipboard: shortcuts.status('clipboard'), pinboard: shortcuts.status('pinboard') }
   })
+  ipcMain.handle('hotkey:set', (_e, accelerator: string, takeover?: boolean) => shortcuts.set('wake', accelerator, takeover))
 
-  // 剪贴板快捷键 IPC（在 main.ts 注册，可直接调用 registerClipboardShortcut）
-  ipcMain.handle('clipboard:getHotkey', () => getSetting('hotkeyClipboard') ?? 'Alt+V')
-  ipcMain.handle('clipboard:setHotkey', (_e, accelerator: string) => {
-    registerClipboardShortcut(accelerator)
-    if (!accelerator || _clipboardAccelerator === accelerator) {
-      setSetting('hotkeyClipboard', accelerator)
-      return true
-    }
-    return false
-  })
+  // 快捷面板快捷键 IPC
+  ipcMain.handle('pinboard:getHotkey', () => normalizeAccelerator(getSetting('hotkeyPinboard') ?? ''))
+  ipcMain.handle('pinboard:setHotkey', (_e, accelerator: string, takeover?: boolean) => shortcuts.set('pinboard', accelerator, takeover))
+
+  // 剪贴板快捷键 IPC
+  ipcMain.handle('clipboard:getHotkey', () => normalizeAccelerator(getSetting('hotkeyClipboard') ?? 'Alt+V'))
+  ipcMain.handle('clipboard:setHotkey', (_e, accelerator: string, takeover?: boolean) => shortcuts.set('clipboard', accelerator, takeover))
 
   ipcMain.handle('clipboard:saveImage', (_e, id: number) => {
     const item = clipboardGetItem(id)
@@ -1700,49 +1717,6 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-function registerWakeShortcut(accelerator: string): void {
-  if (_wakeAccelerator) { try { globalShortcut.unregister(_wakeAccelerator) } catch { /* */ } }
-  _wakeAccelerator = ''
-  if (!accelerator) return
-  try {
-    const ok = globalShortcut.register(accelerator, () => {
-      if (!mainWindow) return
-      if (mainWindow.isVisible() && mainWindow.isFocused()) {
-        hideMainToDrawer()
-      } else {
-        incShortcutMain()
-        incWakeCount()
-        showMainWindow('wake-shortcut')
-        mainWindow.webContents.send('window:wake')  // 通知渲染层聚焦搜索框
-      }
-    })
-    if (ok) _wakeAccelerator = accelerator
-  } catch { /* invalid accelerator */ }
-}
-
-function registerClipboardShortcut(accelerator: string): void {
-  if (_clipboardAccelerator) { try { globalShortcut.unregister(_clipboardAccelerator) } catch { /* */ } }
-  _clipboardAccelerator = ''
-  if (!accelerator) return
-  try {
-    const ok = globalShortcut.register(accelerator, toggleClipboardWindow)
-    if (ok) _clipboardAccelerator = accelerator
-  } catch { /* invalid accelerator */ }
-}
-
-function registerPinboardShortcut(accelerator: string): void {
-  if (_pinboardAccelerator) { try { globalShortcut.unregister(_pinboardAccelerator) } catch { /* */ } }
-  _pinboardAccelerator = ''
-  if (!accelerator) return
-  try {
-    const ok = globalShortcut.register(accelerator, () => {
-      if (!mainWindow) return
-      if (mainWindow.isVisible() && mainWindow.isFocused()) {
-        hideMainToDrawer()
-      } else {
-        showMainWindow('pinboard')
-      }
-    })
-    if (ok) _pinboardAccelerator = accelerator
-  } catch { /* invalid accelerator */ }
+function normalizeAccelerator(accelerator: string): string {
+  return accelerator.split('+').map(part => /^(meta|win|windows)$/i.test(part) ? 'Super' : part).join('+')
 }

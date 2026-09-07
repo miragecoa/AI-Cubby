@@ -648,21 +648,21 @@ export const useSettingsStore = defineStore('settings', () => {
     await window.api.settings.set('offlineMode', String(enabled))
   }
 
-  async function setHotkeyWake(accelerator: string): Promise<boolean> {
-    const ok = await window.api.hotkey.set(accelerator)
-    if (ok) hotkeyWake.value = accelerator
+  async function setHotkeyWake(accelerator: string, takeover?: boolean): Promise<boolean> {
+    const ok = await window.api.hotkey.set(accelerator, takeover)
+    if (ok) hotkeyWake.value = await window.api.hotkey.get()
     return ok
   }
 
-  async function setHotkeyClipboard(accelerator: string): Promise<boolean> {
-    const ok = await window.api.clipboardHotkey.set(accelerator)
-    if (ok) hotkeyClipboard.value = accelerator
+  async function setHotkeyClipboard(accelerator: string, takeover?: boolean): Promise<boolean> {
+    const ok = await window.api.clipboardHotkey.set(accelerator, takeover)
+    if (ok) hotkeyClipboard.value = await window.api.clipboardHotkey.get()
     return ok
   }
 
-  async function setHotkeyPinboard(accelerator: string): Promise<boolean> {
-    const ok = await window.api.pinboardHotkey.set(accelerator)
-    if (ok) hotkeyPinboard.value = accelerator
+  async function setHotkeyPinboard(accelerator: string, takeover?: boolean): Promise<boolean> {
+    const ok = await window.api.pinboardHotkey.set(accelerator, takeover)
+    if (ok) hotkeyPinboard.value = await window.api.pinboardHotkey.get()
     return ok
   }
 
@@ -931,7 +931,6 @@ export const useSettingsStore = defineStore('settings', () => {
     viewModeByType.value = {}
     cardZoomByType.value = {}
     themeVars.value = { ...DARK_THEME }
-    hotkeyWake.value = 'Alt+Space'
     showOnAutoStart.value = false
     showFileExt.value = false
     autoUpdate.value = true
@@ -943,7 +942,9 @@ export const useSettingsStore = defineStore('settings', () => {
     applyThemeToRoot(themeVars.value)
     document.documentElement.classList.remove('glass-mode')
     window.api.app.setZoom(zoom.value)
-    await window.api.hotkey.set('Alt+Space')
+    await setHotkeyWake('Alt+Space', false)
+    await setHotkeyClipboard('Alt+V', false)
+    await setHotkeyPinboard('', false)
     await Promise.all([
       window.api.settings.set('zoom', '1'),
       window.api.settings.set('pageSize', '50'),

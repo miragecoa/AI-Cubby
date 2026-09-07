@@ -16,6 +16,19 @@ interface ManagedNoteDocument {
 declare global {
   interface Window {
     api: {
+      hotkey: {
+        get: () => Promise<string>
+        set: (accelerator: string, takeover?: boolean) => Promise<boolean>
+        status: () => Promise<{ supported: boolean } & Record<'wake' | 'clipboard' | 'pinboard', { accelerator: string; takeover: boolean; mode: 'native' | 'hook' | 'inactive' }>>
+      }
+      clipboardHotkey: {
+        get: () => Promise<string>
+        set: (accelerator: string, takeover?: boolean) => Promise<boolean>
+      }
+      pinboardHotkey: {
+        get: () => Promise<string>
+        set: (accelerator: string, takeover?: boolean) => Promise<boolean>
+      }
       resources: {
         getAll: (type?: string) => Promise<import('../stores/resources').Resource[]>
         getById: (id: string) => Promise<import('../stores/resources').Resource | null>

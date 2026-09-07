@@ -243,19 +243,20 @@ contextBridge.exposeInMainWorld('api', {
   // 唤醒快捷键
   hotkey: {
     get: (): Promise<string> => ipcRenderer.invoke('hotkey:get'),
-    set: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('hotkey:set', accelerator),
+    set: (accelerator: string, takeover?: boolean): Promise<boolean> => ipcRenderer.invoke('hotkey:set', accelerator, takeover),
+    status: () => ipcRenderer.invoke('hotkey:status'),
   },
 
   // 剪贴板快捷键
   clipboardHotkey: {
     get: (): Promise<string> => ipcRenderer.invoke('clipboard:getHotkey'),
-    set: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('clipboard:setHotkey', accelerator),
+    set: (accelerator: string, takeover?: boolean): Promise<boolean> => ipcRenderer.invoke('clipboard:setHotkey', accelerator, takeover),
   },
 
   // 快捷面板快捷键
   pinboardHotkey: {
     get: (): Promise<string> => ipcRenderer.invoke('pinboard:getHotkey'),
-    set: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('pinboard:setHotkey', accelerator),
+    set: (accelerator: string, takeover?: boolean): Promise<boolean> => ipcRenderer.invoke('pinboard:setHotkey', accelerator, takeover),
   },
 
   // 窗口控制（自定义标题栏）

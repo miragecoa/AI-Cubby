@@ -7,6 +7,16 @@
         <span class="mw-count" v-if="items.length">· {{ items.length }} {{ t('masonry.countSuffix') }}</span>
       </div>
       <div class="mw-controls">
+        <select
+          v-model.number="previewSize"
+          class="mw-quality-select"
+          :title="t('masonry.previewQuality')"
+          :aria-label="t('masonry.previewQuality')"
+        >
+          <option v-for="option in PREVIEW_OPTIONS" :key="option.size" :value="option.size">
+            {{ t(option.labelKey) }} · {{ option.size }}px
+          </option>
+        </select>
         <span class="mw-zoom-label">{{ colWidth }}px</span>
         <input
           type="range" class="mw-slider"
@@ -29,7 +39,7 @@
       <div v-else-if="items.length === 0" class="mw-empty">{{ t('masonry.empty') }}</div>
       <div v-else class="mw-grid" :style="{ columnWidth: colWidth + 'px' }">
         <div
-          v-for="img in items" :key="img.path"
+          v-for="img in items" :key="`${img.path}:${previewEpoch}`"
           class="mw-item"
           :ref="el => observeItem(el, img.path)"
           @click="viewFull(img)"
@@ -114,6 +124,13 @@ const items = ref<ImageItem[]>([])
 const srcs = reactive<Record<string, string>>({})
 const loading = ref(true)
 const colWidth = ref(220)
+const PREVIEW_OPTIONS = [
+  { size: 256, labelKey: 'masonry.previewSmooth' },
+  { size: 512, labelKey: 'masonry.previewClear' },
+  { size: 1024, labelKey: 'masonry.previewHd' },
+] as const
+const previewSize = ref(512)
+const previewEpoch = ref(0)
 const fullImg = ref<string | null>(null)
 const fullImgZoom = ref(1.0)
 const fullImgOffset = ref({ x: 0, y: 0 })
@@ -214,7 +231,13 @@ function initIO() {
       if (!entry.isIntersecting) continue
       const path = (entry.target as HTMLElement).dataset.lazy
       if (path && !srcs[path]) {
-        window.api.files.readImage(path).then(src => { if (src) srcs[path] = src })
+        const requestSize = previewSize.value
+        const requestEpoch = previewEpoch.value
+        window.api.files.readImage(path, requestSize).then(src => {
+          if (src && requestSize === previewSize.value && requestEpoch === previewEpoch.value) {
+            srcs[path] = src
+          }
+        })
       }
       _io?.unobserve(entry.target)
     }
@@ -231,6 +254,19 @@ watch(colWidth, (val) => {
   _saveTimer = setTimeout(() => window.api.settings.set('masonryColWidth', String(val)), 500)
 })
 
+let _qualitySaveTimer: ReturnType<typeof setTimeout>
+let _mounted = false
+watch(previewSize, (val) => {
+  if (!_mounted) return
+  clearTimeout(_qualitySaveTimer)
+  _qualitySaveTimer = setTimeout(() => window.api.settings.set('masonryPreviewSize', String(val)), 300)
+
+  previewEpoch.value += 1
+  for (const path of Object.keys(srcs)) delete srcs[path]
+  _io?.disconnect()
+  initIO()
+})
+
 let unsubUpdate: (() => void) | null = null
 
 function onKeyDown(e: KeyboardEvent) {
@@ -241,9 +277,17 @@ onMounted(async () => {
   initIO()
   window.addEventListener('keydown', onKeyDown)
 
-  // 恢复上次列宽
-  const saved = await window.api.settings.get('masonryColWidth')
-  if (saved) colWidth.value = Math.max(100, Math.min(600, parseInt(saved, 10)))
+  // 恢复上次列宽与预览清晰度
+  const [savedWidth, savedPreviewSize] = await Promise.all([
+    window.api.settings.get('masonryColWidth'),
+    window.api.settings.get('masonryPreviewSize'),
+  ])
+  if (savedWidth) colWidth.value = Math.max(100, Math.min(600, parseInt(savedWidth, 10)))
+  const parsedPreviewSize = Number(savedPreviewSize)
+  if (PREVIEW_OPTIONS.some(option => option.size === parsedPreviewSize)) {
+    previewSize.value = parsedPreviewSize
+  }
+  _mounted = true
 
   const data = await window.api.masonry.getPaths()
   items.value = data
@@ -260,6 +304,8 @@ onUnmounted(() => {
   _io?.disconnect()
   _io = null
   unsubUpdate?.()
+  clearTimeout(_saveTimer)
+  clearTimeout(_qualitySaveTimer)
   window.removeEventListener('keydown', onKeyDown)
 })
 </script>
@@ -288,6 +334,7 @@ onUnmounted(() => {
 }
 .mw-drag {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -298,9 +345,33 @@ onUnmounted(() => {
 .mw-count { font-size: 12px; color: var(--text-2); }
 .mw-controls {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
   -webkit-app-region: no-drag;
+}
+.mw-quality-select {
+  height: 26px;
+  width: 132px;
+  padding: 0 24px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+}
+.mw-quality-select:hover,
+.mw-quality-select:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+}
+@media (max-width: 720px) {
+  .mw-title { display: none; }
+  .mw-quality-select { width: 118px; }
+  .mw-slider { width: 72px; }
 }
 .mw-zoom-label {
   font-size: 11px;
