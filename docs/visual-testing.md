@@ -112,6 +112,29 @@ the library and settings pages, and writes a JSON report to:
 C:\project\AI-Cubby\Resource-Manager\artifacts\visual-smoke\latest-report.json
 ```
 
+## Window Controls Regression
+
+```powershell
+cd C:\project\AI-Cubby\Resource-Manager\app
+npm run test:window-state
+npm run test:window-controls
+```
+
+The state tests cover 2560-to-1920 display changes, DPI work areas, disconnected
+displays, manual resizing, and minimized-window persistence. The Electron test
+clicks the real titlebar buttons, introduces a one-DIP position mismatch, simulates
+screen changes inside the test process, and restarts with `--hidden`. It uses a
+temporary profile and does not change the host display configuration or installed
+app data. Physical monitor/HDMI dummy switching still requires hardware validation.
+
+Reports and full-window captures are retained under `artifacts/window-controls/`.
+Captures use `webContents.capturePage()` through Playwright so non-default UI zoom
+does not crop the titlebar out of the image.
+
+To verify a packaged build, set `AI_CUBBY_TEST_EXECUTABLE` to the absolute path of
+its `core/AI-Cubby.exe`, then run `node scripts/test-window-controls.mjs` from
+`app`. The same checks and isolated profile apply to the packaged executable.
+
 ## Notes For Agents
 
 - Prefer `visual:open` for real UI investigation because it keeps the app alive.

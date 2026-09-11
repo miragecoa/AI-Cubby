@@ -44,8 +44,10 @@ import { refreshAccountStatus } from './account'
 import { processPendingSearchJudgments } from './search-learning'
 import { ShortcutManager, SHORTCUT_IDS, type ShortcutId } from './hotkeys/shortcut-manager'
 import { WindowsShortcutHook } from './hotkeys/windows-hook'
+import { MainWindowState, initialWindowBounds } from './main-window-state'
 
 let mainWindow: BrowserWindow | null = null
+let mainWindowState: MainWindowState | null = null
 let masonryWindow: BrowserWindow | null = null
 let drawerWindow: BrowserWindow | null = null
 let clipboardWindow: BrowserWindow | null = null
@@ -124,12 +126,7 @@ app.on('before-quit', (event) => {
   shortcuts.dispose()
   flushRunningSessions()
   // 退出前同步保存窗口位置/大小，防止防抖定时器来不及触发
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    setSetting('windowMaximized', mainWindow.isMaximized() ? 'true' : 'false')
-    if (!mainWindow.isMaximized() && !mainWindow.isMinimized()) {
-      setSetting('windowBounds', JSON.stringify(mainWindow.getBounds()))
-    }
-  }
+  mainWindowState?.save()
   // 显式释放所有全局快捷键，确保 Win+V 等在进程退出后还给系统
   if (app.isReady()) globalShortcut.unregisterAll()
   // 发送最后一次 heartbeat，完成后真正退出
@@ -754,11 +751,12 @@ function openIconPickerWindow(): void {
 
 function createWindow(): void {
   // 恢复上次窗口位置和大小
-  let savedBounds: { x?: number; y?: number; width: number; height: number } = { width: 1600, height: 1000 }
+  let savedBoundsValue: unknown
   try {
     const raw = getSetting('windowBounds')
-    if (raw) savedBounds = { ...savedBounds, ...JSON.parse(raw) }
+    if (raw) savedBoundsValue = JSON.parse(raw)
   } catch { /* use defaults */ }
+  const savedBounds = initialWindowBounds(savedBoundsValue, screen)
 
   const wasMaximized  = getSetting('windowMaximized') === 'true'
   const savedAppTitle = getSetting('appTitle') || 'AI小抽屉'
@@ -770,8 +768,8 @@ function createWindow(): void {
 
   mainWindow = new BrowserWindow({
     ...savedBounds,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: Math.min(900, savedBounds.width),
+    minHeight: Math.min(600, savedBounds.height),
     show: false,
     frame: false,
     transparent: true,       // Allows smart theme to show WE wallpaper through
@@ -784,6 +782,13 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false
     }
+  })
+
+  const window = mainWindow
+  mainWindowState = new MainWindowState(window, screen, ({ maximized, normalBounds }) => {
+    setSetting('windowMaximized', String(maximized))
+    setSetting('windowBounds', JSON.stringify(normalBounds))
+    if (!window.webContents.isDestroyed()) window.webContents.send('window:maximizeChange', maximized)
   })
 
   // Ctrl+Shift+I 打开 DevTools（仅开发模式）
@@ -801,6 +806,7 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     // 页面加载完成后重新应用保存的标题（防止 HTML <title> 覆盖）
     mainWindow?.setTitle(savedAppTitle)
+    if (wasMaximized) mainWindowState?.maximize()
     if (process.env['AI_CUBBY_VISUAL_NON_INTRUSIVE'] === '1') {
       mainWindow?.setSkipTaskbar(true)
       mainWindow?.showInactive()
@@ -809,8 +815,6 @@ function createWindow(): void {
       return
     }
     const showOnAutoStart = getSetting('showOnAutoStart') === 'true'
-    // 无论是否隐藏启动，都先恢复最大化状态，确保后续 show() 时窗口尺寸正确
-    if (wasMaximized) mainWindow?.maximize()
     if (!launchedHidden || showOnAutoStart) {
       console.log('[Boot] SHOWING window')
       showMainWindow('boot')
@@ -839,29 +843,6 @@ function createWindow(): void {
   mainWindow.on('focus', () => {
     drawerWindow?.hide()
   })
-
-  // 最大化/还原事件：转发给渲染进程 + 持久化状态
-  mainWindow.on('maximize', () => {
-    setSetting('windowMaximized', 'true')
-    mainWindow?.webContents.send('window:maximizeChange', true)
-  })
-  mainWindow.on('unmaximize', () => {
-    setSetting('windowMaximized', 'false')
-    mainWindow?.webContents.send('window:maximizeChange', false)
-  })
-
-  // 窗口移动/缩放后保存位置（防抖 500ms）
-  let saveBoundsTimer: ReturnType<typeof setTimeout>
-  function saveBounds() {
-    clearTimeout(saveBoundsTimer)
-    saveBoundsTimer = setTimeout(() => {
-      if (mainWindow && !mainWindow.isMaximized() && !mainWindow.isMinimized()) {
-        setSetting('windowBounds', JSON.stringify(mainWindow.getBounds()))
-      }
-    }, 500)
-  }
-  mainWindow.on('resize', saveBounds)
-  mainWindow.on('move', saveBounds)
 
   // 关闭按钮 → 隐藏到托盘，而非退出
   mainWindow.on('close', (event) => {
@@ -992,7 +973,7 @@ app.whenReady().then(() => {
   // 剪贴板图片目录（与 profile DB 同级，dataDir 在 initDatabase() 后已赋值）
   clipboardImgDir = join(dataDir, 'clipboard')
   mkdirSync(clipboardImgDir, { recursive: true })
-  registerIpcHandlers()
+  registerIpcHandlers(win => win === mainWindow ? mainWindowState : null)
   void refreshAccountStatus(true).then(status => {
     if (status.betaAccess) void processPendingSearchJudgments()
   }).catch(error => console.warn('[account] startup refresh failed:', error instanceof Error ? error.message : error))

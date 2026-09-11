@@ -7,6 +7,7 @@ import { execFile, exec } from 'child_process'
 import { join, dirname, extname, basename, normalize, relative } from 'path'
 import { domainToASCII } from 'url'
 import { isUNC } from '../utils/fs-safe'
+import type { MainWindowState } from '../main-window-state'
 import {
   getAllResources, getResourceById, updateResource, removeResource,
   addManualResource, getResourceByPath, recordProcessStart, restoreResource,
@@ -608,7 +609,7 @@ export function resolveDroppedPaths(paths: string[]): Array<{ type: string; titl
 let _onLanguageChange: (() => void) | null = null
 export function setOnLanguageChange(cb: () => void) { _onLanguageChange = cb }
 
-export function registerIpcHandlers(): void {
+export function registerIpcHandlers(getWindowState: (win: BrowserWindow) => MainWindowState | null = () => null): void {
 
   // 启动时快照入库资源总数，用于留存漏斗分析
   try {
@@ -1355,6 +1356,8 @@ public class WH { [DllImport("user32.dll")] public static extern bool SetWindowP
   ipcMain.handle('window:maximize', (e) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     if (!win) return false
+    const state = getWindowState(win)
+    if (state) return state.toggleMaximize()
     if (win.isMaximized()) { win.unmaximize() } else { win.maximize() }
     return win.isMaximized()
   })
@@ -1362,7 +1365,8 @@ public class WH { [DllImport("user32.dll")] public static extern bool SetWindowP
     BrowserWindow.fromWebContents(e.sender)?.close()
   })
   ipcMain.handle('window:isMaximized', (e) => {
-    return BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false
+    const win = BrowserWindow.fromWebContents(e.sender)
+    return win ? (getWindowState(win)?.isMaximized() ?? win.isMaximized()) : false
   })
   // 图钉锁定：防意外最小化，但不强制置顶（其他窗口可正常浮上来）
   const pinnedWindows = new WeakMap<BrowserWindow, true>()
