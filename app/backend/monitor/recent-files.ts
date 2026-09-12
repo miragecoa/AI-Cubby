@@ -352,7 +352,7 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
 
       // 已入库但标题是裸 exe 名 → 有 lnk 映射时升级为友好名称（chrome → Google Chrome）
       // 只升级自动生成的标题，用户手动改过的跳过
-      if (existingResource && lnkTitle && !lnkTitle.toLowerCase().endsWith('.exe')) {
+      if (existingResource && !existingResource.user_modified && lnkTitle && !lnkTitle.toLowerCase().endsWith('.exe')) {
         const exeBase = basename(lower, '.exe')
         const isAutoTitle = existingResource.title.toLowerCase() === exeBase || existingResource.title.toLowerCase().endsWith('.exe')
         if (isAutoTitle) {
@@ -549,7 +549,7 @@ async function supplementLnkNamesFromPS(startMenuFolders: string[]): Promise<voi
       if (resource.title.toLowerCase() === lnkTitle.toLowerCase()) continue
       const exeBase     = basename(lower, '.exe')
       const isAutoTitle = resource.title.toLowerCase() === exeBase || resource.title.toLowerCase().endsWith('.exe')
-      if (!isAutoTitle) continue
+      if (resource.user_modified || !isAutoTitle) continue
       updateResource(resource.id, { title: lnkTitle })
       console.log(`[Monitor] PS title upgraded: "${resource.title}" → "${lnkTitle}"`)
       upgraded++
@@ -641,7 +641,7 @@ export function startMonitor(onNewEntry: (entry: Resource) => void, onRunningCha
     // 只升级自动生成的标题（等于 exe 名），用户手动改过的跳过
     const exeBase = basename(lower, '.exe')
     const isAutoTitle = resource.title.toLowerCase() === exeBase || resource.title.toLowerCase().endsWith('.exe')
-    if (!isAutoTitle) continue
+    if (resource.user_modified || !isAutoTitle) continue
     updateResource(resource.id, { title: lnkTitle })
     upgraded++
   }

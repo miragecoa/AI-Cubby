@@ -1,24 +1,15 @@
 import { existsSync, statSync } from 'fs'
 import { basename, dirname, join, parse } from 'path'
-import { getAllResources, updateResource, type Resource } from '../db/queries'
+import { getAllResources, isLocalResource, updateResource } from '../db/queries'
 
 export interface ResourceHealthResult {
   checked: number
   missing: number
+  restored: number
   relocated: number
 }
 
 const yieldToMain = () => new Promise<void>((resolve) => setImmediate(resolve))
-
-function isLocalResource(resource: Resource): boolean {
-  if (resource.type === 'webpage' || /^https?:\/\//i.test(resource.file_path)) return false
-  try {
-    const meta = resource.meta ? JSON.parse(resource.meta) : null
-    return !meta?.steam_appid
-  } catch {
-    return true
-  }
-}
 
 function sameVolume(a: string, b: string): boolean {
   return parse(a).root.toLocaleLowerCase() === parse(b).root.toLocaleLowerCase()
@@ -32,16 +23,20 @@ function pathSizeMatches(filePath: string, expectedSize: number): boolean {
   }
 }
 
-/** Fast first pass: mark every unavailable local path before trying any relocation. */
+/** Fast first pass: refresh local path status before trying any relocation. */
 export async function checkResourceHealth(): Promise<ResourceHealthResult> {
   const resources = getAllResources()
   const local = resources.filter(isLocalResource)
-  const result: ResourceHealthResult = { checked: 0, missing: 0, relocated: 0 }
+  const result: ResourceHealthResult = { checked: 0, missing: 0, restored: 0, relocated: 0 }
 
   for (const resource of local) {
     result.checked++
-    if (existsSync(resource.file_path)) continue
-    if (!resource.missing_at) {
+    if (existsSync(resource.file_path)) {
+      if (resource.missing_at) {
+        updateResource(resource.id, { missing_at: 0, last_path_check_at: Date.now() })
+        result.restored++
+      }
+    } else if (!resource.missing_at) {
       updateResource(resource.id, { missing_at: Date.now(), last_path_check_at: Date.now() })
       result.missing++
     }
@@ -63,7 +58,7 @@ export async function relocateMissingResources(): Promise<ResourceHealthResult> 
   const knownDirs = [...new Set(local
     .filter((resource) => existsSync(resource.file_path))
     .map((resource) => dirname(resource.file_path)))]
-  const result: ResourceHealthResult = { checked: 0, missing: 0, relocated: 0 }
+  const result: ResourceHealthResult = { checked: 0, missing: 0, restored: 0, relocated: 0 }
 
   for (const resource of local) {
     if (existsSync(resource.file_path)) continue

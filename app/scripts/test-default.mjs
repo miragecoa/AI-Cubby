@@ -504,7 +504,7 @@ test('document category can create managed notes and profile documents', () => {
   assert.match(library, /\.note-editor-actions \.bm-cancel,[\s\S]*white-space: nowrap/)
   assert.match(library, /@open="openResource"/)
   assert.match(detailPanel, /open: \[resource: Resource\]/)
-  assert.match(detailPanel, /function openFile\(\) \{ emit\('open', props\.resource\) \}/)
+  assert.match(detailPanel, /async function openFile\(\) \{\s+if \(await saveEdits\(\)\) emit\('open', props\.resource\)/)
   assert.match(zh, /createCard: '新建'/)
   assert.match(zh, /saveAndClose: '保存并关闭'/)
   assert.match(en, /createCard: 'New'/)

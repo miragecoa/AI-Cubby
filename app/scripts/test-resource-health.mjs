@@ -3,9 +3,12 @@ import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:f
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import os from 'node:os'
+import assert from 'node:assert/strict'
+import { normalizeVisualWindow, captureVisualWindow } from './visual-harness.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const appDir = resolve(__dirname, '..')
+const executablePath = process.env.AI_CUBBY_TEST_EXECUTABLE
 const mainEntry = join(appDir, 'out', 'main', 'main.js')
 const profileRoot = join(os.tmpdir(), `ai-cubby-resource-health-${Date.now()}`)
 const originalDir = join(profileRoot, 'fixtures', 'original')
@@ -18,10 +21,18 @@ const reimportMovedPath = join(movedDir, 'auto-reimport.txt')
 const ignoredPath = join(originalDir, 'ignored-missing.txt')
 const allMissingPath = join(originalDir, 'all-missing.txt')
 const allIgnoredPath = join(originalDir, 'all-ignored-missing.txt')
+const manualOriginalPath = join(originalDir, 'old-tool.exe')
+const manualRepairedPath = join(movedDir, 'repaired-tool.exe')
+const manualInvalidPath = join(originalDir, 'still-missing-tool.exe')
+const batchDir = join(profileRoot, 'fixtures', 'batch')
+const batchPath = join(batchDir, 'repaired-tool.exe')
+const evidenceDir = resolve(appDir, '..', 'artifacts', 'resource-health', String(Date.now()))
 
 if (!existsSync(mainEntry)) throw new Error('Build output missing. Run npm run build first.')
 mkdirSync(originalDir, { recursive: true })
 mkdirSync(movedDir, { recursive: true })
+mkdirSync(batchDir, { recursive: true })
+mkdirSync(evidenceDir, { recursive: true })
 writeFileSync(originalPath, 'same content survives a move', 'utf8')
 writeFileSync(anchorPath, 'destination directory is already in the library', 'utf8')
 writeFileSync(reimportOriginalPath, 'recent import should restore this record', 'utf8')
@@ -32,7 +43,11 @@ writeFileSync(allIgnoredPath, 'one-click ignored cleanup fixture', 'utf8')
 let electronApp
 try {
   electronApp = await electron.launch({
-    args: [mainEntry],
+    executablePath,
+    args: [
+      ...(executablePath ? [] : [mainEntry]),
+      `--user-data-dir=${join(profileRoot, 'chromium')}`,
+    ],
     env: {
       ...process.env,
       AI_CUBBY_SMOKE: '1',
@@ -44,6 +59,7 @@ try {
   })
   const page = await electronApp.firstWindow({ timeout: 30_000 })
   await page.waitForLoadState('domcontentloaded')
+  await normalizeVisualWindow(electronApp, page)
   const consentStart = page.locator('.btn-start')
   if (await consentStart.count()) {
     const manualMode = page.locator('.mode').nth(1)
@@ -136,8 +152,75 @@ try {
     throw new Error(`one-click cleanup failed: ${JSON.stringify({ allCleanup, remaining: resourcesAfterAllCleanup.length, ignoredAfterAllCleanup, normalResourcesPreserved })}`)
   }
 
-  console.log(JSON.stringify({ relocation, deletion, ignoredCleanup, missingCleanup, allCleanup, missingLabel }, null, 2))
+  // Edit a missing app through the real detail form without reloading the library.
+  writeFileSync(manualOriginalPath, 'non-executable path repair fixture', 'utf8')
+  const manual = await page.evaluate(filePath => window.api.resources.add({
+    type: 'app', title: 'Path repair app', file_path: filePath,
+  }), manualOriginalPath)
+  const manualId = manual.resource.id
+  renameSync(manualOriginalPath, manualRepairedPath)
+  await page.evaluate(() => window.api.resources.checkHealth())
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  const manualCard = page.locator('.card').filter({ hasText: 'Path repair app' })
+  await manualCard.locator('.missing-badge').waitFor()
+  await captureVisualWindow(page, join(evidenceDir, 'before-path-repair.png'))
+  await manualCard.click({ button: 'right' })
+  await page.locator('.context-menu button').first().click()
+  await page.locator('.path-input').fill(manualRepairedPath)
+  await page.locator('.path-input').press('Enter')
+  await page.waitForFunction(async ({ id, filePath }) =>
+    (await window.api.resources.getById(id))?.file_path === filePath,
+  { id: manualId, filePath: manualRepairedPath })
+  await page.locator('.modal-header .close-btn').click()
+  await captureVisualWindow(page, join(evidenceDir, 'after-path-repair.png'))
+  const repaired = await page.evaluate(id => window.api.resources.getById(id), manualId)
+  assert.equal(repaired.missing_at, 0, 'editing to an existing path must clear the missing marker')
+  assert.ok(repaired.last_path_check_at > 0)
+  assert.equal(await manualCard.locator('.missing-badge').count(), 0, 'badge must disappear without a reload')
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await manualCard.waitFor()
+  assert.equal(await manualCard.locator('.missing-badge').count(), 0, 'cleared state must survive reload')
+
+  const invalidEdit = await page.evaluate(({ id, filePath }) => window.api.resources.update(id, { file_path: filePath }),
+    { id: manualId, filePath: manualInvalidPath })
+  assert.ok(invalidEdit.missing_at, 'editing to another missing path must keep the warning')
+  const metadataEdit = await page.evaluate(id => window.api.resources.update(id, { note: 'preserve status' }), manualId)
+  assert.equal(metadataEdit.missing_at, invalidEdit.missing_at, 'unrelated edits must not clear the warning')
+  const batchEdit = await page.evaluate(({ id, filePath }) => window.api.resources.batchUpdate([id], { file_path: filePath }),
+    { id: manualId, filePath: manualRepairedPath })
+  assert.equal(batchEdit[0].missing_at, 0, 'batch edits must recheck the new path')
+
+  renameSync(manualRepairedPath, batchPath)
+  await page.evaluate(() => window.api.resources.checkHealth())
+  const replaced = await page.evaluate(({ oldPrefix, newPrefix }) => window.api.resources.batchReplacePath(oldPrefix, newPrefix),
+    { oldPrefix: movedDir, newPrefix: batchDir })
+  assert.ok(replaced.count > 0)
+  assert.equal(replaced.resources.find(item => item.id === manualId).missing_at, 0, 'prefix replacement must clear repaired paths')
+  const unavailableAnchor = replaced.resources.find(item => item.id === created.anchor.resource.id)
+  assert.ok(unavailableAnchor.missing_at, 'prefix replacement must mark destinations that do not exist')
+
+  // Existing stale markers must also self-heal on the next health pass.
+  await page.evaluate(id => window.api.resources.update(id, { missing_at: Date.now(), last_path_check_at: 1 }), manualId)
+  const recovery = await page.evaluate(() => window.api.resources.checkHealth())
+  const recovered = await page.evaluate(id => window.api.resources.getById(id), manualId)
+  assert.equal(recovered.missing_at, 0, 'health check must clear stale missing markers')
+  assert.ok(recovered.last_path_check_at > 1)
+  assert.equal(recovery.restored, 1)
+
+  const virtualEdits = await page.evaluate(async () => {
+    const web = await window.api.resources.add({ type: 'webpage', title: 'virtual web', file_path: 'https://example.invalid/path-old' })
+    const steam = await window.api.resources.add({ type: 'game', title: 'virtual steam', file_path: 'steam://rungameid/123', meta: JSON.stringify({ steam_appid: '123' }) })
+    return [
+      await window.api.resources.update(web.resource.id, { file_path: 'https://example.invalid/path-new' }),
+      await window.api.resources.update(steam.resource.id, { file_path: 'steam://rungameid/456' }),
+    ]
+  })
+  assert.ok(virtualEdits.every(item => !item.missing_at), 'webpages and Steam resources must not be checked as local files')
+
+  console.log(JSON.stringify({ relocation, deletion, ignoredCleanup, missingCleanup, allCleanup, missingLabel,
+    manualPathRepair: true, invalidPathPreserved: true, batchPathRepair: true, staleMarkerRecovery: recovery,
+    virtualPathsPreserved: true, evidenceDir }, null, 2))
 } finally {
   if (electronApp) await electronApp.close()
-  rmSync(profileRoot, { recursive: true, force: true })
+  console.log(`Retained isolated test profile: ${profileRoot}`)
 }

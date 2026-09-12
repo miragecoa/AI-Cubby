@@ -684,7 +684,7 @@ export function registerIpcHandlers(getWindowState: (win: BrowserWindow) => Main
   ipcMain.handle('resources:checkHealth', async () => {
     const health = await checkResourceHealth()
     const relocation = await relocateMissingResources()
-    return { checked: health.checked, missing: health.missing, relocated: relocation.relocated }
+    return { checked: health.checked, missing: health.missing, restored: health.restored, relocated: relocation.relocated }
   })
 
   ipcMain.handle('resources:update', (_e, id: string, data: object) => {

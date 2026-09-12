@@ -37,6 +37,16 @@ export interface Tag {
   pinned?: number
 }
 
+export function isLocalResource(resource: Pick<Resource, 'type' | 'file_path' | 'meta'>): boolean {
+  if (resource.type === 'webpage' || /^https?:\/\//i.test(resource.file_path)) return false
+  try {
+    const meta = resource.meta ? JSON.parse(resource.meta) : null
+    return !meta?.steam_appid
+  } catch {
+    return true
+  }
+}
+
 // ── 资源查询 ────────────────────────────────────────────
 
 export function getAllResources(type?: string, hidePrivate = false): Resource[] {
@@ -68,10 +78,10 @@ export function upsertResource(
   const now = Date.now()
   const id = data.id ?? randomUUID()
 
-  // updateTitle=true：发现快捷方式名称时，更新已有条目的标题（如 "chrome" → "Google Chrome"）
+  // updateTitle=true：仅升级未被用户修改的标题（如 "chrome" → "Google Chrome"）
   // updateTitle=false（默认）：已存在则跳过，避免覆盖用户手动改过的名称
   const onConflict = updateTitle
-    ? 'DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at WHERE resources.title != excluded.title'
+    ? 'DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at WHERE resources.title != excluded.title AND COALESCE(resources.user_modified, 0) = 0'
     : 'DO NOTHING'
 
   const fileSize = getPathSize(data.file_path)
@@ -100,13 +110,26 @@ export function upsertResource(
 export function updateResource(id: string, data: Partial<Resource>): void {
   const db = getDb()
   const now = Date.now()
-  const fields = Object.keys(data)
+  const updates = { ...data }
+  if (typeof data.file_path === 'string') {
+    const conflict = db.prepare('SELECT id FROM resources WHERE LOWER(file_path) = LOWER(?) AND id != ?')
+      .get(data.file_path, id)
+    if (conflict) throw new Error('RESOURCE_PATH_CONFLICT')
+    const current = db.prepare('SELECT * FROM resources WHERE id = ?').get(id) as Resource | undefined
+    if (current) {
+      const resource = { ...current, ...data }
+      updates.missing_at = isLocalResource(resource) && !existsSync(resource.file_path)
+        ? current.missing_at || now : 0
+      updates.last_path_check_at = now
+    }
+  }
+  const fields = Object.keys(updates)
     .filter((k) => k !== 'id' && k !== 'added_at')
     .map((k) => `${k} = @${k}`)
     .join(', ')
 
   db.prepare(`UPDATE resources SET ${fields}, updated_at = ${now} WHERE id = @id`)
-    .run({ ...data, id })
+    .run({ ...updates, id })
 }
 
 /** 进程启动时调用：open_count +1，更新 last_run_at，返回更新后的资源（stat_paused=1 时跳过统计） */
@@ -345,7 +368,7 @@ export function getAllAppResources(): Resource[] {
 /**
  * 将已存在的 app 资源升级为 Steam 游戏（保留用户手动修改的数据）：
  * - type：仅当当前为 'app' 时升级为 'game'
- * - title：仅当当前标题与 exe 文件名相同时（未被用户修改）才替换
+ * - title：仅当用户未修改且当前标题与 exe 文件名相同时才替换
  * - cover_path：仅当当前为 null 时写入
  * 若无需任何变更则返回 null。
  */
@@ -363,9 +386,9 @@ export function upgradeSteamGame(
     updates.type = 'game' as any
   }
 
-  // 标题未被用户修改（与 exe 文件名相同）才替换
+  // 尊重显式修改标记，即使用户选用的名称恰好等于文件名。
   const exeBase = basename(filePath, extname(filePath)).toLowerCase()
-  if (existing.title.toLowerCase() === exeBase) {
+  if (!existing.user_modified && existing.title.toLowerCase() === exeBase) {
     updates.title = info.name
   }
 
@@ -403,12 +426,14 @@ export function batchRemoveResources(ids: string[]): number {
 /** 批量替换路径前缀（换盘符），返回受影响行数 */
 export function batchReplacePath(oldPrefix: string, newPrefix: string): number {
   const db = getDb()
-  const now = Date.now()
-  return db.prepare(`
-    UPDATE resources
-    SET file_path = ? || substr(file_path, ?), updated_at = ?
-    WHERE file_path LIKE ? || '%'
-  `).run(newPrefix, oldPrefix.length + 1, now, oldPrefix).changes
+  const resources = db.prepare("SELECT id, file_path FROM resources WHERE file_path LIKE ? || '%'")
+    .all(oldPrefix) as Array<Pick<Resource, 'id' | 'file_path'>>
+  return db.transaction(() => {
+    for (const resource of resources) {
+      updateResource(resource.id, { file_path: newPrefix + resource.file_path.slice(oldPrefix.length) })
+    }
+    return resources.length
+  })()
 }
 
 // ── 标签查询 ────────────────────────────────────────────

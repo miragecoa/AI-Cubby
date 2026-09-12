@@ -1671,8 +1671,8 @@ ipcRenderer.on('debug:log',(_,l)=>addLine(l));
   // it never performs a whole-disk scan or removes user records.
   setTimeout(() => {
     checkResourceHealth().then((result) => {
-      if (result.missing) mainWindow?.webContents.send('resources:reload')
-      if (result.missing) console.log('[ResourceHealth] marked missing:', result)
+      if (result.missing || result.restored) mainWindow?.webContents.send('resources:reload')
+      if (result.missing || result.restored) console.log('[ResourceHealth] status changed:', result)
       setTimeout(() => {
         relocateMissingResources().then((relocation) => {
           if (relocation.relocated) mainWindow?.webContents.send('resources:reload')

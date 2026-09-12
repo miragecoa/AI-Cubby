@@ -1,12 +1,12 @@
 <template>
   <Teleport to="body">
-    <div class="overlay" @mousedown.self="$emit('close')">
+    <div class="overlay" @mousedown.self="flushAndClose">
       <div class="modal">
 
         <!-- 标题栏 -->
         <div class="modal-header">
           <span class="modal-title">{{ t('detail.title') }}</span>
-          <button class="close-btn" @click="$emit('close')" v-html="closeSvg" />
+          <button class="close-btn" @click="flushAndClose" v-html="closeSvg" />
         </div>
 
         <!-- 未分类提示横幅 -->
@@ -198,6 +198,8 @@
                   v-model="editPath"
                   class="path-input"
                   spellcheck="false"
+                  :aria-invalid="Boolean(saveErrors.file_path)"
+                  :aria-describedby="saveErrors.file_path ? 'resource-save-errors' : undefined"
                   @blur="savePath"
                   @keydown.enter.prevent="savePath"
                 />
@@ -210,6 +212,9 @@
                   </button>
                   <button class="action-btn" @click="copyPath">
                     <span v-html="copySvg" />{{ pathCopied ? t('detail.pathCopied') : t('detail.copyPath') }}
+                  </button>
+                  <button v-if="saveErrors.file_path" class="action-btn restore-path-btn" @click="restorePath">
+                    <span v-html="refreshSvg" />{{ t('detail.restorePath') }}
                   </button>
                 </div>
               </div>
@@ -229,9 +234,12 @@
         </div>
 
         <!-- 底部操作栏 -->
+        <div v-if="Object.keys(saveErrors).length" id="resource-save-errors" class="save-errors" role="alert">
+          <p v-for="(error, field) in saveErrors" :key="field">{{ t(error) }}</p>
+        </div>
         <div class="modal-footer">
           <div class="footer-actions">
-            <button class="btn-cancel" :class="{ 'btn-dirty': isDirty }" @click="isDirty ? flushAndClose() : $emit('close')">{{ isDirty ? t('detail.saveAndClose') : t('detail.close') }}</button>
+            <button class="btn-cancel" :class="{ 'btn-dirty': isDirty }" @click="flushAndClose">{{ isDirty ? t('detail.saveAndClose') : t('detail.close') }}</button>
             <button class="btn-open" @click="openFile">
               <span v-html="openSvg" />{{ t('detail.open') }}
             </button>
@@ -287,7 +295,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, watchEffect, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, watchEffect, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Resource } from '../stores/resources'
 import { useResourceStore } from '../stores/resources'
@@ -340,6 +348,7 @@ const editPath    = ref(props.resource.file_path)
 const newTagInput = ref('')
 const hasEdited   = ref(false)
 const pathCopied  = ref(false)
+const saveErrors = ref<Record<string, string>>({})
 
 // ─── Stat editing ──────────────────────────────────────────────────
 const editingCount    = ref(false)
@@ -386,6 +395,8 @@ async function toggleStatPaused() {
 }
 
 watch(() => props.resource.id, () => {
+  clearPendingSaves()
+  saveErrors.value = {}
   editTitle.value   = props.resource.title
   editNote.value    = props.resource.note ?? ''
   hasEdited.value   = false
@@ -545,14 +556,32 @@ async function useLibraryCover(source: Resource) {
 
 // ─── Debounced save ────────────────────────────────────────────────
 const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+function clearPendingSaves() {
+  for (const field of Object.keys(saveTimers)) {
+    clearTimeout(saveTimers[field])
+    delete saveTimers[field]
+  }
+}
+onBeforeUnmount(clearPendingSaves)
+
 function debounceSave(field: string, value: any) {
   hasEdited.value = true  // keep isDirty until user explicitly closes
   if (saveTimers[field]) clearTimeout(saveTimers[field])
   saveTimers[field] = setTimeout(() => saveField(field, value), 650)
 }
 async function saveField(field: string, value: any) {
-  const updated = await window.api.resources.update(props.resource.id, { [field]: value } as any)
-  if (updated) store.addOrUpdate(updated as Resource)
+  try {
+    const updated = await window.api.resources.update(props.resource.id, { [field]: value } as any)
+    if (!updated) throw new Error('RESOURCE_NOT_FOUND')
+    store.addOrUpdate(updated as Resource)
+    delete saveErrors.value[field]
+    return true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    saveErrors.value[field] = field === 'file_path' && message.includes('RESOURCE_PATH_CONFLICT')
+      ? 'detail.pathConflict' : 'detail.saveFailed'
+    return false
+  }
 }
 
 // ─── Dirty state + flush close ─────────────────────────────────────
@@ -563,21 +592,23 @@ const isDirty = computed(() =>
   editPath.value  !== props.resource.file_path ||
   newTagInput.value.trim() !== ''
 )
-async function flushAndClose() {
+async function saveEdits() {
   if (newTagInput.value.trim()) {
     await addTag()
   }
-  for (const field of Object.keys(saveTimers)) {
-    clearTimeout(saveTimers[field])
-    delete saveTimers[field]
-  }
-  const promises: Promise<any>[] = []
+  clearPendingSaves()
+  const promises: Promise<boolean>[] = []
   if (editTitle.value !== props.resource.title)          promises.push(saveField('title',     editTitle.value))
   if (editNote.value  !== (props.resource.note ?? ''))   promises.push(saveField('note',      editNote.value))
-  if (editPath.value  !== props.resource.file_path)      promises.push(saveField('file_path', editPath.value))
-  await Promise.all(promises)
+  promises.push(savePath())
+  const results = await Promise.all(promises)
+  if (results.some(saved => !saved)) return false
   hasEdited.value = false
-  emit('close')
+  await nextTick()
+  return true
+}
+async function flushAndClose() {
+  if (await saveEdits()) emit('close')
 }
 
 // ─── Tags ──────────────────────────────────────────────────────────
@@ -602,12 +633,30 @@ async function removeTag(tagId: number) {
 }
 
 // ─── File actions ──────────────────────────────────────────────────
-function openFile() { emit('open', props.resource) }
-function showInFolder() { window.api.files.openInExplorer(props.resource.file_path) }
-function savePath() {
+async function openFile() {
+  if (await saveEdits()) emit('open', props.resource)
+}
+async function showInFolder() {
+  if (await saveEdits()) window.api.files.openInExplorer(props.resource.file_path)
+}
+async function savePath() {
   const val = editPath.value.trim()
-  if (!val || val === props.resource.file_path) return
-  saveField('file_path', val)
+  if (!val) {
+    saveErrors.value.file_path = 'detail.pathRequired'
+    return false
+  }
+  if (val === props.resource.file_path) {
+    editPath.value = val
+    delete saveErrors.value.file_path
+    return true
+  }
+  const saved = await saveField('file_path', val)
+  if (saved && editPath.value.trim() === val) editPath.value = val
+  return saved
+}
+function restorePath() {
+  editPath.value = props.resource.file_path
+  delete saveErrors.value.file_path
 }
 
 let pathCopiedTimer: ReturnType<typeof setTimeout> | null = null
@@ -1219,9 +1268,11 @@ async function refetchIcon() {
 }
 .path-input:hover { border-color: rgba(99,102,241,0.4); }
 .path-input:focus { border-color: var(--accent); color: var(--text); }
+.path-input[aria-invalid="true"] { border-color: var(--danger); }
 
 .path-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -1333,6 +1384,16 @@ async function refetchIcon() {
 }
 
 /* ── 底部操作栏 ──────────────────────────────────── */
+.save-errors {
+  flex-shrink: 0;
+  padding: 8px 18px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.save-errors p { margin: 0; }
+
 .modal-footer {
   display: flex;
   align-items: center;
