@@ -1,12 +1,13 @@
 {
   "name": "ai-cubby",
-  "version": "0.4.24",
+  "version": "0.4.25",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "test": "node scripts/test-default.mjs",
+    "test:import-filters": "node --experimental-strip-types --test tests/auto-import-filters.test.mjs",
     "test:window-state": "node --test tests/window-state.test.mjs",
     "test:window-controls": "npm run build && node scripts/test-window-controls.mjs",
     "test:hotkeys": "node --test tests/hotkeys.test.mjs",

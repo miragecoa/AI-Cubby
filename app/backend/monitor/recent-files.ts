@@ -10,6 +10,8 @@ import type { Resource } from '../db/queries'
 import { detectSteamGame } from './steam-detector'
 import { recordSearchResourceOpen } from '../search-learning'
 import type { SearchOpenSource } from '../search-learning-core'
+import { isAutoImportBlockedPath, isAutoImportBlockedFile } from '../disk-scan'
+import { hasAppIcon } from './app-icon'
 
 export interface RunningEvent {
   resourceId: string
@@ -102,23 +104,6 @@ const exeToLnkName = new Map<string, string>()
 const exeToLnkPath = new Map<string, string>()
 
 /**
- * 检查 exe 是否有自定义应用图标（排除 Windows 默认通用图标）。
- * Windows 默认 exe 图标的 32x32 PNG ≈ 389 bytes；
- * 有自定义图标的应用 PNG ≥ 567 bytes。阈值取 500 bytes。
- * 辅助/后台进程通常没有自定义图标，通过此检查可自动过滤掉。
- */
-const GENERIC_ICON_THRESHOLD = 500  // PNG bytes；低于此值视为默认通用图标
-async function hasAppIcon(exePath: string): Promise<boolean> {
-  try {
-    const icon = await app.getFileIcon(exePath, { size: 'large' })
-    if (icon.isEmpty()) return false
-    return icon.toPNG().length > GENERIC_ICON_THRESHOLD
-  } catch {
-    return false
-  }
-}
-
-/**
  * 从进程命令行参数中提取用户打开的文件路径列表。
  * 处理带引号路径、裸路径、file:// URL（Chrome 打开本地 HTML）。
  * 只返回扩展名在 EXT_MAP 中、且文件实际存在的路径。
@@ -157,6 +142,7 @@ function parseFileArgsFromCmdLine(cmdLine: string, exePath: string): string[] {
     seen.add(lower)
 
     if (BLOCKED_PROCESS_PATHS.some(p => lower.startsWith(p))) continue
+    if (isAutoImportBlockedPath(candidate)) continue
     if (isIgnored(candidate)) continue
     if (isBlockedDir(candidate)) continue
 
@@ -167,6 +153,7 @@ function parseFileArgsFromCmdLine(cmdLine: string, exePath: string): string[] {
 }
 
 function isBlockedProcess(exePath: string): boolean {
+  if (isAutoImportBlockedFile(exePath)) return true
   const lower = exePath.toLowerCase()
   if (BLOCKED_PROCESS_PATHS.some(p => lower.startsWith(p))) return true
   if (BLOCKED_PATH_SEGMENTS.some(s => lower.includes(s))) return true
@@ -784,7 +771,8 @@ export async function scanRecentFolder(): Promise<Resource[]> {
   for (const exePath of regPaths) {
     const lower = exePath.toLowerCase()
     if (lower === ownExe) continue
-    // 注册表启动项只过滤系统目录，不过滤路径段（\cef\ 等对启动项无意义）
+    // 启动项同样排除已知后台组件，但保留普通应用的自启动入口。
+    if (isAutoImportBlockedFile(exePath)) continue
     if (BLOCKED_PROCESS_PATHS.some(p => lower.startsWith(p))) continue
     if (isIgnored(exePath)) continue
     if (isBlockedDir(exePath)) continue
@@ -904,6 +892,7 @@ function processLnk(lnkPath: string): Resource | null {
   }
 
   // 路径过滤
+  if (isAutoImportBlockedFile(target)) return null
   if (BLOCKED_PATHS.some((p) => target.startsWith(p))) {
     console.log('[Monitor] Blocked path:', target)
     return null

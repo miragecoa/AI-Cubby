@@ -50,6 +50,45 @@ const SKIP_PATH_SEGS = [
 
 // ── EXE skip rules ──────────────────────────────────────────────────────────
 
+const AUTO_IMPORT_BLOCKED_EXE_NAMES = new Set([
+  'nvcontainer', 'nvoawrappercache', 'raylinkservice',
+  'mumunxservice', 'mumunxdevice', 'mumuvmmheadless',
+  'wsl', 'wslhost', 'wslrelay', 'mpcmdrun', 'defendersessionhelper',
+  'ace-tray', 'steamwebhelper', 'steamerrorreporter', 'steamerrorreporter64',
+  'gameoverlayui64', 'gameoverlayrenderer64',
+  'unitycrashhandler32', 'unitycrashhandler64', 'crashpad_handler', 'chrome_crashpad_handler',
+  'wechatappex', 'baidunetdiskhost', 'baidunetdiskunite', 'baidunetdiskrender', 'yundetectservice',
+  'sgbizlauncher', 'sogouexe', 'vctip', 'autoupdate', 'wacom_tabletuser', 'wacom_updateutil',
+  'git', 'git-remote-http', 'git-remote-https', 'git-credential-manager', 'curl', 'gh',
+  'java', 'javaw', 'pwsh', 'powershell', 'bash', 'sh', 'ssh',
+  'ffmpeg', 'ffprobe', 'yt-dlp', 'docker', 'choco', 'conda', 'uv', 'rg',
+  'cloudflared', 'verge-mihomo',
+])
+
+const AUTO_IMPORT_BLOCKED_TOOL_NAME_RE = /^(?:python(?:w|\d+(?:\.\d+)*w?)?|node(?:-\d+(?:\.\d+)*)?|pip(?:\d+(?:\.\d+)*)?|clang(?:\+\+|-\d+)?)$/
+
+// Shared discovery rules; ambiguous executable names stay scoped to their package.
+const AUTO_IMPORT_BLOCKED_DIR_RES = [
+  /(?:^|\/)\.local\/bin(?:\/|$)/,
+  /\/appdata\/local\/ms-playwright(?:-go)?(?:\/|$)/,
+  /\/appdata\/local\/openai\/codex\/(?:runtimes|bin)(?:\/|$)/,
+  /\/appdata\/local\/codexprocessgroup\/backend(?:\/|$)/,
+  /(?:^|\/)\.cache\/codex-runtimes(?:\/|$)/,
+  /(?:^|\/)\.vscode\/extensions\/ms-python\.vscode-python-envs-[^/]+\/python-env-tools(?:\/|$)/,
+  /\/appdata\/local\/quarkclouddrive\/user data\/updates(?:\/|$)/,
+  /\/appdata\/roaming\/larkshell\/update\/update_downloading(?:\/|$)/,
+]
+
+const AUTO_IMPORT_BLOCKED_EXE_PATH_RES = [
+  /\/nvidia corporation\/.*\/oawrapper\.exe$/,
+  /\/baidunetdisk\/(?:.*\/)?helputility\.exe$/,
+  /\/sogouinput\/(?:.*\/)?sgtool\.exe$/,
+  /\/jianyingpro\/apps\/[^/]+\/vedetector\.exe$/,
+  /\/pikpak\/resources\/bin\/sdk\/downloadserver\.exe$/,
+  /\/program files\/wsl\/msrdc\.exe$/,
+  /\/appdata\/local\/codexprocessgroup\/codexlauncher\.exe$/,
+]
+
 const SKIP_EXE_NAME_RES = [
   /^uninstall/i,
   /uninstall\b/i,
@@ -97,7 +136,23 @@ const SKIP_ASSET_PATH_SEGS = [
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+export function isAutoImportBlockedPath(filePath: string): boolean {
+  const lower = filePath.replace(/\\/g, '/').toLowerCase()
+  return AUTO_IMPORT_BLOCKED_DIR_RES.some(re => re.test(lower))
+}
+
+export function isAutoImportBlockedFile(filePath: string): boolean {
+  if (isAutoImportBlockedPath(filePath)) return true
+  const lower = filePath.replace(/\\/g, '/').toLowerCase()
+  if (!lower.endsWith('.exe')) return false
+  const name = basename(lower, '.exe')
+  return AUTO_IMPORT_BLOCKED_EXE_NAMES.has(name)
+    || AUTO_IMPORT_BLOCKED_TOOL_NAME_RE.test(name)
+    || AUTO_IMPORT_BLOCKED_EXE_PATH_RES.some(re => re.test(lower))
+}
+
 function shouldSkipDir(fullPath: string, name: string): boolean {
+  if (isAutoImportBlockedPath(fullPath)) return true
   if (name.startsWith('.')) return true
   if (name.startsWith('$')) return true   // $GetCurrent, $RECYCLE.BIN, $Windows.~BT …
   if (SKIP_DIR_NAMES.has(name.toLowerCase())) return true
@@ -106,6 +161,7 @@ function shouldSkipDir(fullPath: string, name: string): boolean {
 }
 
 function isValidExe(fullPath: string, name: string): boolean {
+  if (isAutoImportBlockedFile(fullPath)) return false
   if (SKIP_EXE_NAME_RES.some(re => re.test(name))) return false
   const lower = fullPath.toLowerCase()
   if (SKIP_EXE_PATH_SEGS.some(s => lower.includes(s))) return false
@@ -241,7 +297,7 @@ export async function diskScan(
   // For each root, determine scan depth.
   // Drive roots get depth 6; user-picked dirs get depth 10.
   for (const root of roots) {
-    if (!existsSync(root)) continue
+    if (isAutoImportBlockedPath(root) || !existsSync(root)) continue
     const isRoot = /^[A-Za-z]:\\$/.test(root)
     const maxDepth = isRoot ? 6 : 10
     await walk(root, typeSet, results, 0, maxDepth, signal, onProgress)
