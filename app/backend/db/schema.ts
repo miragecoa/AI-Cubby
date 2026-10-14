@@ -18,6 +18,8 @@ export const SCHEMA_SQL = `
     last_path_check_at INTEGER DEFAULT 0
   );
 
+  CREATE INDEX IF NOT EXISTS idx_resources_added_at ON resources(added_at DESC);
+
   CREATE TABLE IF NOT EXISTS tags (
     id    INTEGER PRIMARY KEY AUTOINCREMENT,
     name  TEXT NOT NULL UNIQUE

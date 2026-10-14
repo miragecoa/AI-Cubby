@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'fs'
 import { basename, dirname, join, parse } from 'path'
-import { getAllResources, isLocalResource, updateResource } from '../db/queries'
+import { getResourceHealthCandidates, isLocalResource, updateResource } from '../db/queries'
 
 export interface ResourceHealthResult {
   checked: number
@@ -25,7 +25,7 @@ function pathSizeMatches(filePath: string, expectedSize: number): boolean {
 
 /** Fast first pass: refresh local path status before trying any relocation. */
 export async function checkResourceHealth(): Promise<ResourceHealthResult> {
-  const resources = getAllResources()
+  const resources = getResourceHealthCandidates()
   const local = resources.filter(isLocalResource)
   const result: ResourceHealthResult = { checked: 0, missing: 0, restored: 0, relocated: 0 }
 
@@ -53,7 +53,7 @@ export async function checkResourceHealth(): Promise<ResourceHealthResult> {
  * visible missing-file markers.
  */
 export async function relocateMissingResources(): Promise<ResourceHealthResult> {
-  const resources = getAllResources()
+  const resources = getResourceHealthCandidates()
   const local = resources.filter(isLocalResource)
   const knownDirs = [...new Set(local
     .filter((resource) => existsSync(resource.file_path))

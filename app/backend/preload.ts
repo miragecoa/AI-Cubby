@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('api', {
   // 资源 CRUD
   resources: {
     getAll: (type?: string) => ipcRenderer.invoke('resources:getAll', type),
+    getPage: (cursor?: { addedAt: number; rowId: number }) => ipcRenderer.invoke('resources:getPage', cursor),
     getById: (id: string) => ipcRenderer.invoke('resources:getById', id),
     update: (id: string, data: object) => ipcRenderer.invoke('resources:update', id, data),
     remove: (id: string) => ipcRenderer.invoke('resources:remove', id),

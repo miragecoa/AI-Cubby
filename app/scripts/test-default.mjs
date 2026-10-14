@@ -27,6 +27,12 @@ test('package exposes default, build, and visual smoke scripts', () => {
   assert.ok(pkg.scripts['visual:open']?.includes('scripts/visual-open.mjs'))
 })
 
+test('smoke runs do not change installed autostart or Start Menu shortcuts', () => {
+  const main = read('backend/main.ts')
+  assert.match(main, /if \(!app\.isPackaged && !isSmokeTest\) \{[\s\S]*?setLoginItemSettings[\s\S]*?\} else if \(!isSmokeTest\) \{/)
+  assert.match(main, /if \(app\.isPackaged && !isSmokeTest\) \{[\s\S]*?shell\.writeShortcutLink/)
+})
+
 test('clipboard history scrollbar has a usable mouse target', () => {
   const clipboard = read('frontend/public/clipboard.html')
   assert.match(clipboard, /\.list \{[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/)
@@ -530,7 +536,8 @@ test('search includes managed note text content as low priority matches', () => 
   assert.match(queries, /rows\.push\(row\)/)
   assert.match(store, /contentSearchResults = ref<Resource\[\]>\(\[\]\)/)
   assert.match(store, /setContentSearchResults\(query: string, type: string, resources: Resource\[\]\)/)
-  assert.match(store, /relevanceMap\.set\(resource\.id, 1000\)/)
+  assert.match(store, /filterResources/)
+  assert.match(read('frontend/src/utils/resource-filter.ts'), /scores\.set\(resource\.id, 1000\)/)
   assert.match(library, /window\.api\.search\.query\(query, type\)/)
   assert.match(library, /store\.setContentSearchResults\(query, type \?\? '', results\)/)
   assert.match(targetSmoke, /searchInput\.fill\('huolongguo'\)/)
@@ -629,7 +636,8 @@ test('adaptive search memory separates direct feedback from cloud-reviewed exter
   assert.match(learning, /if \(source === 'app'\)/)
   assert.match(ipc, /search:learned/)
   assert.match(monitor, /recordSearchResourceOpen\(fileResource\.id, 'external'\)/)
-  assert.match(resources, /learnedRank = 6000/)
+  assert.match(resources, /filterResources/)
+  assert.match(read('frontend/src/utils/resource-filter.ts'), /rank = 6000/)
   assert.match(library, /window\.api\.search\.learned\(query, type\)/)
   assert.match(settings, /settings\.ai\.clearSearchLearning/)
   assert.doesNotMatch(learning, /INSERT INTO resource_tags/)

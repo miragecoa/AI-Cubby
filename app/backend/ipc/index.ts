@@ -9,7 +9,7 @@ import { domainToASCII } from 'url'
 import { isUNC } from '../utils/fs-safe'
 import type { MainWindowState } from '../main-window-state'
 import {
-  getAllResources, getResourceById, updateResource, removeResource,
+  getAllResources, getResourcePage, getResourceById, updateResource, removeResource,
   addManualResource, getResourceByPath, recordProcessStart, restoreResource,
   getAllTags, getTagsForType, getAllTagsForManage, updateTagName, setTagPinned, createTag, removeTag, touchTag, addTagToResource, removeTagFromResource,
   searchResources, getSetting, setSetting, setShowDirTags, reFetchDirTags,
@@ -668,6 +668,9 @@ export function registerIpcHandlers(getWindowState: (win: BrowserWindow) => Main
   ipcMain.handle('resources:getAll', (_e, type?: string) => {
     const hidePrivate = getSetting('privacyMode') === 'true'
     return getAllResources(type, hidePrivate)
+  })
+  ipcMain.handle('resources:getPage', (_e, cursor?: { addedAt: number; rowId: number }) => {
+    return getResourcePage(cursor, getSetting('privacyMode') === 'true')
   })
 
   ipcMain.handle('resources:setPrivate', (_e, id: string, isPrivate: boolean) => {

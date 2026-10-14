@@ -173,7 +173,7 @@ watch(resources, (rs) => { for (const r of rs) loadThumb(r) }, { immediate: true
 
 // 搜索过滤
 const filteredResources = computed(() => {
-  const q = store.searchQuery?.toLowerCase().trim()
+  const q = store.filteredQuery?.toLowerCase().trim()
   if (!q) return resources.value
   return resources.value.filter(r => r.title?.toLowerCase().includes(q) || r.file_path?.toLowerCase().includes(q))
 })
@@ -187,7 +187,7 @@ const boardItems = computed<BoardItem[]>(() => {
     else topItems.push({ id: r.id, isGroup: false, order: (r as any).pin_order ?? 0, resource: r, children: [] })
   }
   // 搜索时隐藏空文件夹
-  const q = store.searchQuery?.toLowerCase().trim()
+  const q = store.filteredQuery?.toLowerCase().trim()
   const items = q ? [...groupMap.values().filter(g => g.children.length > 0), ...topItems] : [...groupMap.values(), ...topItems]
   return items.sort((a, b) => a.order - b.order)
 })

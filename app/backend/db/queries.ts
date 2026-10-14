@@ -58,6 +58,35 @@ export function getAllResources(type?: string, hidePrivate = false): Resource[] 
   return (rows as Resource[]).map(attachTags)
 }
 
+export interface ResourcePageCursor { addedAt: number; rowId: number }
+
+export function getResourceHealthCandidates(): Array<Pick<Resource, 'id' | 'type' | 'file_path' | 'meta' | 'file_size' | 'missing_at'>> {
+  return getDb().prepare('SELECT id, type, file_path, meta, file_size, missing_at FROM resources').all() as
+    Array<Pick<Resource, 'id' | 'type' | 'file_path' | 'meta' | 'file_size' | 'missing_at'>>
+}
+
+export function getResourcePage(cursor?: ResourcePageCursor, hidePrivate = false): {
+  resources: Resource[]; nextCursor: ResourcePageCursor | null
+} {
+  if (cursor !== undefined && (!cursor || !Number.isSafeInteger(cursor.addedAt)
+    || !Number.isSafeInteger(cursor.rowId) || cursor.rowId <= 0)) throw new Error('Invalid resource page cursor')
+  const conditions = ['1=1']
+  const params: number[] = []
+  if (hidePrivate) conditions.push('(is_private IS NULL OR is_private = 0)')
+  if (cursor) {
+    conditions.push('(added_at <= ? AND (added_at < ? OR rowid > ?))')
+    params.push(cursor.addedAt, cursor.addedAt, cursor.rowId)
+  }
+  const rows = getDb().prepare(`SELECT *, rowid AS __rowid FROM resources
+    WHERE ${conditions.join(' AND ')} ORDER BY added_at DESC, rowid ASC LIMIT 200
+  `).all(...params) as Array<Resource & { __rowid: number }>
+  const last = rows.at(-1)
+  return {
+    resources: rows.map(({ __rowid, ...resource }) => attachTags(resource)),
+    nextCursor: rows.length === 200 && last ? { addedAt: last.added_at, rowId: last.__rowid } : null,
+  }
+}
+
 export function getResourceById(id: string): Resource | null {
   const db = getDb()
   const row = db.prepare('SELECT * FROM resources WHERE id = ?').get(id) as Resource | undefined

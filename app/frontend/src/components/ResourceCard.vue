@@ -869,7 +869,8 @@ function openInExplorer() {
   height: calc(clamp(13px, var(--zoom, 0.75) * 48px, 44px));
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(8px);
+  /* Hidden play buttons must not allocate a backdrop layer for every card. */
+  backdrop-filter: none;
   border: 1.5px solid rgba(255, 255, 255, 0.42);
   display: flex;
   align-items: center;
@@ -878,6 +879,7 @@ function openInExplorer() {
 }
 
 .cover:hover .action-btn {
+  backdrop-filter: blur(8px);
   transform: scale(1.06);
 }
 

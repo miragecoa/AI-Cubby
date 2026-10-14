@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { match as pinyinMatch } from 'pinyin-pro'
+import { ref, computed, shallowRef, watch, onScopeDispose, toRaw } from 'vue'
+import { filterResources } from '../utils/resource-filter'
+import { runInSlices } from '../utils/work-slices'
 import { useSettingsStore } from './settings'
 
 export type ResourceType = 'image' | 'game' | 'app' | 'video' | 'comic' | 'music' | 'novel' | 'folder' | 'document' | 'webpage' | 'other'
@@ -63,206 +64,116 @@ export const useResourceStore = defineStore('resources', () => {
         clockTimer = null
       }
     }
+    refreshFiltered()
   }
 
-  const filtered = computed(() => {
-    let list = items.value
+  const filtered = shallowRef<Resource[]>([])
+  const filtering = ref(false)
+  const filteredQuery = ref('')
+  const filteredTagCounts = shallowRef(new Map<number, number>())
+  const filteredUntaggedCount = ref(0)
+  const searchTags = shallowRef<Array<{ id: number; name: string }>>([])
+  const resourceById = shallowRef(new Map<string, Resource>())
+  const filterRevision = ref(0)
+  const settingsStore = useSettingsStore()
 
-    if (activeType.value !== 'all') {
-      list = list.filter((r) => r.type === activeType.value)
+  function refreshFiltered() {
+    filterRevision.value++
+  }
+
+  watch([
+    items, filterRevision, activeType, searchQuery,
+    () => activeTags.value.slice(), () => excludedTags.value.slice(),
+    contentSearchQuery, contentSearchType, contentSearchResults,
+    learnedSearchQuery, learnedSearchType, learnedSearchResults,
+    () => settingsStore.resourceSort, () => settingsStore.cardDisplay.pinRunning,
+  ], (_, previous, onCleanup) => {
+    let cancelled = false
+    onCleanup(() => { cancelled = true; clearTimeout(timer) })
+    const query = searchQuery.value
+    const type = activeType.value
+    const queryChanged = !previous || previous[2] !== type || previous[3] !== query
+    filtering.value = true
+    // A new snapshot must not reveal the previously mounted full page at once.
+    if (queryChanged || !previous || previous[0] !== items.value) {
+      filtered.value = []
+      filteredTagCounts.value = new Map()
+      filteredUntaggedCount.value = 0
     }
-
-    // 搜索过滤 + 相关度评分
-    const relevanceMap = new Map<string, number>()
-    if (searchQuery.value.trim()) {
-      const q = searchQuery.value.toLowerCase()
-      const matched: Resource[] = []
-      for (const r of list) {
-        let score = -1
-        const t = r.title.toLowerCase()
-
-        // ── 1. 标题匹配评分 ──
-        if (t === q) {
-          score = Math.max(score, 5000) // 完全匹配
-        } else if (t.startsWith(q)) {
-          score = Math.max(score, 4000) // 前缀匹配
-        } else {
-          const idx = t.indexOf(q)
-          if (idx >= 0) {
-            score = Math.max(score, 3000 - Math.min(idx, 999)) // 包含匹配
-          } else {
-            const pm = pinyinMatch(r.title, q)
-            if (pm !== null) {
-              const isChinese = pm.some(i => /[\u4e00-\u9fff]/.test(r.title[i]))
-              if (isChinese) {
-                score = Math.max(score, 2000 - Math.min(pm[0] ?? 0, 999)) // 拼音首字母/全拼匹配
-              } else {
-                score = Math.max(score, 500) // 散列字母模糊匹配
-              }
-            } else {
-              // token 回退：CJK bigram + Latin 单词（≥3字母），按在查询中的出现顺序排列
-              // 命中越靠前的 token 分越高
-              // "我的discord" → ["我的", "discord"]，能命中 Discord.exe
-              const tokens: string[] = []
-              let i = 0
-              while (i < q.length) {
-                // CJK 连续段 → 生成 bigrams
-                const cjkMatch = q.slice(i).match(/^[\u4e00-\u9fff\u3400-\u4dbf]+/)
-                if (cjkMatch) {
-                  const run = cjkMatch[0]
-                  for (let j = 0; j <= run.length - 2; j++) tokens.push(run.slice(j, j + 2))
-                  i += run.length
-                  continue
-                }
-                // Latin 单词 ≥3 字母
-                const latinMatch = q.slice(i).match(/^[a-z]{3,}/i)
-                if (latinMatch) {
-                  tokens.push(latinMatch[0])
-                  i += latinMatch[0].length
-                  continue
-                }
-                i++
-              }
-              if (tokens.length > 0) {
-                const firstMatchIdx = tokens.findIndex(tk => t.includes(tk))
-                if (firstMatchIdx >= 0) {
-                  const posScore = 900 - Math.round((firstMatchIdx / tokens.length) * 100)
-                  score = Math.max(score, posScore)
-                }
-              }
-            }
-          }
-        }
-
-        // ── 2. 标签匹配评分（显著提升优先级） ──
-        if (r.tags && r.tags.length > 0) {
-          for (const tag of r.tags) {
-            const tn = tag.name.toLowerCase()
-            if (tn === q) {
-              score = Math.max(score, 4500) // 标签完全匹配：高于标题前缀
-            } else if (tn.startsWith(q)) {
-              score = Math.max(score, 3500) // 标签前缀匹配：高于拼音，低于标题前缀
-            } else {
-              const tidx = tn.indexOf(q)
-              if (tidx >= 0) {
-                score = Math.max(score, 2500 - Math.min(tidx, 499)) // 标签包含匹配
-              } else {
-                const tpm = pinyinMatch(tag.name, q)
-                if (tpm !== null) {
-                  score = Math.max(score, 1500 - Math.min(tpm[0] ?? 0, 499)) // 标签拼音匹配
-                }
-              }
-            }
-          }
-        }
-
-        if (score >= 0) {
-          matched.push(r)
-          relevanceMap.set(r.id, score)
-        }
-      }
-
-      const currentContentType = activeType.value === 'all' ? '' : activeType.value
-      if (contentSearchQuery.value === searchQuery.value.trim() && contentSearchType.value === currentContentType && contentSearchResults.value.length > 0) {
-        const matchedIds = new Set(matched.map(r => r.id))
-        for (const resource of contentSearchResults.value) {
-          if (activeType.value !== 'all' && resource.type !== activeType.value) continue
-          if (matchedIds.has(resource.id)) continue
-          matched.push(resource)
-          matchedIds.add(resource.id)
-          relevanceMap.set(resource.id, 1000)
-        }
-      }
-
-      if (learnedSearchQuery.value === searchQuery.value.trim() && learnedSearchType.value === currentContentType) {
-        const byId = new Map(list.map(resource => [resource.id, resource]))
-        const matchedIds = new Set(matched.map(resource => resource.id))
-        for (const learned of learnedSearchResults.value) {
-          const resource = byId.get(learned.resourceId)
-          if (!resource) continue
-          if (!matchedIds.has(resource.id)) {
-            matched.push(resource)
-            matchedIds.add(resource.id)
-          }
-          const learnedRank = 6000 + Math.min(4, Math.max(0, learned.score)) * 100
-          relevanceMap.set(resource.id, Math.max(relevanceMap.get(resource.id) ?? -1, learnedRank))
-        }
-      }
-
-      list = matched
+    const options = {
+      type, query,
+      activeTags: activeTags.value.slice(), excludedTags: excludedTags.value.slice(),
+      contentQuery: contentSearchQuery.value, contentType: contentSearchType.value,
+      contentResults: contentSearchResults.value,
+      learnedQuery: learnedSearchQuery.value, learnedType: learnedSearchType.value,
+      learnedResults: learnedSearchResults.value,
+      sortField: settingsStore.resourceSort,
+      pinRunning: settingsStore.cardDisplay.pinRunning !== false,
+      runningIds: new Set(runningMap.value.keys()),
     }
-
-    if (activeTags.value.length > 0 || excludedTags.value.length > 0) {
-      const hasUnclassified = activeTags.value.includes(0)
-      const realTagIds = activeTags.value.filter(id => id !== 0)
-      const excludeUnclassified = excludedTags.value.includes(0)
-      const realExcludeIds = excludedTags.value.filter(id => id !== 0)
-      list = list.filter((r) => {
-        // 排除逻辑：含有任一排除标签的资源不显示
-        if (excludeUnclassified && (!r.tags || r.tags.length === 0)) return false
-        if (realExcludeIds.length > 0 && r.tags?.some(t => realExcludeIds.includes(t.id))) return false
-        // 如果没有正选标签，通过排除后的都显示
-        if (activeTags.value.length === 0) return true
-        // 正选逻辑
-        if (hasUnclassified && (!r.tags || r.tags.length === 0)) return true
-        if (realTagIds.length > 0) {
-          return realTagIds.every((tagId) => r.tags?.some((t) => t.id === tagId))
-        }
-        return false
-      })
-    }
-
-    // 排序：pinned/running 始终置顶，搜索时同组内按相关度排序，否则按用户设置排序
-    const settingsStore = useSettingsStore()
-    const sortField = settingsStore.resourceSort
-    const hasSearch = relevanceMap.size > 0
-
-    const SORT_FN: Record<string, (a: Resource, b: Resource) => number> = {
-      lastUsed:      (a, b) => (b.last_run_at ?? 0) - (a.last_run_at ?? 0),
-      recentlyAdded: (a, b) => b.added_at - a.added_at,
-      name:          (a, b) => a.title.localeCompare(b.title, 'zh-CN'),
-      openCount:     (a, b) => b.open_count - a.open_count,
-      totalTime:     (a, b) => b.total_run_time - a.total_run_time,
-      modifiedAt:    (a, b) => b.updated_at - a.updated_at,
-      fileSize:      (a, b) => (b.file_size ?? 0) - (a.file_size ?? 0),
-    }
-    const userSort = SORT_FN[sortField] ?? SORT_FN.lastUsed
-
-    return list.slice().sort((a, b) => {
-      if (hasSearch) {
-        // 搜索时：仅 pinned 置顶，不提升运行中，按相关度排序
-        const aPinned = a.pinned ? 1 : 0
-        const bPinned = b.pinned ? 1 : 0
-        if (aPinned !== bPinned) return bPinned - aPinned
-        return (relevanceMap.get(b.id) ?? 0) - (relevanceMap.get(a.id) ?? 0)
+    const timer = setTimeout(async () => {
+      const result = await runInSlices(filterResources(items.value, options), () => cancelled)
+      if (!cancelled && result) {
+        filteredQuery.value = query
+        filtered.value = result.items
+        filteredTagCounts.value = result.tagCounts
+        filteredUntaggedCount.value = result.untaggedCount
+        searchTags.value = result.searchTags
+        resourceById.value = result.byId
+        filtering.value = false
       }
-      const boostRunning = settingsStore.cardDisplay.pinRunning !== false
-      const aScore = (a.pinned ? 2 : 0) + (boostRunning && runningMap.value.has(a.id) ? 1 : 0)
-      const bScore = (b.pinned ? 2 : 0) + (boostRunning && runningMap.value.has(b.id) ? 1 : 0)
-      if (aScore !== bScore) return bScore - aScore
-      return userSort(a, b)
+    }, queryChanged && query.trim() ? 120 : 0)
+  }, { immediate: true })
+
+  const counts = computed(() => {
+    // Track edits without traversing reactive rows once for every category.
+    filterRevision.value
+    const list = toRaw(items.value)
+    const totals: Record<string, number> = Object.assign(Object.create(null), {
+      game: 0, app: 0, image: 0, video: 0, comic: 0, music: 0,
+      novel: 0, folder: 0, document: 0, webpage: 0, other: 0,
     })
+    for (const resource of list) totals[resource.type] = (totals[resource.type] ?? 0) + 1
+    totals.all = list.length
+    return totals
   })
-
-  const counts = computed(() => ({
-    all: items.value.length,
-    game: items.value.filter((r) => r.type === 'game').length,
-    app: items.value.filter((r) => r.type === 'app').length,
-    image: items.value.filter((r) => r.type === 'image').length,
-    video: items.value.filter((r) => r.type === 'video').length,
-    comic: items.value.filter((r) => r.type === 'comic').length,
-    music: items.value.filter((r) => r.type === 'music').length,
-    novel: items.value.filter((r) => r.type === 'novel').length,
-    folder: items.value.filter((r) => r.type === 'folder').length,
-    document: items.value.filter((r) => r.type === 'document').length,
-    webpage: items.value.filter((r) => r.type === 'webpage').length,
-    other: items.value.filter((r) => r.type === 'other').length
-  }))
-
+  let loadSeq = 0
+  let pendingChanges = new Map<string, Resource | null>()
+  onScopeDispose(() => { loadSeq++ })
   async function loadAll() {
+    const seq = ++loadSeq
+    pendingChanges = new Map()
     loading.value = true
-    items.value = await window.api.resources.getAll()
-    loading.value = false
+    const loaded: Resource[] = []
+    const positions = new Map<string, number>()
+    let cursor: { addedAt: number; rowId: number } | undefined
+    try {
+      for (;;) {
+        if (seq !== loadSeq) return
+        const page = await window.api.resources.getPage(cursor)
+        if (seq !== loadSeq) return
+        for (const resource of page.resources) {
+          positions.set(resource.id, loaded.length)
+          loaded.push(resource)
+        }
+        if (!page.nextCursor) break
+        cursor = page.nextCursor
+        await new Promise(resolve => setTimeout(resolve, 0))
+      }
+      // Events received during a refresh take precedence over its older snapshot.
+      for (const [id, resource] of pendingChanges) {
+        if (!resource) continue
+        const index = positions.get(id)
+        if (index === undefined) loaded.push(resource)
+        else loaded[index] = resource
+      }
+      items.value = loaded.filter(resource => pendingChanges.get(resource.id) !== null)
+    } finally {
+      if (seq === loadSeq) {
+        loading.value = false
+        pendingChanges.clear()
+      }
+    }
     // 加载当前运行会话（本次启动后已追踪到的）
     try {
       const sessions = await window.api.monitor.running()
@@ -283,22 +194,26 @@ export const useResourceStore = defineStore('resources', () => {
   }
 
   function addOrUpdate(resource: Resource) {
+    if (loading.value) pendingChanges.set(resource.id, resource)
     const idx = items.value.findIndex((r) => r.id === resource.id)
     if (idx >= 0) {
       items.value[idx] = resource
     } else {
       items.value.unshift(resource)
     }
+    refreshFiltered()
   }
 
   async function remove(id: string) {
     await window.api.resources.remove(id)
+    if (loading.value) pendingChanges.set(id, null)
     items.value = items.value.filter((r) => r.id !== id)
     runningMap.value.delete(id)
   }
 
   async function ignore(filePath: string, id: string) {
     await window.api.resources.ignore(filePath, id)
+    if (loading.value) pendingChanges.set(id, null)
     items.value = items.value.filter((r) => r.id !== id)
     runningMap.value.delete(id)
   }
@@ -306,6 +221,7 @@ export const useResourceStore = defineStore('resources', () => {
   async function batchIgnore(filePaths: string[], ids: string[]) {
     await window.api.resources.batchIgnore(filePaths)
     const idSet = new Set(ids)
+    if (loading.value) for (const id of ids) pendingChanges.set(id, null)
     items.value = items.value.filter((r) => !idSet.has(r.id))
     for (const id of ids) runningMap.value.delete(id)
   }
@@ -313,6 +229,7 @@ export const useResourceStore = defineStore('resources', () => {
   async function batchRemove(ids: string[]) {
     await window.api.resources.batchRemove(ids)
     const idSet = new Set(ids)
+    if (loading.value) for (const id of ids) pendingChanges.set(id, null)
     items.value = items.value.filter((r) => !idSet.has(r.id))
     for (const id of ids) runningMap.value.delete(id)
   }
@@ -324,6 +241,9 @@ export const useResourceStore = defineStore('resources', () => {
 
   async function batchReplacePath(oldPrefix: string, newPrefix: string): Promise<number> {
     const result = await window.api.resources.batchReplacePath(oldPrefix, newPrefix)
+    loadSeq++
+    loading.value = false
+    pendingChanges.clear()
     items.value = result.resources
     return result.count
   }
@@ -331,7 +251,8 @@ export const useResourceStore = defineStore('resources', () => {
   return {
     items, activeType, searchQuery, activeTags, excludedTags, loading,
     runningMap, clockTick, setRunning,
-    filtered, counts,
+    filtered, filtering, filteredQuery, refreshFiltered, counts,
+    filteredTagCounts, filteredUntaggedCount, searchTags, resourceById,
     setContentSearchResults, setLearnedSearchResults,
     loadAll, addOrUpdate, remove, ignore, batchIgnore,
     batchRemove, batchUpdate, batchReplacePath

@@ -1050,10 +1050,10 @@ app.whenReady().then(() => {
   // ── 开机自启动（便携版适配） ──────────────────────────
   // 首次运行默认开启；每次启动验证注册表路径与当前 exe 一致（便携版移动文件夹后自动修正）
   // 仅在用户没有显式关闭时执行生效
-  if (!app.isPackaged) {
+  if (!app.isPackaged && !isSmokeTest) {
     // 开发环境下强行清理 electron.exe 的启动项，避免开机白板窗口
     app.setLoginItemSettings({ openAtLogin: false, path: process.execPath })
-  } else {
+  } else if (!isSmokeTest) {
     const userDisabled = getSetting('autoStartDisabled') === 'true'
     // Prefer the launcher exe (root AI-Cubby.exe) over the Electron exe in core/.
     // Self-heal scenarios:
@@ -1109,7 +1109,7 @@ app.whenReady().then(() => {
   }
 
   // ── 开始菜单快捷方式（仅打包版，失败静默）──────────────────
-  if (app.isPackaged) {
+  if (app.isPackaged && !isSmokeTest) {
     try {
       const lang = getSetting('language') ?? 'zh'
       const appTitle = getSetting('appTitle') || (lang === 'en' ? 'AI Cubby' : 'AI小抽屉')

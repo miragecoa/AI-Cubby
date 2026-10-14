@@ -161,7 +161,7 @@ const customCatSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const customCatCounts = computed(() => {
   const r: Record<string, number> = {}
   for (const cat of settingsStore.customCategories) {
-    r[cat.id] = store.items.filter(i => i.type === cat.id).length
+    r[cat.id] = store.counts[cat.id] ?? 0
   }
   return r
 })

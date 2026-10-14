@@ -31,6 +31,10 @@ declare global {
       }
       resources: {
         getAll: (type?: string) => Promise<import('../stores/resources').Resource[]>
+        getPage: (cursor?: { addedAt: number; rowId: number }) => Promise<{
+          resources: import('../stores/resources').Resource[]
+          nextCursor: { addedAt: number; rowId: number } | null
+        }>
         getById: (id: string) => Promise<import('../stores/resources').Resource | null>
         update: (id: string, data: Partial<import('../stores/resources').Resource>) => Promise<import('../stores/resources').Resource | null>
         remove: (id: string) => Promise<void>

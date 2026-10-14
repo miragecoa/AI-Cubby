@@ -641,7 +641,7 @@
             </div>
           </div>
 
-          <div v-if="store.loading" class="empty-state">
+          <div v-if="store.loading || (store.filtering && store.filtered.length === 0) || (listSorting && sortedListItems.length === 0)" class="empty-state" aria-busy="true">
             <div class="spinner" />
           </div>
 
@@ -665,7 +665,7 @@
             <div v-else class="empty-hint">{{ t('library.emptyDefaultHint') }}</div>
           </div>
 
-          <div v-else ref="gridScrollRef" class="grid-scroll" :class="{ 'has-ai-recommendations': showAiRecommendations }" @mousedown="onGridMousedown" @scroll="onContentScroll" @wheel="onContentWheel">
+          <div v-else ref="gridScrollRef" class="grid-scroll" :aria-busy="store.filtering || listSorting || visibleItems.length < pageItems.length" :class="{ 'has-ai-recommendations': showAiRecommendations }" @mousedown="onGridMousedown" @scroll="onContentScroll" @wheel="onContentWheel">
             <!-- 网格视图 / 热力模式（共用同一网格，热力模式给卡片叠加颜色） -->
             <!-- Pin Board -->
             <PinBoard
@@ -698,6 +698,7 @@
                 <ResourceCard
                   v-for="(item, idx) in visibleItems"
                   :key="item.id"
+                  v-memo="[item, idx, batchMode, selectedIds.has(item.id), cardZoom, store.activeType, statsPanel, statsPanel === 'heat' ? heatMax : 0, settingsStore.cardDisplay]"
                   :resource="item"
                   :item-index="idx"
                   :selectable="batchMode"
@@ -774,6 +775,7 @@
               <ListRow
                 v-for="(item, idx) in visibleItems"
                 :key="item.id"
+                v-memo="[item, idx, colStyle, selectedId === item.id, batchMode, selectedIds.has(item.id), store.runningMap.has(item.id), settingsStore.listDisplay.size, settingsStore.listDisplay.type, settingsStore.listDisplay.date, settingsStore.listDisplay.count, settingsStore.listDisplay.tags, locale]"
                 :resource="item"
                 :item-index="idx"
                 :col-style="colStyle"
@@ -1823,7 +1825,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, reactive, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, reactive, nextTick, shallowRef } from 'vue'
+import { runInSlices, sortInSlices } from '../utils/work-slices'
 import { useI18n } from 'vue-i18n'
 import { useResourceStore } from '../stores/resources'
 import type { Resource, ResourceType } from '../stores/resources'
@@ -1858,9 +1861,8 @@ const aiMatchMap = computed(() => {
 const aiRecommendedItems = computed(() => {
   const query = store.searchQuery.trim()
   if (!query || aiStore.semanticQuery !== query) return []
-  const byId = new Map(store.items.map(item => [item.id, item]))
   return aiStore.semanticResults
-    .map(result => byId.get(result.resourceId))
+    .map(result => store.resourceById.get(result.resourceId))
     .filter((item): item is Resource => !!item && (store.activeType === 'all' || item.type === store.activeType))
 })
 const showAiRecommendations = computed(() => {
@@ -2675,7 +2677,7 @@ const QUICK_FILTER_KEYS = ['neverOpened', 'untagged', 'hasTag', 'missing'] as co
 type QuickFilterKey = typeof QUICK_FILTER_KEYS[number]
 const quickFilters = ref<QuickFilterKey[]>([])
 
-const listSortedFiltered = computed(() => {
+const listFilterBase = computed(() => {
   // 快速筛选（全视图通用）
   let base = store.filtered
   if (quickFilters.value.length > 0) {
@@ -2700,47 +2702,53 @@ const listSortedFiltered = computed(() => {
     }
   }
 
-  // 是否有任何列表视图专属排序
-  const hasListSort = viewMode.value === 'list' && (typeSortDir.value || listSortCol.value)
-  if (!hasListSort) return base
-
-  const typeDir = typeSortDir.value === 'asc' ? 1 : typeSortDir.value === 'desc' ? -1 : 0
-
-  return base.slice().sort((a, b) => {
-    // 置顶始终最前；列头排序时 running 不干扰数值排序
-    const runW = (listSortCol.value || typeSortDir.value) ? 0 : 1
-    const aScore = (a.pinned ? 2 : 0) + (store.runningMap.has(a.id) ? runW : 0)
-    const bScore = (b.pinned ? 2 : 0) + (store.runningMap.has(b.id) ? runW : 0)
-    if (aScore !== bScore) return bScore - aScore
-
-    // 主键：类型升降序（面板设置）
-    if (typeDir !== 0) {
-      const typeCmp = typeDir * listTypeLabel(a.type).localeCompare(listTypeLabel(b.type), 'zh-CN')
-      if (typeCmp !== 0) return typeCmp
-      // 同类型 / 同后缀内按名称 A→Z（升序）或 Z→A（降序）
-      return typeDir * a.title.localeCompare(b.title, 'zh-CN')
-    }
-
-    // 次键：列头点击排序
-    if (listSortCol.value) {
-      let cmp = 0
-      if (listSortCol.value === 'name')  cmp = a.title.localeCompare(b.title, 'zh-CN')
-      else if (listSortCol.value === 'type')  cmp = listTypeLabel(a.type).localeCompare(listTypeLabel(b.type), 'zh-CN')
-      else if (listSortCol.value === 'date')  cmp = a.updated_at - b.updated_at
-      else if (listSortCol.value === 'count') cmp = a.open_count - b.open_count
-      else if (listSortCol.value === 'size')  cmp = (a.file_size ?? 0) - (b.file_size ?? 0)
-      return listSortDesc.value ? -cmp : cmp
-    }
-
-    return 0
-  })
+  return base
 })
 
-const visibleItems = computed(() => {
+const sortedListItems = shallowRef<Resource[]>([])
+const listSorting = ref(false)
+const listSortedFiltered = computed(() =>
+  viewMode.value === 'list' && (typeSortDir.value || listSortCol.value) ? sortedListItems.value : listFilterBase.value
+)
+
+function compareListResources(a: Resource, b: Resource): number {
+  const typeDir = typeSortDir.value === 'asc' ? 1 : typeSortDir.value === 'desc' ? -1 : 0
+
+  // 置顶始终最前；列头排序时 running 不干扰数值排序
+  const runW = (listSortCol.value || typeSortDir.value) ? 0 : 1
+  const aScore = (a.pinned ? 2 : 0) + (store.runningMap.has(a.id) ? runW : 0)
+  const bScore = (b.pinned ? 2 : 0) + (store.runningMap.has(b.id) ? runW : 0)
+  if (aScore !== bScore) return bScore - aScore
+
+  // 主键：类型升降序（面板设置）
+  if (typeDir !== 0) {
+    const typeCmp = typeDir * listTypeLabel(a.type).localeCompare(listTypeLabel(b.type), 'zh-CN')
+    if (typeCmp !== 0) return typeCmp
+    // 同类型 / 同后缀内按名称 A→Z（升序）或 Z→A（降序）
+    return typeDir * a.title.localeCompare(b.title, 'zh-CN')
+  }
+
+  // 次键：列头点击排序
+  if (listSortCol.value) {
+    let cmp = 0
+    if (listSortCol.value === 'name')  cmp = a.title.localeCompare(b.title, 'zh-CN')
+    else if (listSortCol.value === 'type')  cmp = listTypeLabel(a.type).localeCompare(listTypeLabel(b.type), 'zh-CN')
+    else if (listSortCol.value === 'date')  cmp = a.updated_at - b.updated_at
+    else if (listSortCol.value === 'count') cmp = a.open_count - b.open_count
+    else if (listSortCol.value === 'size')  cmp = (a.file_size ?? 0) - (b.file_size ?? 0)
+    return listSortDesc.value ? -cmp : cmp
+  }
+
+  return 0
+}
+
+const renderedItemCount = ref(0)
+const pageItems = computed(() => {
   const size = settingsStore.pageSize
   const start = (currentPage.value - 1) * size
   return listSortedFiltered.value.slice(start, start + size)
 })
+const visibleItems = computed(() => pageItems.value.slice(0, renderedItemCount.value))
 
 // 过滤条件变化时重置到第一页
 watch(() => [store.activeType, store.searchQuery, store.activeTags, quickFilters.value], () => {
@@ -2767,6 +2775,7 @@ watch(() => [store.searchQuery, store.activeType] as const, ([q]) => {
   // 并行触发语义搜索（AI 开启时）
   aiStore.scheduleSearch(q)
   if (_contentSearchTimer) clearTimeout(_contentSearchTimer)
+  const seq = ++_contentSearchSeq
   const query = q.trim()
   const type = store.activeType === 'all' ? undefined : store.activeType
   if (!query) {
@@ -2776,7 +2785,6 @@ watch(() => [store.searchQuery, store.activeType] as const, ([q]) => {
     _settledLearnedQuery = ''
     return
   }
-  const seq = ++_contentSearchSeq
   _contentSearchTimer = setTimeout(async () => {
     try {
       const [results, learned] = await Promise.all([
@@ -3447,16 +3455,18 @@ const dbTags = ref<Array<{ id: number; name: string; count: number; pinned: numb
 const tagSearch = ref('')
 const showSearchTagSuggestions = ref(false)
 
-const searchTagSuggestions = computed(() => {
-  const query = store.searchQuery.trim().toLowerCase()
-  if (!query) return []
+const searchSuggestionTags = computed(() => {
   const tagMap = new Map(dbTags.value.map(tag => [tag.id, { ...tag }]))
-  for (const resource of store.items) {
-    for (const tag of resource.tags ?? []) {
-      if (!tagMap.has(tag.id)) tagMap.set(tag.id, { id: tag.id, name: tag.name, count: 0, pinned: 0 })
-    }
+  for (const tag of store.searchTags) {
+    if (!tagMap.has(tag.id)) tagMap.set(tag.id, { id: tag.id, name: tag.name, count: 0, pinned: 0 })
   }
   return [...tagMap.values()]
+})
+
+const searchTagSuggestions = computed(() => {
+  const query = store.filteredQuery.trim().toLowerCase()
+  if (!query || store.filtering || store.filteredQuery !== store.searchQuery) return []
+  return searchSuggestionTags.value
     .map((tag) => {
       const name = tag.name.toLowerCase()
       const exact = name === query
@@ -3494,9 +3504,9 @@ function clearSearchAndTags() {
 }
 
 watch(() => store.searchQuery, (query) => {
-  tagSearch.value = query
   if (!query.trim()) showSearchTagSuggestions.value = false
 }, { immediate: true })
+watch(() => store.filteredQuery, (query) => { tagSearch.value = query }, { immediate: true })
 
 // ── 标签管理 ──
 const tagManageMode = ref(false)
@@ -3544,6 +3554,7 @@ async function saveTagEdit() {
   store.items.forEach(r => {
     if (r.tags) r.tags.forEach(t => { if (t.id === id) t.name = name })
   })
+  store.refreshFiltered()
   cancelTagEdit()
 }
 
@@ -3561,6 +3572,7 @@ async function deleteManageTag(tag: { id: number; name: string; pinned: number }
   store.items.forEach(r => {
     if (r.tags) r.tags = r.tags.filter(t => t.id !== tag.id)
   })
+  store.refreshFiltered()
   store.activeTags.splice(store.activeTags.indexOf(tag.id), 1)
   store.excludedTags.splice(store.excludedTags.indexOf(tag.id), 1)
 }
@@ -3628,26 +3640,10 @@ watch(() => store.activeType, () => {
 })
 
 // 实时统计当前展示资源列表（store.filtered）中各标签的数量
-const tagCounts = computed(() => {
-  const counts = new Map<number, number>()
-  for (const item of store.filtered) {
-    if (item.tags) {
-      for (const tag of item.tags) {
-        counts.set(tag.id, (counts.get(tag.id) || 0) + 1)
-      }
-    }
-  }
-  return counts
-})
+const tagCounts = computed(() => store.filteredTagCounts)
 
 // 实时计算当前过滤结果下无标签的资源数
-const untaggedCount = computed(() => {
-  let c = 0
-  for (const item of store.filtered) {
-    if (!item.tags || item.tags.length === 0) c++
-  }
-  return c
-})
+const untaggedCount = computed(() => store.filteredUntaggedCount)
 
 const availableTags = computed(() => {
   let tags = dbTags.value
@@ -3937,11 +3933,43 @@ onUnmounted(() => {
   unsubTrayWake?.()
   if (_trayHintTimer) clearTimeout(_trayHintTimer)
   if (iconWarmupTimer) clearTimeout(iconWarmupTimer)
+  if (_contentSearchTimer) clearTimeout(_contentSearchTimer)
+  _contentSearchSeq++
 })
 
 // Per-type view mode and card zoom (derived from active category)
 const viewMode = computed(() => settingsStore.getViewMode(store.activeType))
 const showDocumentCreateEntry = computed(() => store.activeType === 'document' && viewMode.value !== 'list' && viewMode.value !== 'pinboard')
+
+watch([listFilterBase, viewMode, typeSortDir, listSortCol, listSortDesc, locale], async ([items], previous, onCleanup) => {
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
+  if (viewMode.value !== 'list' || (!typeSortDir.value && !listSortCol.value)) {
+    listSorting.value = false
+    return
+  }
+  listSorting.value = true
+  if (!previous || previous[0] !== items) sortedListItems.value = []
+  const sorted = await runInSlices(sortInSlices(items.slice(), compareListResources), () => cancelled)
+  if (!cancelled && sorted) {
+    sortedListItems.value = sorted
+    listSorting.value = false
+  }
+}, { immediate: true })
+
+watch(pageItems, (items, previous, onCleanup) => {
+  let timer: ReturnType<typeof setTimeout>
+  let cancelled = false
+  onCleanup(() => { cancelled = true; clearTimeout(timer) })
+  const samePage = previous?.length === items.length && previous.every((item, i) => item.id === items[i].id)
+  if (!samePage) renderedItemCount.value = 0
+  const reveal = () => {
+    if (cancelled || renderedItemCount.value >= items.length) return
+    renderedItemCount.value = Math.min(items.length, renderedItemCount.value + 1)
+    timer = setTimeout(reveal, 32)
+  }
+  timer = setTimeout(reveal, 0)
+}, { immediate: true })
 
 // ── 分页（必须在 viewMode / listSortedFiltered 之后）───────────────────
 const totalPages = computed(() => Math.max(1, Math.ceil(listSortedFiltered.value.length / settingsStore.pageSize)))
@@ -4005,7 +4033,9 @@ function onPageInputBlur(e: Event) {
   ;(e.target as HTMLInputElement).value = String(currentPage.value)
 }
 
-watch(totalPages, (tp) => { if (currentPage.value > tp) currentPage.value = tp })
+watch([totalPages, () => store.filtering, listSorting], ([tp, filtering, sorting]) => {
+  if (!filtering && !sorting && currentPage.value > tp) currentPage.value = tp
+})
 const cardZoom = computed(() => settingsStore.getCardZoom(`__view:${viewMode.value}`))
 
 const cardMinWidth = computed(() => Math.round(150 * cardZoom.value))
