@@ -3,6 +3,8 @@ import { net } from 'electron'
 import { dirname, basename, join } from 'path'
 import { existsSync, mkdirSync, createWriteStream, unlinkSync, statSync, writeFileSync } from 'fs'
 import { spawn } from 'child_process'
+import { once } from 'events'
+import { randomUUID } from 'crypto'
 import { getSetting, setSetting } from './db/queries'
 
 // ── Timeout-aware fetch (respects system proxy via Electron net) ─────
@@ -260,22 +262,20 @@ export async function applyAndRestart(): Promise<void> {
   // Uses tar (built into Win10+) for zip extraction and tasklist for process wait.
   const tempDir = dirname(downloadedZipPath)
   const batPath = join(tempDir, 'update.cmd')
+  const runId = randomUUID()
+  const readyPath = join(tempDir, `update-started-${runId}.txt`)
+  const cancelPath = join(tempDir, `update-cancelled-${runId}.txt`)
 
-  // Write helper files: zip path and app dir path (avoids embedding non-ASCII in .cmd)
-  writeFileSync(join(tempDir, 'update_zip.txt'), downloadedZipPath, 'utf8')
-  writeFileSync(join(tempDir, 'update_app.txt'), appDir, 'utf8')
-  writeFileSync(join(tempDir, 'update_exe.txt'), exePath, 'utf8')
-
-  // .cmd content is pure ASCII — uses %~dp0 and reads paths from helper files.
-  // chcp 65001 switches cmd to UTF-8 so set /p correctly reads UTF-8 helper files
-  // (default system code page on Chinese Windows is GBK, which mangles UTF-8 paths).
+  // Windows environment values preserve Unicode without a console code page.
   writeFileSync(batPath, [
     '@echo off',
     'echo [%date% %time%] Updater started > "%~dp0update.log"',
-    'chcp 65001 >nul 2>&1',
+    'if exist "%AI_CUBBY_UPDATE_CANCEL%" exit /b 1',
+    'echo started> "%AI_CUBBY_UPDATE_READY%"',
     '',
-    `echo [%%date%% %%time%%] Waiting for PID ${pid} >> "%~dp0update.log"`,
+    `echo [%date% %time%] Waiting for PID ${pid} >> "%~dp0update.log"`,
     `:waitloop`,
+    'if exist "%AI_CUBBY_UPDATE_CANCEL%" exit /b 1',
     `tasklist /FI "PID eq ${pid}" 2>nul | find "${pid}" >nul`,
     `if not errorlevel 1 (`,
     `  timeout /t 1 /nobreak >nul`,
@@ -284,9 +284,9 @@ export async function applyAndRestart(): Promise<void> {
     'echo [%date% %time%] Process exited >> "%~dp0update.log"',
     '',
     'echo [%date% %time%] Extracting update >> "%~dp0update.log"',
-    'set /p ZIPPATH=<"%~dp0update_zip.txt"',
-    'set /p APPDIR=<"%~dp0update_app.txt"',
-    'set /p EXEPATH=<"%~dp0update_exe.txt"',
+    'set "ZIPPATH=%AI_CUBBY_UPDATE_ZIP%"',
+    'set "APPDIR=%AI_CUBBY_UPDATE_APP%"',
+    'set "EXEPATH=%AI_CUBBY_UPDATE_EXE%"',
     'tar -xf "%ZIPPATH%" -C "%APPDIR%" >> "%~dp0update.log" 2>&1',
     'echo [%date% %time%] tar exited with code %ERRORLEVEL% >> "%~dp0update.log"',
     'if %ERRORLEVEL% neq 0 (',
@@ -300,25 +300,34 @@ export async function applyAndRestart(): Promise<void> {
     'echo [%date% %time%] Done >> "%~dp0update.log"',
     '',
     'del "%ZIPPATH%" 2>nul',
-    'del "%~dp0update_zip.txt" 2>nul',
-    'del "%~dp0update_app.txt" 2>nul',
-    'del "%~dp0update_exe.txt" 2>nul',
   ].join('\r\n') + '\r\n')
 
+  // START gives the installer its own console so it survives app exit without DETACHED_PROCESS.
+  const deadline = Date.now() + 10_000
+  const child = spawn(process.env.ComSpec || 'cmd.exe', [
+    '/d', '/v:off', '/c', 'start "" /min cmd.exe /d /v:off /c update.cmd',
+  ], {
+    cwd: tempDir,
+    env: { ...process.env, AI_CUBBY_UPDATE_ZIP: downloadedZipPath,
+      AI_CUBBY_UPDATE_APP: appDir, AI_CUBBY_UPDATE_EXE: exePath,
+      AI_CUBBY_UPDATE_READY: readyPath, AI_CUBBY_UPDATE_CANCEL: cancelPath },
+    stdio: 'ignore',
+    windowsHide: true,
+    windowsVerbatimArguments: true,
+  })
   try {
-    // 'call' as a separate arg handles quoted paths with spaces correctly.
-    // cmd /c "path" strips outer quotes and fails; cmd /c call "path" works.
-    spawn('conhost.exe', ['cmd.exe', '/c', 'call', batPath], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref()
-  } catch {
-    spawn('cmd.exe', ['/c', 'call', batPath], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref()
+    const [code] = await once(child, 'exit', { signal: AbortSignal.timeout(10_000) })
+    if (code !== 0) throw new Error(`Failed to start updater (exit code: ${code})`)
+    while (!existsSync(readyPath)) {
+      if (Date.now() >= deadline) throw new Error('Updater did not confirm startup within 10 seconds')
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+  } catch (error) {
+    // A late installer must not proceed after the app has reported startup failure.
+    writeFileSync(cancelPath, 'cancelled', 'utf8')
+    if (child.exitCode === null) child.kill()
+    throw error
   }
-
   app.quit()
 }
 

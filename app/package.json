@@ -1,6 +1,6 @@
 {
   "name": "ai-cubby",
-  "version": "0.4.26-beta.1",
+  "version": "0.4.26-beta.2",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {
@@ -14,6 +14,7 @@
     "test:hotkey-takeover": "npm run build && node scripts/test-hotkey-takeover.mjs",
     "test:search-learning": "node --experimental-strip-types --test tests/search-learning-core.test.mjs",
     "test:resource-filter": "node --test tests/resource-filter.test.mjs",
+    "test:updater": "node --test tests/updater-handoff.test.mjs",
     "perf:search-input": "npm run build && node scripts/perf-search-input.mjs",
     "test:search-learning-flow": "npm run build && node scripts/test-search-learning-flow.mjs",
     "test:account-login-flow": "npm run build && node scripts/test-account-login-flow.mjs",

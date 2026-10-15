@@ -4458,8 +4458,13 @@ function doSkipUpdate() {
   showUpdateModal.value = false
 }
 
-function doApplyUpdate() {
-  window.api.updater.apply()
+async function doApplyUpdate() {
+  try {
+    await window.api.updater.apply()
+  } catch {
+    updatePhase.value = 'error'
+    showUpdateModal.value = true
+  }
 }
 
 function dismissUpdate() {

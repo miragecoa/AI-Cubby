@@ -1112,8 +1112,12 @@ function settingsDownloadAndApply() {
   window.api.updater.download()
 }
 
-function settingsApplyUpdate() {
-  window.api.updater.apply()
+async function settingsApplyUpdate() {
+  try {
+    await window.api.updater.apply()
+  } catch {
+    updateCheckStatus.value = 'error'
+  }
 }
 
 function openGitHubRelease() {
