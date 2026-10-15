@@ -5,7 +5,9 @@
     @input="onInput"
     @compositionstart="composing = true; cancelPending()"
     @compositionend="onCompositionEnd"
-    @keydown.enter="onEnter"
+    @keydown="onKeyDown"
+    @keyup="onKeyUp"
+    @blur="onBlur"
   />
 </template>
 
@@ -18,6 +20,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: [value:
 const input = ref<HTMLInputElement | null>(null)
 const draft = ref(props.modelValue)
 let composing = false
+let deleting = false
 let timer: ReturnType<typeof setTimeout> | undefined
 
 function cancelPending() {
@@ -38,13 +41,34 @@ function schedule() {
 function onInput(event: Event) {
   draft.value = (event.target as HTMLInputElement).value
   deferIdleWork()
-  if (!composing && !(event as InputEvent).isComposing) schedule()
+  if (!composing && !deleting && !(event as InputEvent).isComposing) schedule()
+}
+
+function onKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Enter') onEnter(event)
+  if (event.key !== 'Backspace' && event.key !== 'Delete') return
+  deleting = true
+  cancelPending()
+  // Do not start a search in the gap before Windows begins key repeat.
+  deferIdleWork(600)
+}
+
+function onKeyUp(event: KeyboardEvent) {
+  if (event.key !== 'Backspace' && event.key !== 'Delete') return
+  deleting = false
+  deferIdleWork()
+  if (!composing) schedule()
+}
+
+function onBlur() {
+  deleting = false
+  if (!composing && draft.value !== props.modelValue) schedule()
 }
 
 function onCompositionEnd(event: CompositionEvent) {
   composing = false
   draft.value = (event.target as HTMLInputElement).value
-  schedule()
+  if (!deleting) schedule()
 }
 
 function onEnter(event: KeyboardEvent) {
@@ -56,6 +80,7 @@ function onEnter(event: KeyboardEvent) {
 function clear() {
   draft.value = ''
   composing = false
+  deleting = false
   publish()
 }
 

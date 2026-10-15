@@ -24,7 +24,8 @@ function loadModule(relativePath, mocks = {}) {
     module, exports: module.exports, performance, setTimeout, clearTimeout, setInterval, clearInterval,
     __dirname: mocks.__dirname,
     window: mocks.__window,
-    require: name => Object.hasOwn(mocks, name) ? mocks[name] : name === '../search-body' ? { createTextMatcher } : require(name),
+    require: name => Object.hasOwn(mocks, name) ? mocks[name] : name === '../search-body' ? { createTextMatcher }
+      : name === '../utils/image-cache' ? { isInteractionPending: () => false } : require(name),
   })
   return module.exports
 }
@@ -34,6 +35,24 @@ buildSync({ entryPoints: [fileURLToPath(new URL('../backend/search-body-worker.t
 const { createTextMatcher } = loadModule('../backend/search-body.ts', { __dirname: workerDir })
 const { filterResources } = loadModule('../frontend/src/utils/resource-filter.ts')
 const { runInSlices, sortInSlices } = loadModule('../frontend/src/utils/work-slices.ts')
+
+test('sliced work waits during editing and remains cancellable while paused', async () => {
+  let paused = true
+  let cancelled = false
+  let visits = 0
+  function* work() { visits++; yield; return 'finished' }
+  const pending = runInSlices(work(), () => cancelled, () => paused)
+  await new Promise(resolve => setTimeout(resolve, 45))
+  assert.equal(visits, 0)
+  paused = false
+  assert.equal(await pending, 'finished')
+  assert.equal(visits, 1)
+  paused = true
+  const stopped = runInSlices(work(), () => cancelled, () => paused)
+  cancelled = true
+  assert.equal(await stopped, undefined)
+  assert.equal(visits, 1)
+})
 
 const resource = (id, title, extra = {}) => ({
   id, title, type: 'app', file_path: `${id}.exe`, rating: 0, added_at: 1, updated_at: 1,

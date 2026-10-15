@@ -47,6 +47,24 @@ test('typing stays local, supersedes earlier text, and Enter submits the latest 
     props.modelValue = 'external'
     await vue.nextTick()
     assert.equal(state.draft.value, 'external')
+    const beforeDelete = events.length
+    state.onKeyDown({ key: 'Backspace' })
+    state.onInput({ target: { value: 'externa' } })
+    await delay(210)
+    assert.equal(state.draft.value, 'externa')
+    assert.equal(events.length, beforeDelete, 'backspace must wait for key release')
+    state.onKeyDown({ key: 'Backspace', repeat: true })
+    state.onInput({ target: { value: 'extern' } })
+    await delay(210)
+    assert.equal(events.length, beforeDelete, 'held backspace must not search between repeats')
+    state.onKeyUp({ key: 'Backspace' })
+    await delay(210)
+    assert.deepEqual(events.at(-1), ['update:modelValue', 'extern'])
+    state.onKeyDown({ key: 'Delete' })
+    state.onInput({ target: { value: '' } })
+    state.onBlur()
+    await delay(210)
+    assert.deepEqual(events.at(-1), ['update:modelValue', ''])
     state.composing = true
     state.onInput({ target: { value: '\u6a21' }, isComposing: true })
     const before = events.length

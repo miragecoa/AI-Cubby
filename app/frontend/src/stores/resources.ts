@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, shallowRef, watch, onScopeDispose, toRaw } from 'vue'
 import { filterResources } from '../utils/resource-filter'
 import { runInSlices } from '../utils/work-slices'
+import { isInteractionPending } from '../utils/image-cache'
 import { useSettingsStore } from './settings'
 
 export type ResourceType = 'image' | 'game' | 'app' | 'video' | 'comic' | 'music' | 'novel' | 'folder' | 'document' | 'webpage' | 'other'
@@ -112,7 +113,7 @@ export const useResourceStore = defineStore('resources', () => {
       runningIds: new Set(runningMap.value.keys()),
     }
     const timer = setTimeout(async () => {
-      const result = await runInSlices(filterResources(items.value, options), () => cancelled)
+      const result = await runInSlices(filterResources(items.value, options), () => cancelled, isInteractionPending)
       if (!cancelled && result) {
         filteredQuery.value = query
         filtered.value = result.items

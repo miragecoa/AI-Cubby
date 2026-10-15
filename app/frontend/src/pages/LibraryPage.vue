@@ -3955,7 +3955,7 @@ watch([listFilterBase, viewMode, typeSortDir, listSortCol, listSortDesc, locale]
   }
   listSorting.value = true
   if (!previous || previous[0] !== items) sortedListItems.value = []
-  const sorted = await runInSlices(sortInSlices(items.slice(), compareListResources), () => cancelled)
+  const sorted = await runInSlices(sortInSlices(items.slice(), compareListResources), () => cancelled, isInteractionPending)
   if (!cancelled && sorted) {
     sortedListItems.value = sorted
     listSorting.value = false

@@ -1,9 +1,10 @@
-export async function runInSlices<T>(steps: Generator<void, T>, cancelled: () => boolean): Promise<T | undefined> {
+export async function runInSlices<T>(steps: Generator<void, T>, cancelled: () => boolean, paused: () => boolean = () => false): Promise<T | undefined> {
   try {
     while (!cancelled()) {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise(resolve => setTimeout(resolve, paused() ? 32 : 0))
+      if (paused()) continue
       const deadline = performance.now() + 4
-      while (!cancelled()) {
+      while (!cancelled() && !paused()) {
         const step = steps.next()
         if (step.done) return cancelled() ? undefined : step.value
         if (performance.now() >= deadline) break
