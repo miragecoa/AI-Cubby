@@ -28,6 +28,7 @@ const report = {
   screenshots: [],
   checks: [],
   consoleErrors: [],
+  failedRequests: [],
 }
 
 function addCheck(name, passed, details = '') {
@@ -54,6 +55,10 @@ try {
   })
 
   const page = await electronApp.firstWindow({ timeout: 30_000 })
+  page.on('requestfailed', request => {
+    const url = new URL(request.url())
+    report.failedRequests.push({ url: url.origin + url.pathname, error: request.failure()?.errorText })
+  })
   page.on('console', (msg) => {
     if (msg.type() === 'error') report.consoleErrors.push(msg.text())
   })

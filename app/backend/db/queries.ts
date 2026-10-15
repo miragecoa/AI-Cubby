@@ -1,7 +1,9 @@
 import { randomUUID } from 'crypto'
 import { basename, extname } from 'path'
-import { existsSync, readFileSync, statSync } from 'fs'
-import { match as pinyinMatch } from 'pinyin-pro'
+import { existsSync } from 'fs'
+import { readFile, stat as fileStat } from 'fs/promises'
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises'
+import { createTextMatcher } from '../search-body'
 import { getDb } from './index'
 import { getPathSize } from '../utils/path-size'
 
@@ -55,7 +57,7 @@ export function getAllResources(type?: string, hidePrivate = false): Resource[] 
   const rows = type
     ? db.prepare(`SELECT * FROM resources WHERE type = ?${priv} ORDER BY added_at DESC`).all(type)
     : db.prepare(`SELECT * FROM resources WHERE 1=1${priv} ORDER BY added_at DESC`).all()
-  return (rows as Resource[]).map(attachTags)
+  return attachResourceTags(rows as Resource[])
 }
 
 export interface ResourcePageCursor { addedAt: number; rowId: number }
@@ -82,7 +84,7 @@ export function getResourcePage(cursor?: ResourcePageCursor, hidePrivate = false
   `).all(...params) as Array<Resource & { __rowid: number }>
   const last = rows.at(-1)
   return {
-    resources: rows.map(({ __rowid, ...resource }) => attachTags(resource)),
+    resources: attachResourceTags(rows.map(({ __rowid, ...resource }) => resource)),
     nextCursor: rows.length === 200 && last ? { addedAt: last.added_at, rowId: last.__rowid } : null,
   }
 }
@@ -391,7 +393,7 @@ export function isBlockedDir(filePath: string): boolean {
 export function getAllAppResources(): Resource[] {
   const db = getDb()
   const rows = db.prepare("SELECT * FROM resources WHERE type = 'app'").all() as Resource[]
-  return rows.map(attachTags)
+  return attachResourceTags(rows)
 }
 
 /**
@@ -667,14 +669,13 @@ function extractTokens(query: string): string[] {
   return [...tokens]
 }
 
-function readSearchableTextDocument(filePath: string): string | null {
+async function readSearchableTextDocument(filePath: string): Promise<string | null> {
   const ext = extname(filePath).toLowerCase()
   if (ext !== '.md' && ext !== '.txt' && ext !== '.aicnote') return null
   try {
-    if (!existsSync(filePath)) return null
-    const stat = statSync(filePath)
+    const stat = await fileStat(filePath)
     if (!stat.isFile() || stat.size > 5 * 1024 * 1024) return null
-    const raw = readFileSync(filePath, 'utf8')
+    const raw = await readFile(filePath, 'utf8')
     if (ext !== '.aicnote') return raw
     const parsed = JSON.parse(raw)
     if (parsed?.type !== 'ai-cubby-note' || !Array.isArray(parsed.blocks)) return ''
@@ -686,14 +687,9 @@ function readSearchableTextDocument(filePath: string): string | null {
   }
 }
 
-function noteBodyMatches(text: string, needles: string[]): boolean {
-  const lower = text.toLowerCase()
-  return needles.some(needle => lower.includes(needle) || pinyinMatch(text, needle) !== null)
-}
-
-export function searchResources(query: string, type?: string): Resource[] {
+export async function searchResources(query: string, type?: string, signal?: AbortSignal): Promise<Resource[]> {
+  const cancelled = () => signal?.aborted === true
   const db = getDb()
-  const typeFilter = type ? `AND r.type = '${type}'` : ''
   const safeTypeClause = type ? `AND r.type = ?` : ''
   const safeTypeParams = type ? [type] : []
 
@@ -702,10 +698,10 @@ export function searchResources(query: string, type?: string): Resource[] {
     SELECT r.* FROM resources r
     JOIN resources_fts fts ON r.rowid = fts.rowid
     WHERE resources_fts MATCH ?
-    ${typeFilter}
+    ${safeTypeClause}
     ORDER BY rank
     LIMIT 100
-  `).all(query + '*') as Resource[]
+  `).all(query + '*', ...safeTypeParams) as Resource[]
 
   console.log(`[search] query="${query}" fts_hits=${rows.length}`)
 
@@ -762,39 +758,49 @@ export function searchResources(query: string, type?: string): Resource[] {
     ORDER BY COALESCE(rc.fetched_at, 0) DESC, r.updated_at DESC
     LIMIT 300
   `).all(...safeTypeParams) as Array<Resource & { __content_text?: string }>
-  let pinyinContentHits = 0
-  for (const row of pinyinContentRows) {
-    if (seen.has(row.id)) continue
-    if (!noteBodyMatches(String(row.__content_text ?? '').slice(0, 80_000), textNeedles)) continue
-    rows.push(row)
-    seen.add(row.id)
-    pinyinContentHits++
-    if (rows.length >= 100) break
-  }
-  if (pinyinContentHits) console.log(`[search] pinyin_content_hits=${pinyinContentHits} total=${rows.length}`)
-
-  if (!type || type === 'document') {
-    const docCandidates = db.prepare(`
-      SELECT r.* FROM resources r
-      WHERE r.type = 'document'
-      ORDER BY r.updated_at DESC
-      LIMIT 200
-    `).all() as Resource[]
-    let fileHits = 0
-    for (const row of docCandidates) {
+  const matcher = createTextMatcher(signal)
+  try {
+    let pinyinContentHits = 0
+    for (const row of pinyinContentRows) {
+      await yieldToEventLoop()
+      if (cancelled()) return []
       if (seen.has(row.id)) continue
-      const text = readSearchableTextDocument(row.file_path)
-      if (!text) continue
-      if (!noteBodyMatches(text.slice(0, 80_000), textNeedles)) continue
-      rows.push(row)
+      if (!await matcher.matches(String(row.__content_text ?? '').slice(0, 80_000), textNeedles)) continue
+      const { __content_text, ...resource } = row
+      rows.push(resource)
       seen.add(row.id)
-      fileHits++
+      pinyinContentHits++
       if (rows.length >= 100) break
     }
-    if (fileHits) console.log(`[search] text_file_hits=${fileHits} total=${rows.length}`)
-  }
+    if (pinyinContentHits) console.log(`[search] pinyin_content_hits=${pinyinContentHits} total=${rows.length}`)
 
-  return rows.map(attachTags)
+    if (!type || type === 'document') {
+      const docCandidates = db.prepare(`
+        SELECT r.* FROM resources r
+        WHERE r.type = 'document'
+        ORDER BY r.updated_at DESC
+        LIMIT 200
+      `).all() as Resource[]
+      let fileHits = 0
+      for (const row of docCandidates) {
+        await yieldToEventLoop()
+        if (cancelled()) return []
+        if (seen.has(row.id)) continue
+        const text = await readSearchableTextDocument(row.file_path)
+        if (!text) continue
+        if (!await matcher.matches(text.slice(0, 80_000), textNeedles)) continue
+        rows.push(row)
+        seen.add(row.id)
+        fileHits++
+        if (rows.length >= 100) break
+      }
+      if (fileHits) console.log(`[search] text_file_hits=${fileHits} total=${rows.length}`)
+    }
+
+    return cancelled() ? [] : attachResourceTags(rows)
+  } finally {
+    matcher.dispose()
+  }
 }
 
 // ── 设置 ────────────────────────────────────────────────
@@ -824,6 +830,25 @@ function attachTags(resource: Resource): Resource {
   return { ...resource, tags }
 }
 
+function attachResourceTags(resources: Resource[]): Resource[] {
+  const tags = new Map<string, Tag[]>()
+  const sourceFilter = _showDirTags ? '' : `AND rt.source != 'dir'`
+  for (let start = 0; start < resources.length; start += 200) {
+    const ids = resources.slice(start, start + 200).map(resource => resource.id)
+    const rows = getDb().prepare(`
+      SELECT rt.resource_id, t.id, t.name, rt.source
+      FROM tags t JOIN resource_tags rt ON t.id = rt.tag_id
+      WHERE rt.resource_id IN (${ids.map(() => '?').join(',')}) ${sourceFilter}
+      ORDER BY rt.resource_id, rt.tag_id
+    `).all(...ids) as Array<Tag & { resource_id: string }>
+    for (const { resource_id, ...tag } of rows) {
+      if (!tags.has(resource_id)) tags.set(resource_id, [])
+      tags.get(resource_id)!.push(tag as Tag)
+    }
+  }
+  return resources.map(resource => ({ ...resource, tags: tags.get(resource.id) ?? [] }))
+}
+
 // ── Pin Board (Quick Panel) ──────────────────────────────────────────────────
 
 export interface PinGroup {
@@ -834,7 +859,7 @@ export function getQuickPanelResources(hidePrivate = false): Resource[] {
   const db = getDb()
   const priv = hidePrivate ? ' AND (is_private IS NULL OR is_private = 0)' : ''
   const rows = db.prepare(`SELECT * FROM resources WHERE in_quickpanel = 1${priv} ORDER BY pin_order ASC, added_at DESC`).all() as Resource[]
-  return rows.map(attachTags)
+  return attachResourceTags(rows)
 }
 
 export function setQuickPanel(id: string, value: boolean): void {

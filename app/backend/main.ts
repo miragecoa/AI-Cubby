@@ -34,7 +34,7 @@ import { initDatabase, getDb, clipboardAddItem, clipboardGetItem, clipboardToggl
 import { getSetting, setSetting, addManualResource, runDirTagMigration, setShowDirTags, cleanupDirTagsForManagedNotes } from './db/queries'
 import { ensureProfiles, getProfileDir, loadManifest } from './db/profiles'
 import { registerIpcHandlers, resolveDroppedPaths, setOnLanguageChange } from './ipc/index'
-import { startMonitor, flushRunningSessions } from './monitor/recent-files'
+import { startMonitor, stopMonitor, flushRunningSessions } from './monitor/recent-files'
 import type { RunningEvent } from './monitor/recent-files'
 import { checkResourceHealth, relocateMissingResources } from './monitor/resource-health'
 import { initAutoUpdater } from './updater'
@@ -124,6 +124,7 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   willQuit = true
   shortcuts.dispose()
+  stopMonitor()
   flushRunningSessions()
   // 退出前同步保存窗口位置/大小，防止防抖定时器来不及触发
   mainWindowState?.save()
@@ -828,7 +829,6 @@ function createWindow(): void {
 
   // 最小化 → 保留任务栏图标，不隐藏窗口
   mainWindow.on('minimize', () => {
-    mainWindow?.webContents.send('window:wake')
     if (getSetting('drawerVisible') !== 'false') drawerWindow?.show()
   })
 

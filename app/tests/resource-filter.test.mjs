@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
@@ -8,6 +11,7 @@ import vm from 'node:vm'
 import { buildSync, transformSync } from 'esbuild'
 import { createPinia } from 'pinia'
 import { reactive, nextTick } from 'vue'
+import { match as pinyinMatch } from 'pinyin-pro'
 
 const require = createRequire(import.meta.url)
 function loadModule(relativePath, mocks = {}) {
@@ -18,11 +22,16 @@ function loadModule(relativePath, mocks = {}) {
   const module = { exports: {} }
   vm.runInNewContext(code, {
     module, exports: module.exports, performance, setTimeout, clearTimeout, setInterval, clearInterval,
+    __dirname: mocks.__dirname,
     window: mocks.__window,
-    require: name => Object.hasOwn(mocks, name) ? mocks[name] : require(name),
+    require: name => Object.hasOwn(mocks, name) ? mocks[name] : name === '../search-body' ? { createTextMatcher } : require(name),
   })
   return module.exports
 }
+const workerDir = mkdtempSync(join(tmpdir(), 'ai-cubby-search-worker-'))
+buildSync({ entryPoints: [fileURLToPath(new URL('../backend/search-body-worker.ts', import.meta.url))],
+  bundle: true, platform: 'node', format: 'cjs', outfile: join(workerDir, 'search-body-worker.js') })
+const { createTextMatcher } = loadModule('../backend/search-body.ts', { __dirname: workerDir })
 const { filterResources } = loadModule('../frontend/src/utils/resource-filter.ts')
 const { runInSlices, sortInSlices } = loadModule('../frontend/src/utils/work-slices.ts')
 
@@ -47,6 +56,18 @@ test('title, tag, pinyin and token ranking retain their priorities and pinned bo
   assert.deepEqual(filter(items, { query: 'discord' }), ['pin', 'exact', 'tag', 'prefix', 'part'])
   assert.deepEqual(filter([resource('chinese', '\u6570\u4ea7\u8d44\u6e90\u7ba1\u5bb6')], { query: 'shuc' }), ['chinese'])
   assert.deepEqual(filter([resource('latin', 'Discord')], { query: '\u6211\u7684discord' }), ['latin'])
+})
+
+test('a shared tag is matched once per query, including cached non-matches', () => {
+  let calls = 0
+  const { filterResources: cachedFilter } = loadModule('../frontend/src/utils/resource-filter.ts', {
+    'pinyin-pro': { match: () => { calls++; return null } }, './work-slices': { sortInSlices },
+  })
+  const items = Array.from({ length: 1000 }, (_, i) => resource(String(i), 'needle', { tags: [{ id: 1, name: 'Shared' }] }))
+  assert.equal(finish(cachedFilter(items, { ...defaults, query: 'needle' })).items.length, 1000)
+  assert.equal(calls, 1)
+  finish(cachedFilter(items, { ...defaults, query: 'needle' }))
+  assert.equal(calls, 2, 'scores must not leak between searches')
 })
 
 test('content and learned matches are scoped to query/type, deduplicated, then tag-filtered', () => {
@@ -157,8 +178,9 @@ test('resource pages preserve order, tag data, privacy and equal-timestamp bound
     const insert = db.prepare('INSERT INTO resources(id,type,title,file_path,added_at,updated_at,is_private) VALUES (?,?,?,?,?,?,?)')
     for (let i = 0; i < 451; i++) insert.run(String(i), 'app', `Item ${i}`, `${i}.exe`, i < 420 ? 7 : 8, 1, i % 7 === 0 ? 1 : 0)
     db.exec("INSERT INTO tags(id,name) VALUES (1,'Work'); INSERT INTO resource_tags(resource_id,tag_id) VALUES ('10',1)")
-    const { getResourcePage, getAllResources, getResourceHealthCandidates } = loadModule('../backend/db/queries.ts', {
-      './index': { getDb: () => db }, '../utils/path-size': { getPathSize: () => 0 },
+    let statements = 0
+    const { getResourcePage, getAllResources, getResourceHealthCandidates, setShowDirTags } = loadModule('../backend/db/queries.ts', {
+      './index': { getDb: () => ({ prepare: sql => { statements++; return db.prepare(sql) } }) }, '../utils/path-size': { getPathSize: () => 0 },
     })
     const healthCandidates = getResourceHealthCandidates()
     assert.equal(healthCandidates.length, 451)
@@ -168,7 +190,9 @@ test('resource pages preserve order, tag data, privacy and equal-timestamp bound
       const all = []
       let cursor
       for (;;) {
+        statements = 0
         const page = getResourcePage(cursor, hidePrivate)
+        assert.equal(statements, page.resources.length ? 2 : 1, 'tags should use one query per page, not one per resource')
         assert.ok(page.resources.length <= 200)
         all.push(...page.resources)
         if (!page.nextCursor) break
@@ -179,11 +203,113 @@ test('resource pages preserve order, tag data, privacy and equal-timestamp bound
       assert.equal(all.find(r => r.id === '10').tags[0].name, 'Work')
       assert.equal(all.some(r => r.id === '0'), !hidePrivate)
     }
+    db.exec("INSERT INTO tags(id,name) VALUES (2,'Directory'); INSERT INTO resource_tags(resource_id,tag_id,source) VALUES ('10',2,'dir')")
+    setShowDirTags(false)
+    assert.deepEqual(Array.from(getAllResources().find(r => r.id === '10').tags, t => t.name), ['Work'])
+    setShowDirTags(true)
+    assert.deepEqual(Array.from(getAllResources().find(r => r.id === '10').tags, t => t.name), ['Work', 'Directory'])
     for (const cursor of [null, {}, { addedAt: '7', rowId: 1 }, { addedAt: 7, rowId: -1 }, { addedAt: Infinity, rowId: 1 }]) {
       assert.throws(() => getResourcePage(cursor), /Invalid resource page cursor/)
     }
   } finally {
     db.close()
+  }
+})
+
+test('content search yields, preserves full-body matching, scopes types and stops cancelled work', async () => {
+  const db = new DatabaseSync(':memory:')
+  try {
+    db.exec(loadModule('../backend/db/schema.ts').SCHEMA_SQL)
+    const insert = db.prepare('INSERT INTO resources(id,type,title,file_path,added_at,updated_at) VALUES (?,?,?,?,?,?)')
+    const content = db.prepare('INSERT INTO resource_content(resource_id,text) VALUES (?,?)')
+    insert.run('note', 'document', 'Note', 'fixture.aicnote', 1, 1)
+    content.run('note', 'x'.repeat(511) + '\u6a21\u578b' + 'x'.repeat(1200))
+    const { searchResources } = loadModule('../backend/db/queries.ts', {
+      './index': { getDb: () => db }, '../utils/path-size': { getPathSize: () => 0 },
+    })
+    let pulses = 0
+    const pulse = setInterval(() => pulses++, 0)
+    try {
+      assert.deepEqual(Array.from(await searchResources('moxing', 'document'), r => r.id), ['note'])
+      assert.ok(pulses > 0, 'content search must let the event loop run')
+      assert.equal((await searchResources('moxing', 'app')).length, 0)
+      assert.equal((await searchResources('moxing', "document' OR 1=1 --")).length, 0)
+      const request = new AbortController()
+      setImmediate(() => request.abort())
+      assert.equal((await searchResources('nomatch', undefined, request.signal)).length, 0)
+    } finally {
+      clearInterval(pulse)
+    }
+  } finally {
+    db.close()
+  }
+})
+
+test('background matching agrees with the original engine and aborts an active worker', async () => {
+  const matcher = createTextMatcher()
+  try {
+    for (const [text, query] of [['\u6a21' + '\u4eba'.repeat(2000) + '\u578b', 'mx'],
+      ['\u5927\u91cf\u6b63\u6587\u7d22\u5f15\u5185\u5bb9'.repeat(1000), 'zzzzzzzzzzzzzzzzzz'],
+      ['\u8d22\u52a1\u62a5\u8868', 'caiwu'], ['No match', 'qwertyvx']]) {
+      assert.equal(await matcher.matches(text, [query]), text.toLowerCase().includes(query) || pinyinMatch(text, query) !== null)
+    }
+  } finally {
+    matcher.dispose()
+  }
+  const controller = new AbortController()
+  const cancelled = createTextMatcher(controller.signal)
+  try {
+    const result = cancelled.matches('\u5927\u91cf\u6b63\u6587'.repeat(20_000), ['qwertyvx'])
+    controller.abort()
+    assert.equal(await result, false)
+    assert.equal(await cancelled.matches('\u6a21\u578b', ['moxing']), false)
+  } finally {
+    cancelled.dispose()
+  }
+})
+
+test('search worker errors reject the pending search and disposal terminates owned work', async () => {
+  const children = []
+  class FixtureWorker extends EventEmitter {
+    constructor() { super(); children.push(this) }
+    ref() {}
+    unref() {}
+    postMessage() {}
+    terminate() { this.terminated = true; return Promise.resolve(0) }
+  }
+  const { createTextMatcher: createFixture } = loadModule('../backend/search-body.ts', {
+    __dirname: workerDir, 'node:worker_threads': { Worker: FixtureWorker },
+  })
+  const matcher = createFixture()
+  try {
+    const result = matcher.matches('Sample', ['qwertyvx'])
+    const rejected = assert.rejects(result, /fixture denied/)
+    children[0].emit('error', new Error('fixture denied'))
+    await rejected
+  } finally {
+    matcher.dispose()
+  }
+  assert.equal(children[0].terminated, true)
+})
+
+test('batch updates replace a snapshot once and preserve unchanged rows and new resources', async () => {
+  const settings = reactive({ resourceSort: 'lastUsed', cardDisplay: { pinRunning: true } })
+  const { useResourceStore } = loadModule('../frontend/src/stores/resources.ts', {
+    './settings': { useSettingsStore: () => settings },
+    '../utils/resource-filter': { filterResources }, '../utils/work-slices': { runInSlices },
+    __window: { api: { resources: { batchUpdate: async () => [resource('3', 'Changed', { type: 'document' }), resource('new', 'Added')] } } },
+  })
+  const store = useResourceStore(createPinia())
+  try {
+    store.items = Array.from({ length: 5000 }, (_, i) => resource(String(i), `Item ${i}`))
+    const unchanged = store.items[10]
+    await store.batchUpdate(['3', 'new'], { rating: 5 })
+    assert.equal(store.items.length, 5001)
+    assert.equal(store.items.find(r => r.id === '3').title, 'Changed')
+    assert.equal(store.items.find(r => r.id === '10'), unchanged)
+    assert.equal(store.counts.document, 1)
+  } finally {
+    store.$dispose()
   }
 })
 

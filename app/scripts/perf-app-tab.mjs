@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import os from 'node:os'
+import { normalizeVisualWindow } from './visual-harness.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const appDir = resolve(__dirname, '..')
@@ -142,11 +143,11 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function rendererPid(app) {
-  const metrics = await app.evaluate(({ app }) => app.getAppMetrics())
-  const renderers = metrics.filter(m => m.type === 'Tab' || m.type === 'WebContents')
-  const top = renderers.sort((a, b) => (b.cpu?.percentCPUUsage ?? 0) - (a.cpu?.percentCPUUsage ?? 0))[0]
-  return top?.pid ?? null
+async function rendererPid(app, page) {
+  const handle = await app.browserWindow(page)
+  const pid = await handle.evaluate(win => win.webContents.getOSProcessId())
+  await handle.dispose()
+  return pid
 }
 
 async function cpuTimes(pid) {
@@ -186,6 +187,7 @@ try {
     env: {
       ...process.env,
       AI_CUBBY_SMOKE: '1',
+      AI_CUBBY_VISUAL_NON_INTRUSIVE: process.env.AI_CUBBY_VISUAL_FOREGROUND === '1' ? '0' : '1',
       AI_CUBBY_PROFILE_ROOT: profileRoot,
       ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
     },
@@ -193,11 +195,6 @@ try {
   })
 
   const page = await electronApp.firstWindow({ timeout: 30_000 })
-  // Keep the isolated off-screen window from Chromium's background frame throttling.
-  // This preserves a realistic renderer-frame measurement without stealing focus.
-  await electronApp.evaluate(({ BrowserWindow }) => {
-    for (const win of BrowserWindow.getAllWindows()) win.webContents.setBackgroundThrottling(false)
-  })
   await page.waitForLoadState('domcontentloaded', { timeout: 20_000 })
   await page.waitForTimeout(1000)
 
@@ -244,6 +241,7 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.app', { timeout: 20_000 })
   await page.waitForTimeout(1000)
+  await normalizeVisualWindow(electronApp, page)
 
   const navClicked = await page.evaluate((tab) => {
     const items = Array.from(document.querySelectorAll('.nav-item'))
@@ -274,6 +272,9 @@ try {
 
   // Searching/scrolling should remain responsive while uncached Shell icons are queued.
   const searchInput = page.locator('.search')
+  const measuredWindow = await electronApp.browserWindow(page)
+  await measuredWindow.evaluate(win => { if (win.isMinimized()) win.restore(); win.show(); win.setAlwaysOnTop(true); win.focus() })
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   const inputStartedAt = Date.now()
   await searchInput.fill('Perf App')
   report.interaction = {
@@ -290,13 +291,15 @@ try {
   addCheck('search remains responsive while icons are queued', report.interaction.searchFillMs < 700, `${report.interaction.searchFillMs}ms`)
   addCheck('scroll frame remains responsive while icons are queued', report.interaction.rafAfterScrollMs !== null && report.interaction.rafAfterScrollMs < 100, `${report.interaction.rafAfterScrollMs}ms`)
   await searchInput.fill('')
+  await measuredWindow.evaluate(win => win.setAlwaysOnTop(false))
+  await measuredWindow.dispose()
 
-  const pid = await rendererPid(electronApp)
+  const pid = await rendererPid(electronApp, page)
   addCheck('renderer pid detected', Number.isInteger(pid), `pid=${pid}`)
   const mainPid = await electronApp.evaluate(() => process.pid)
   addCheck('main pid detected', Number.isInteger(mainPid), `pid=${mainPid}`)
 
-  // Let startup indexing and queued image work settle before measuring idle CPU.
+  // Icon warmup can still be active; this is not an old-versus-new comparison.
   await page.waitForTimeout(settleMs)
   report.idleState = await page.evaluate(async () => ({
     aiStatus: await window.api.ai.getStatus(),
@@ -310,30 +313,16 @@ try {
   report.current = rendererCpu
   report.mainCpu = mainCpu
 
-  await page.evaluate(() => {
-    window.__aiCubbyPerfTimers?.forEach(clearInterval)
-    const cards = Array.from(document.querySelectorAll('.card'))
-    let tick = 0
-    window.__aiCubbyPerfTimers = cards.map(() => setInterval(() => { tick += 1 }, 300))
-    window.__aiCubbyPerfTick = () => tick
-  })
+  const windowHandle = await electronApp.browserWindow(page)
+  await windowHandle.evaluate(win => win.minimize())
   await page.waitForTimeout(1000)
-  report.simulatedOldTimer = await sampleCpu(pid, sampleMs)
-  const ticks = await page.evaluate(() => window.__aiCubbyPerfTick?.() ?? 0)
-  report.simulatedOldTimer.ticks = ticks
-  await page.evaluate(() => {
-    window.__aiCubbyPerfTimers?.forEach(clearInterval)
-    window.__aiCubbyPerfTimers = []
-  })
-
-  const reduction = report.simulatedOldTimer.percentOneCore - report.current.percentOneCore
-  report.delta = {
-    percentOneCore: reduction,
-    ratio: report.simulatedOldTimer.percentOneCore > 0
-      ? report.current.percentOneCore / report.simulatedOldTimer.percentOneCore
-      : null,
+  report.minimized = {
+    renderer: await sampleCpu(pid, sampleMs),
+    main: await sampleCpu(mainPid, sampleMs),
+    native: await windowHandle.evaluate(win => ({ minimized: win.isMinimized(), visible: win.isVisible() })),
   }
-  addObservation('current renderer CPU is below simulated old per-card timer load', reduction > 1, `delta=${reduction.toFixed(2)}% one-core`)
+  await windowHandle.dispose()
+  addCheck('background sample uses a minimized window', report.minimized.native.minimized)
 } finally {
   if (electronApp) await electronApp.close()
   report.finishedAt = new Date().toISOString()

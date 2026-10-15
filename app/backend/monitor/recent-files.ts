@@ -5,7 +5,7 @@ import { isUNC } from '../utils/fs-safe'
 import { spawn, execFile, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { createInterface } from 'readline'
-import { upsertResource, updateResource, isIgnored, isBlockedDir, recordProcessStart, recordProcessStop, getResourceByPath, upgradeSteamGame, getAllAppResources } from '../db/queries'
+import { upsertResource, updateResource, isIgnored, isBlockedDir, recordProcessStart, recordProcessStop, getResourceByPath, upgradeSteamGame, getAllAppResources, getSetting } from '../db/queries'
 import type { Resource } from '../db/queries'
 import { detectSteamGame } from './steam-detector'
 import { recordSearchResourceOpen } from '../search-learning'
@@ -245,7 +245,7 @@ let recentWatcher: FSWatcher | null = null
 let desktopWatcher: FSWatcher | null = null
 let processWatcherProc: ChildProcess | null = null
 let monitorPaused = false
-let monitorStopped = false
+let monitorStopped = true
 let onNewEntryCb: ((entry: Resource) => void) | null = null
 
 /** 暂停/恢复自动捕获（手动添加对话框打开时暂停，防止用户浏览文件时被自动入库） */
@@ -309,9 +309,10 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
     processWatcherProc = spawn('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-EncodedCommand', buildWmiWatcherScript()
     ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const watcher = processWatcherProc
 
     createInterface({ input: processWatcherProc.stdout! }).on('line', async (line) => {
-      if (monitorPaused) return
+      if (monitorPaused || monitorStopped || processWatcherProc !== watcher) return
       const raw = line.trim()
       // 格式: pid|exePath|commandLine（commandLine 可能含 |，取前两个分隔符）
       const first  = raw.indexOf('|')
@@ -333,6 +334,7 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
         console.log('[Monitor] Process skipped (no icon):', exePath)
         return
       }
+      if (monitorPaused || monitorStopped || processWatcherProc !== watcher) return
 
       const lnkTitle = exeToLnkName.get(lower)
       const title = lnkTitle ?? basename(exePath, extname(exePath))
@@ -412,7 +414,12 @@ function startProcessWatcher(onNewEntry: (entry: Resource) => void): void {
       if (msg && !msg.startsWith('#< CLIXML')) console.warn('[Monitor] WMI watcher:', msg)
     })
 
-    processWatcherProc.on('exit', (code) => {
+    watcher.on('error', error => {
+      console.warn('[Monitor] WMI watcher failed:', error.message)
+      if (processWatcherProc === watcher) processWatcherProc = null
+    })
+    watcher.on('exit', (code) => {
+      if (processWatcherProc !== watcher) return
       console.warn('[Monitor] WMI process watcher exited, code:', code)
       processWatcherProc = null
       // 非主动停止时自动重启（例如更新后首次启动 WMI 环境未稳定导致闪退）
@@ -559,6 +566,7 @@ async function checkInitialRunning(): Promise<void> {
       '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' +
       'Get-Process | Where-Object { $_.Path } | ForEach-Object { "$($_.Id)|$($_.Path)" }'
     ], { timeout: 10000, windowsHide: true, encoding: 'utf8' })
+    if (monitorStopped) return
 
     const ownExe = process.execPath.toLowerCase()
     const trackedResources = new Set<string>()
@@ -601,9 +609,10 @@ async function checkInitialRunning(): Promise<void> {
 }
 
 export function startMonitor(onNewEntry: (entry: Resource) => void, onRunningChange?: (event: RunningEvent) => void): void {
-  monitorStopped = false
   onNewEntryCb = onNewEntry
   onRunningChangeCb = onRunningChange
+  if (getSetting('monitorEnabled') === 'false' || !monitorStopped) return
+  monitorStopped = false
   const recentPath = app.getPath('recent')
   const desktopPath = app.getPath('desktop')
   console.log('[Monitor] Watching Recent:', recentPath)
@@ -655,6 +664,7 @@ export function startMonitor(onNewEntry: (entry: Resource) => void, onRunningCha
   // 启动后台 Steam 迁移：将已入库的 app 资源中属于 Steam 游戏的条目升级为 game 类型
   // 延迟 3s，避免与启动扫描竞争 SQLite 写锁
   setTimeout(() => {
+    if (monitorStopped) return
     try {
       const appResources = getAllAppResources()
       let count = 0
@@ -679,6 +689,11 @@ export function stopMonitor(): void {
   recentWatcher?.close(); recentWatcher = null
   desktopWatcher?.close(); desktopWatcher = null
   if (processWatcherProc) { processWatcherProc.kill(); processWatcherProc = null }
+}
+
+export function setMonitorEnabled(enabled: boolean): void {
+  if (!enabled) stopMonitor()
+  else if (onNewEntryCb) startMonitor(onNewEntryCb, onRunningChangeCb ?? undefined)
 }
 
 /** 退出前将所有活跃会话的已用时间写入数据库，防止重启后丢失累计记录 */
@@ -798,7 +813,7 @@ export async function scanRecentFolder(): Promise<Resource[]> {
 }
 
 function handleLnkFile(lnkPath: string, onNewEntry: (entry: Resource) => void): void {
-  if (monitorPaused) return
+  if (monitorPaused || monitorStopped) return
   const resource = processLnk(lnkPath)
   if (resource) {
     console.log('[Monitor] New resource:', resource.type, resource.title)

@@ -27,7 +27,7 @@ function queryTokens(query: string): string[] {
   return tokens
 }
 
-function relevance(resource: Resource, query: string, tokens: string[]): number {
+function relevance(resource: Resource, query: string, tokens: string[], tagScores: Map<string, number>): number {
   const title = resource.title.toLowerCase()
   let score = -1
   if (title === query) score = 5000
@@ -44,14 +44,22 @@ function relevance(resource: Resource, query: string, tokens: string[]): number 
     }
   }
   for (const tag of resource.tags ?? []) {
+    const cached = tagScores.get(tag.name)
+    if (cached !== undefined) {
+      score = Math.max(score, cached)
+      continue
+    }
     const name = tag.name.toLowerCase()
-    if (name === query) score = Math.max(score, 4500)
-    else if (name.startsWith(query)) score = Math.max(score, 3500)
-    else if (name.includes(query)) score = Math.max(score, 2500 - Math.min(name.indexOf(query), 499))
+    let tagScore = -1
+    if (name === query) tagScore = 4500
+    else if (name.startsWith(query)) tagScore = 3500
+    else if (name.includes(query)) tagScore = 2500 - Math.min(name.indexOf(query), 499)
     else {
       const match = pinyinMatch(tag.name, query)
-      if (match !== null) score = Math.max(score, 1500 - Math.min(match[0] ?? 0, 499))
+      if (match !== null) tagScore = 1500 - Math.min(match[0] ?? 0, 499)
     }
+    tagScores.set(tag.name, tagScore)
+    score = Math.max(score, tagScore)
   }
   return score
 }
@@ -69,6 +77,7 @@ export function* filterResources(items: Resource[], options: ResourceFilterOptio
   const hasQuery = !!query.trim()
   const tokens = queryTokens(query)
   const scores = new Map<string, number>()
+  const tagScores = new Map<string, number>()
   const byId = new Map<string, Resource>()
   const searchTags = new Map<number, { id: number; name: string }>()
   const matched = new Map<string, Resource>()
@@ -76,7 +85,7 @@ export function* filterResources(items: Resource[], options: ResourceFilterOptio
     byId.set(resource.id, resource)
     for (const tag of resource.tags ?? []) searchTags.set(tag.id, tag)
     if (options.type === 'all' || resource.type === options.type) {
-      const score = hasQuery ? relevance(resource, query, tokens) : 0
+      const score = hasQuery ? relevance(resource, query, tokens, tagScores) : 0
       if (score >= 0) {
         matched.set(resource.id, resource)
         if (hasQuery) scores.set(resource.id, score)

@@ -17,7 +17,7 @@ import {
   batchRemoveResources, batchReplacePath, cleanupResources,
   getBlockedDirs, addBlockedDir, removeBlockedDir
 } from '../db/queries'
-import { scanRecentFolder, scanProcesses, setMonitorPaused, getRunningSessions, killRunningResource, trackRunningProcess } from '../monitor/recent-files'
+import { scanRecentFolder, scanProcesses, setMonitorPaused, setMonitorEnabled, getRunningSessions, killRunningResource, trackRunningProcess } from '../monitor/recent-files'
 import { checkResourceHealth, relocateMissingResources } from '../monitor/resource-health'
 import { dbPath, dataDir, getDb, clipboardGetItems, clipboardDeleteItem, clipboardClearAll, clipboardRecordUse } from '../db/index'
 import { getQuickPanelResources, setQuickPanel, batchSetQuickPanel, batchSetPinOrder, getAllPinGroups, createPinGroup, renamePinGroup, removePinGroup,
@@ -918,8 +918,20 @@ export function registerIpcHandlers(getWindowState: (win: BrowserWindow) => Main
   })
 
   // ── 搜索 ──────────────────────────────────────────────
-  ipcMain.handle('search:query', (_e, q: string, type?: string) => {
-    return searchResources(q, type)
+  const searchRequests = new Map<number, AbortController>()
+  ipcMain.handle('search:query', async (event, q: string, type?: string) => {
+    const senderId = event.sender.id
+    searchRequests.get(senderId)?.abort()
+    const request = new AbortController()
+    searchRequests.set(senderId, request)
+    const onDestroyed = () => request.abort()
+    event.sender.once('destroyed', onDestroyed)
+    try {
+      return await searchResources(q, type, request.signal)
+    } finally {
+      event.sender.removeListener('destroyed', onDestroyed)
+      if (searchRequests.get(senderId) === request) searchRequests.delete(senderId)
+    }
   })
   ipcMain.handle('search:learned', async (_e, q: string, type?: string) => {
     await refreshAccountStatus()
@@ -958,6 +970,7 @@ export function registerIpcHandlers(getWindowState: (win: BrowserWindow) => Main
   ipcMain.handle('settings:get', (_e, key: string) => getSetting(key))
   ipcMain.handle('settings:set', (_e, key: string, value: string) => {
     setSetting(key, value)
+    if (key === 'monitorEnabled') setMonitorEnabled(value !== 'false')
     if (key === 'autoDirTag') {
       setShowDirTags(value !== 'false')
       webContents.getAllWebContents().forEach(wc => {

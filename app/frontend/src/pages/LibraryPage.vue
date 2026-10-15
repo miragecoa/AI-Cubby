@@ -15,18 +15,21 @@
 
         <div class="search-wrap combined" v-if="!showPrivacy">
           <span class="search-icon" v-html="searchSvg" />
-          <input
+          <SearchInput
             ref="searchInputRef"
             v-model="store.searchQuery"
             class="search combine-left"
             :placeholder="t('library.searchPlaceholder')"
+            :aria-label="t('library.searchPlaceholder')"
             type="search"
+            :spellcheck="false"
+            autocomplete="off"
             @focus="showSearchTagSuggestions = true"
-            @input="showSearchTagSuggestions = true"
             @blur="hideSearchTagSuggestions"
-            @keydown.enter="aiStore.searchNow(store.searchQuery)"
+            @update:model-value="showSearchTagSuggestions = true"
+            @submit="aiStore.searchNow($event)"
           />
-          <button v-if="store.searchQuery" class="search-clear" @click="clearSearchAndTags" :title="t('library.clearSearch')">
+          <button class="search-clear" @click="clearSearchAndTags" :title="t('library.clearSearch')">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
           <button
@@ -1835,6 +1838,7 @@ import { useAiStore } from '../stores/ai'
 import { NAV_ITEM_DEFS } from '../config/navItems'
 import type { ResourceSortField, TagSortField } from '../stores/settings'
 import ResourceCard from '../components/ResourceCard.vue'
+import SearchInput from '../components/SearchInput.vue'
 import ListRow from '../components/ListRow.vue'
 import PinBoard from '../components/PinBoard.vue'
 import AddResourceModal from '../components/AddResourceModal.vue'
@@ -1924,7 +1928,7 @@ function onAiRecommendationItemClick(event: MouseEvent, item: Resource) {
   if (!suppressAiRecommendationClick) openResource(item)
   suppressAiRecommendationClick = false
 }
-const searchInputRef = ref<HTMLInputElement | null>(null)
+const searchInputRef = ref<InstanceType<typeof SearchInput> | null>(null)
 const showAddModal = ref(false)
 const showAiComingSoon = ref(false)
 const showAiSearchComingSoon = ref(false)
@@ -3493,6 +3497,7 @@ function activateSearchTag(tag: { id: number; name: string; count: number; pinne
 }
 
 function clearMainSearch() {
+  searchInputRef.value?.clear()
   store.searchQuery = ''
   showSearchTagSuggestions.value = false
 }
@@ -3965,6 +3970,10 @@ watch(pageItems, (items, previous, onCleanup) => {
   if (!samePage) renderedItemCount.value = 0
   const reveal = () => {
     if (cancelled || renderedItemCount.value >= items.length) return
+    if (isInteractionPending()) {
+      timer = setTimeout(reveal, 32)
+      return
+    }
     renderedItemCount.value = Math.min(items.length, renderedItemCount.value + 1)
     timer = setTimeout(reveal, 32)
   }
@@ -4209,7 +4218,7 @@ function onColResizeEnd() {
 }
 
 // ListRow 组件自行管理缩略图（同 ResourceCard），此处只需 preload/clearImageCache
-import { getCached, loadImage, loadImageSmall, loadIcon, preload, clearImageCache, cancelPendingLoads, cancelQueued, reverseQueue, onQueueIdle, resizeImageCache, setGridThumbSize, setPaused, deferIdleWork, saveGeneratedCover } from '../utils/image-cache'
+import { getCached, loadImage, loadImageSmall, loadIcon, preload, clearImageCache, cancelPendingLoads, cancelQueued, reverseQueue, onQueueIdle, resizeImageCache, setGridThumbSize, setPaused, deferIdleWork, isInteractionPending, saveGeneratedCover } from '../utils/image-cache'
 
 // 切换视图时：回到顶部、重置渲染窗口、清理上一模式资源
 watch(() => viewMode.value, (mode) => {
@@ -5174,6 +5183,7 @@ async function deleteIgnored(filePath: string) {
   transition: color 0.15s;
 }
 .search-clear:hover { color: var(--text); }
+.search:placeholder-shown + .search-clear { visibility: hidden; pointer-events: none; }
 
 .search-wrap.combined {
   position: relative;

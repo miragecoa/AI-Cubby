@@ -43,6 +43,7 @@ try {
   const queries = loadSource('backend/db/queries.ts', {
     './index': { getDb: () => adapter },
     '../utils/path-size': loadSource('backend/utils/path-size.ts'),
+    '../search-body': {},
   })
   queries.setShowDirTags(false)
   const input = { type: 'app', title: 'mango', file_path: originalPath, rating: 0 }

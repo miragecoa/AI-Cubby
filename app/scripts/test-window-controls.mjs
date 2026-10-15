@@ -119,6 +119,8 @@ try {
   })
   await capture('restored')
 
+  await page.locator('.search').fill('moxing')
+  await page.waitForTimeout(350)
   await page.locator('.titlebar-btns .tb-btn').nth(2).click()
   await page.waitForTimeout(250)
   const minimized = await snapshot('normal-minimized')
@@ -131,6 +133,8 @@ try {
   await page.waitForTimeout(300)
   const fromMinimized = await snapshot('normal-restored-from-minimize')
   check('restoring from minimize retains normal size', () => assert.deepEqual(fromMinimized.bounds, normalBounds))
+  const awaitedQuery = await page.locator('.search').inputValue()
+  check('minimize and restore preserve the search query', () => assert.equal(awaitedQuery, 'moxing'))
 
   for (let i = 0; i < 3; i++) {
     await maximizeButton.click()

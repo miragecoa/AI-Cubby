@@ -70,12 +70,16 @@ function inputIsPending(): boolean {
 }
 
 function canRunIdleWork(): boolean {
-  return !_paused && Date.now() >= _interactionUntil && !inputIsPending()
+  return !_paused && !isInteractionPending()
+}
+
+export function isInteractionPending(): boolean {
+  return Date.now() < _interactionUntil || inputIsPending()
 }
 
 function scheduleIdleFlush(): void {
-  if (_idleFlushTimer || _paused || _idleQueue.length === 0) return
-  const delay = Math.max(0, _interactionUntil - Date.now())
+  if (_idleFlushTimer || _paused || (_idleQueue.length === 0 && _queue.length === 0)) return
+  const delay = Math.max(16, _interactionUntil - Date.now())
   _idleFlushTimer = setTimeout(() => {
     _idleFlushTimer = null
     flush()
@@ -150,6 +154,10 @@ export function drainQueue(): void {
 
 function flush() {
   if (_paused) return
+  if (isInteractionPending() && (_queue.length > 0 || _idleQueue.length > 0)) {
+    scheduleIdleFlush()
+    return
+  }
   if (_queue.length === 0 && _idleQueue.length === 0 && _running === 0 && _onIdleCallback) {
     const cb = _onIdleCallback
     _onIdleCallback = null
@@ -195,7 +203,7 @@ export function resizeImageCache(pageSize: number): void {
   if (newSize === _imgCache.capacity) return
   const old = _imgCache
   _imgCache = new LRUCache<string | null>(newSize)
-  // 杩佺Щ鏃х紦瀛?  old.forEach((k, v) => _imgCache.set(k, v))
+  old.forEach((k, v) => _imgCache.set(k, v))
 }
 const _iconCache = new LRUCache<string | null>(100)
 const _savedCovers = new Set<string>()
@@ -297,7 +305,7 @@ export function clearImageCache(): void {
 /** Preload a batch of paths (for view switching). Doesn't block. */
 export function preload(paths: string[]): void {
   for (const p of paths) {
-    if (!p || _imgCache.has(p)) continue
+    if (!p || _imgCache.has(`${p}@${_gridThumbSize}`)) continue
     loadImage(p) // fire-and-forget, queued with concurrency limit
   }
 }

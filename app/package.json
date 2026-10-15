@@ -1,6 +1,6 @@
 {
   "name": "ai-cubby",
-  "version": "0.4.26-beta.2",
+  "version": "0.4.26-beta.3",
   "description": "AI小抽屉 - 本地资源自动入库与AI标签",
   "main": "out/main/main.js",
   "scripts": {
@@ -25,7 +25,8 @@
     "visual:smoke": "npm run build && node scripts/visual-smoke.mjs",
     "visual:open": "npm run build && node scripts/visual-open.mjs",
     "package": "electron-vite build && electron-builder && node ../scripts/repack.cjs",
-    "rebuild": "electron-rebuild -f -w better-sqlite3"
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "test:interaction-performance": "node --test tests/interaction-performance.test.mjs tests/resource-filter.test.mjs"
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",

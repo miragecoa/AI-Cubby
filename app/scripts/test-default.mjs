@@ -170,7 +170,10 @@ test('main window wake paths hide the drawer through a single helper', () => {
   assert.match(main, /showMainWindow\('second-instance'\)/)
   assert.match(main, /showMainWindow\('activate'\)/)
   assert.match(main, /mainWindow\.on\('focus', \(\) => \{\s+drawerWindow\?\.hide\(\)/)
-  assert.match(main, /mainWindow\.on\('minimize', \(\) => \{\s+mainWindow\?\.webContents\.send\('window:wake'\)/)
+  const minimizeHandler = main.match(/mainWindow\.on\('minimize', \(\) => \{([\s\S]*?)\n  \}\)/)?.[1]
+  assert.ok(minimizeHandler)
+  assert.match(minimizeHandler, /drawerWindow\?\.show\(\)/)
+  assert.doesNotMatch(minimizeHandler, /window:wake/)
 })
 
 test('quick panel groups can open all resources sequentially', () => {
@@ -526,7 +529,8 @@ test('search includes managed note text content as low priority matches', () => 
   assert.match(ipc, /INSERT OR REPLACE INTO resource_content/)
   assert.match(ipc, /fetch_status, is_truncated, word_count, fetched_at/)
   assert.match(queries, /JOIN resource_content rc ON rc\.resource_id = r\.id/)
-  assert.match(queries, /pinyinMatch\(text, needle\)/)
+  assert.match(queries, /createTextMatcher/)
+  assert.match(read('backend/search-body-worker.ts'), /pinyinMatch\(text, needle\)/)
   assert.match(queries, /ext !== '\.md' && ext !== '\.txt' && ext !== '\.aicnote'/)
   assert.match(queries, /content_hits=\$\{contentRows\.length\}/)
   assert.match(queries, /function readSearchableTextDocument/)

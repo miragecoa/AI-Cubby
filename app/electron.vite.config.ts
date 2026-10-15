@@ -9,6 +9,7 @@ export default defineConfig({
         input: {
           main: resolve(__dirname, 'backend/main.ts'),
           'content-worker': resolve(__dirname, 'backend/ai/content-worker.ts'),
+          'search-body-worker': resolve(__dirname, 'backend/search-body-worker.ts'),
         },
         output: {
           entryFileNames: '[name].js'

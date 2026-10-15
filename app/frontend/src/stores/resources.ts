@@ -236,7 +236,15 @@ export const useResourceStore = defineStore('resources', () => {
 
   async function batchUpdate(ids: string[], data: Partial<Resource>) {
     const updated = await window.api.resources.batchUpdate(ids, data)
-    for (const res of updated) addOrUpdate(res)
+    const changes = new Map(updated.map(resource => [resource.id, resource]))
+    if (loading.value) for (const resource of updated) pendingChanges.set(resource.id, resource)
+    const next = toRaw(items.value).map(resource => {
+      const replacement = changes.get(resource.id)
+      changes.delete(resource.id)
+      return replacement ?? resource
+    })
+    items.value = [...changes.values()].reverse().concat(next)
+    refreshFiltered()
   }
 
   async function batchReplacePath(oldPrefix: string, newPrefix: string): Promise<number> {

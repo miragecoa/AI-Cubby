@@ -15,7 +15,10 @@ export async function normalizeVisualWindow(electronApp, page) {
   }
   await page.setViewportSize(viewport)
   await applyAutomationZoom(page)
-  await placeVisualWindow(electronApp, viewport)
+  const handle = await electronApp.browserWindow(page)
+  const windowId = await handle.evaluate(win => win.id)
+  await handle.dispose()
+  await placeVisualWindow(electronApp, viewport, windowId)
   return viewport
 }
 
@@ -23,9 +26,9 @@ export async function applyAutomationZoom(page) {
   await page.evaluate(() => window.api?.app?.setZoom?.(1)).catch(() => {})
 }
 
-export async function placeVisualWindow(electronApp, viewport) {
-  await electronApp.evaluate(({ BrowserWindow, screen }, { viewport, foreground }) => {
-    const win = BrowserWindow.getAllWindows()[0]
+export async function placeVisualWindow(electronApp, viewport, windowId) {
+  await electronApp.evaluate(({ BrowserWindow, screen }, { viewport, foreground, windowId }) => {
+    const win = windowId === undefined ? BrowserWindow.getAllWindows()[0] : BrowserWindow.fromId(windowId)
     if (!win || win.isDestroyed()) return
     const workArea = screen.getPrimaryDisplay().workArea
     const bounds = foreground
@@ -50,7 +53,7 @@ export async function placeVisualWindow(electronApp, viewport) {
       win.showInactive()
       win.blur()
     }
-  }, { viewport, foreground: visualForegroundEnabled() }).catch(() => {})
+  }, { viewport, foreground: visualForegroundEnabled(), windowId }).catch(() => {})
 }
 
 export async function auditWindowChrome(page) {
